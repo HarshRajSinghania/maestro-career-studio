@@ -181,6 +181,7 @@ the single purpose, permission explanations, privacy disclosures and five
    filling and Test connection against a freshly started backend allowing
    its exact ID. Confirm that an unrelated extension ID remains refused.
    Submit for public listing only after these checks and owner review.
+5. Update `PRIVACY.md`'s Companion section when the listing goes live.
 
 For later uploads, bump the extension and backend versions together and run
 `python3 scripts/pack_extension.py` without `--first-upload`. The archive

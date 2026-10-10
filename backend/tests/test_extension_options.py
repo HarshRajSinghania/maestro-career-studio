@@ -1,6 +1,8 @@
 """Companion address settings and the store upload archive."""
 
 import json
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -82,6 +84,24 @@ def test_pack_excludes_development_files_but_keeps_runtime_assets(pack_tree):
         assert manifest["side_panel"]["default_path"] in names
 
 
+@pytest.mark.parametrize("first_upload", [False, True])
+def test_two_packs_are_byte_identical_despite_source_metadata_changes(pack_tree, first_upload):
+    args = ["--first-upload"] if first_upload else []
+    assert pack(pack_tree, *args).returncode == 0
+    archive = next(pack_tree.glob("dist/*.zip"))
+    first = archive.read_bytes()
+    for path in (pack_tree / "extension").rglob("*"):
+        if path.is_file():
+            os.utime(path, (1700000000, 1700000000))
+            path.chmod(0o600)
+    assert pack(pack_tree, *args).returncode == 0
+    assert archive.read_bytes() == first
+    with zipfile.ZipFile(archive) as zipped:
+        for entry in zipped.infolist():
+            assert entry.date_time == (1980, 1, 1, 0, 0, 0)
+            assert entry.external_attr == 0o644 << 16
+
+
 def test_options_page_registration_and_safe_source():
     manifest = json.loads((EXTENSION / "manifest.json").read_text())
     assert manifest.get("options_ui") == {"page": "options.html", "open_in_tab": False}
@@ -91,11 +111,12 @@ def test_options_page_registration_and_safe_source():
     html = (EXTENSION / "options.html").read_text()
     source = (EXTENSION / "options.js").read_text()
     assert "innerHTML" not in html + source
-    assert html.isascii() and source.isascii(), "options use words, never emoji or text glyphs"
+    # The panel's icon rule forbids decorative symbols, not copy punctuation such as ellipses.
+    assert not re.search(r"[\u2190-\u21ff\u25a0-\u27bf\U0001f000-\U0001faff]", html + source)
     assert '<script src="options.js"></script>' in html
     assert "aria-live=\"polite\"" in html
     assert "backendUrl" in source and "appUrl" in source
-    assert "localhost" not in source, "defaults must come from read_settings"
+    assert "http://localhost" not in source, "defaults must come from read_settings"
     assert "sw.js" not in source
 
 
@@ -112,7 +133,13 @@ for (const id of ["settings", "backendUrl", "appUrl", "save", "test", "note"]) {
   };
 }
 global.document = { getElementById: (id) => elements[id] };
-const messages = [], writes = [], requests = [];
+const messages = [], writes = [], requests = [], connectingNotes = [];
+const requestOptions = [], timeouts = [];
+const timeout = AbortSignal.timeout.bind(AbortSignal);
+AbortSignal.timeout = (milliseconds) => {
+  timeouts.push(milliseconds);
+  return timeout(milliseconds);
+};
 global.chrome = {
   runtime: { sendMessage: async (message) => {
     messages.push(message);
@@ -125,10 +152,17 @@ global.chrome = {
     writes.push(values);
   } } },
 };
-global.fetch = async (url) => {
+global.fetch = async (url, options = {}) => {
   requests.push(url);
+  requestOptions.push({
+    method: options.method, headers: options.headers, body: options.body,
+    hasSignal: options.signal instanceof AbortSignal,
+  });
+  connectingNotes.push(elements.note.textContent);
   if (spec.fetchReject) throw new Error("private network error");
-  return { ok: spec.healthOk !== false };
+  if (spec.fetchTimeout) throw new DOMException("private timeout", "TimeoutError");
+  const status = spec.healthStatus ?? (spec.healthOk === false ? 503 : 200);
+  return { ok: status >= 200 && status < 300, status };
 };
 vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
 (async () => {
@@ -140,8 +174,10 @@ vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
     await elements[id].listeners[type]({ preventDefault() {} });
     await new Promise(setImmediate);
   }
+  for (const id of spec.input || []) elements[id].listeners.input?.();
   process.stdout.write(JSON.stringify({
-    initial, messages, writes, requests, note: elements.note.textContent,
+    initial, messages, writes, requests, requestOptions, timeouts, connectingNotes,
+    note: elements.note.textContent,
     disabled: { save: elements.save.disabled, test: elements.test.disabled },
   }));
 })().catch((err) => { console.error(err); process.exitCode = 1; });
@@ -176,6 +212,28 @@ def test_options_load_through_settings_message_and_save_only_address_keys():
     assert out["disabled"] == {"save": False, "test": False}
 
 
+@pytest.mark.parametrize("address, expected", [
+    ("https://maestro.example:9443", "Saved. The Companion now sends job pages and your answers to maestro.example."),
+    ("http://100.64.0.10:8001", "Saved. The Companion now sends job pages and your answers to 100.64.0.10. This address is not encrypted."),
+    ("http://localhost.example", "Saved. The Companion now sends job pages and your answers to localhost.example. This address is not encrypted."),
+    ("https://xlocalhost", "Saved. The Companion now sends job pages and your answers to xlocalhost."),
+])
+def test_nonlocal_backend_saves_with_destination_and_encryption_notice(address, expected):
+    out = run_options(action="save", edit={"backendUrl": address})
+    assert out["writes"][0]["backendUrl"] == address
+    assert out["note"] == expected
+
+
+@pytest.mark.parametrize("address", [
+    "http://localhost:8001", "http://studio.localhost:8001", "https://deep.studio.localhost",
+    "http://127.0.0.1:8001", "http://[::1]:8001", "https://LOCALHOST",
+])
+def test_local_backend_saves_without_destination_warning(address):
+    out = run_options(action="save", edit={"backendUrl": address})
+    assert len(out["writes"]) == 1
+    assert out["note"] == "Saved."
+
+
 @pytest.mark.parametrize("address", [
     "", "localhost:8001", "ftp://localhost", "javascript:alert(1)", "http://",
     "http://localhost/api", "http://localhost/../", "http://localhost?", "http://localhost#",
@@ -199,9 +257,56 @@ def test_connection_checks_current_unsaved_backend_address(health):
     out = run_options(action="test", edit={"backendUrl": "http://127.0.0.1:9001/"}, **health)
     assert out["requests"] == ["http://127.0.0.1:9001/health"]
     assert out["writes"] == []
-    expected = "Connected." if not health else "Can't reach Maestro at http://127.0.0.1:9001."
+    expected = (
+        "Can't reach Maestro at http://127.0.0.1:9001." if health.get("fetchReject")
+        else "Connected."
+    )
     assert out["note"] == expected
     assert out["disabled"] == {"save": False, "test": False}
+
+
+def test_connection_posts_json_once_to_check_extension_origin_with_five_second_timeout():
+    out = run_options(action="test", healthStatus=405)
+    assert out["requests"] == ["http://localhost:9123/health"]
+    assert out["requestOptions"] == [{
+        "method": "POST", "headers": {"Content-Type": "application/json"},
+        "body": "{}", "hasSignal": True,
+    }]
+    assert out["timeouts"] == [5000]
+    assert out["writes"] == []
+
+
+@pytest.mark.parametrize("status", [200, 400, 404, 405, 500, 503])
+def test_connection_accepts_any_http_status_except_extension_refusal(status):
+    out = run_options(action="test", healthStatus=status)
+    assert out["note"] == "Connected."
+    assert out["disabled"] == {"save": False, "test": False}
+
+
+def test_connection_distinguishes_extension_refusal_from_network_failure():
+    out = run_options(action="test", healthStatus=403)
+    assert out["note"] == (
+        "Maestro at http://localhost:9123 refused this extension. "
+        "Update Maestro or add this extension's ID."
+    )
+    assert out["disabled"] == {"save": False, "test": False}
+
+
+def test_connection_timeout_keeps_unreachable_message():
+    out = run_options(action="test", fetchTimeout=True)
+    assert out["note"] == "Can't reach Maestro at http://localhost:9123."
+
+
+def test_connecting_copy_uses_ellipsis_punctuation():
+    out = run_options(action="test")
+    assert out["connectingNotes"] == ["Connecting…"]
+
+
+@pytest.mark.parametrize("field", ["backendUrl", "appUrl"])
+@pytest.mark.parametrize("action", ["save", "test"])
+def test_input_clears_previous_save_or_connection_status(field, action):
+    out = run_options(action=action, input=[field])
+    assert out["note"] == ""
 
 
 def test_connection_never_fetches_invalid_backend_address():

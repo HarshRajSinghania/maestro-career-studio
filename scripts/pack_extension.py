@@ -40,9 +40,12 @@ def pack_extension(root: Path, *, first_upload: bool = False) -> Path:
                 continue
             if relative.as_posix() == "manifest.json" and first_upload:
                 upload_manifest = {key: value for key, value in manifest.items() if key != "key"}
-                zipped.writestr("manifest.json", json.dumps(upload_manifest, indent=2) + "\n")
+                content = json.dumps(upload_manifest, indent=2) + "\n"
             else:
-                zipped.write(path, relative.as_posix())
+                content = path.read_bytes()
+            entry = zipfile.ZipInfo(relative.as_posix(), date_time=(1980, 1, 1, 0, 0, 0))
+            entry.external_attr = 0o644 << 16
+            zipped.writestr(entry, content, compress_type=zipfile.ZIP_DEFLATED)
     return archive
 
 

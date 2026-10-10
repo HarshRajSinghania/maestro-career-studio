@@ -118,6 +118,8 @@ forms wherever you use it. The only network address its code contacts is your
 own Maestro CS backend (default `http://localhost:8001`): saved job details and
 form-filling requests go there, and nothing goes to any other server from the
 extension. The AI step of form filling is done by the backend, as above.
+You set this address in the extension's options; an address off this computer
+receives the same saved job details and form-filling data.
 
 It also keeps a usage log in your local database: which kinds of fields it met
 (label, field type, outcome, site hostname), never what you typed. It is on by
@@ -136,8 +138,9 @@ use Chrome's own settings sync.
 The MCP server runs inside your local Maestro backend, reached by default at
 `http://localhost:8001/mcp`. Scoped tool sets use `/mcp/<profile>` on that same
 backend. The `.mcpb` bundle for Claude Desktop is a bridge that connects only
-to that backend address. Neither the bridge nor an assistant connecting by URL
-needs Docker on the assistant's side.
+to the backend address set in the bundle (default `http://localhost:8001`).
+Neither the bridge nor an assistant connecting by URL needs Docker on the
+assistant's side.
 
 But an MCP tool exists to hand information to the assistant that called it. Your
 career history, job data, resume text, and saved answers can be returned to the

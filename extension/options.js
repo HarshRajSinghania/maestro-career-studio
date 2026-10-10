@@ -44,7 +44,13 @@
       await chrome.storage.sync.set({ backendUrl, appUrl });
       backend.value = backendUrl;
       app.value = appUrl;
-      note.textContent = "Saved.";
+      const destination = new URL(backendUrl);
+      const host = destination.hostname;
+      const local = host === "localhost" || host.endsWith(".localhost")
+        || host === "127.0.0.1" || host === "[::1]";
+      note.textContent = local ? "Saved."
+        : `Saved. The Companion now sends job pages and your answers to ${host}.`
+          + (destination.protocol === "http:" ? " This address is not encrypted." : "");
     } catch (_) {
       note.textContent = "Couldn't save settings. Try again.";
     } finally {
@@ -57,17 +63,30 @@
     const backendUrl = address(backend, "Backend address");
     if (!backendUrl) return;
     setBusy(true);
-    note.textContent = "Connecting...";
+    note.textContent = "Connecting…";
     try {
-      const response = await fetch(`${backendUrl}/health`, { signal: AbortSignal.timeout(5000) });
-      if (!response.ok) throw new Error();
-      note.textContent = "Connected.";
+      // JSON POST includes the extension Origin; GET omits it and bypasses the origin gate.
+      const response = await fetch(`${backendUrl}/health`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (response.status === 403) {
+        note.textContent = `Maestro at ${backendUrl} refused this extension. Update Maestro or add this extension's ID.`;
+      } else {
+        note.textContent = "Connected.";
+      }
     } catch (_) {
       note.textContent = `Can't reach Maestro at ${backendUrl}.`;
     } finally {
       setBusy(false);
     }
   });
+
+  for (const input of [backend, app]) {
+    input.addEventListener("input", () => { note.textContent = ""; });
+  }
 
   (async () => {
     try {
