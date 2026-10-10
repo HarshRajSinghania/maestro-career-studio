@@ -30,6 +30,12 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ### Breaking changes
 
+None.
+
+## [0.9.0] — 2026-10-10
+
+### Breaking changes
+
 - **Claude Code and Codex plugins now connect to `http://localhost:8001/mcp`**
   instead of running `docker exec`. They need v0.9.0 images: earlier images
   have no `/mcp` endpoint. If you changed `BACKEND_HOST_PORT`, use Settings ›
