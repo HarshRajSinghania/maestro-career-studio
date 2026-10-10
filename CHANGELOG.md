@@ -35,11 +35,17 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
   `CAREER_STUDIO_MCP_CLIENT`, `CAREER_STUDIO_PDF_DIR`,
   `CAREER_STUDIO_UPLOAD_DIR` and `RESUME_TAILOR_PDF_DIR`.
   Use the `MAESTRO_CS_*` names. Leaving these set without their replacements
-  means an unpacked Companion id loses API access, the MCP profile falls back
+  means an unpacked Companion id loses API write access, the MCP profile falls back
   to `full`, and PDFs/uploads go to the default folders.
 
 ### Added
 
+- **HTTP MCP inside the backend** at `/mcp`, with `full`, `hunt`, `apply`,
+  `explore`, `templates` and `career` tool profiles on the same port and
+  Host/Origin boundary as REST.
+- **Connect an agent app** on Settings › Connected agents: choose a **Tool set**,
+  copy a command or URL, open a client install link or download the Claude Desktop bundle.
+- **Companion options page** to set the backend and app addresses and test the connection.
 - **Copy setup prompt** on Settings › Connected agents › Second copy, and a
   guide for running an always-on bot (`docs/always-on-bot.md`). The button
   copies a setup prompt for a fresh always-on copy. It fills in the laptop's
@@ -52,6 +58,9 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ### Changed
 
+- The Claude Desktop **`.mcpb` bundle is a Node stdio-to-HTTP bridge**.
+  Reinstall it if you used the older Docker-based bundle. Claude needs no
+  Docker or Python on its side; Claude Code and Codex plugins connect by URL.
 - Langfuse tracing is an optional `tracing` extra. Docker and native installs still
   include it; a source/dev install gets it with `pip install -e ".[tracing]"` from
   `backend/`.
@@ -61,6 +70,12 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
   the yanked 1.4.0 to 1.4.3, and the image shrinks from about 1.88 GB to 1.72 GB.
 - The web build ships only the Monaco editor files the JSON and LaTeX editors
   load, cutting `frontend/public/monaco` from about 25 MB to 11 MB.
+
+### Deprecated
+
+- **`scripts/setup-mcp.sh` and the host stdio venv** remain for one release and
+  are removed in v0.10.0. Existing `maestro-career-studio-mcp` connections keep
+  working as a compatibility fallback.
 
 ### Fixed
 

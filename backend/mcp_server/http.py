@@ -19,6 +19,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import logging
+import os
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -91,7 +92,9 @@ def offload_tools(mcp: FastMCP) -> int:
 
 
 def build_profile_server(mcp: FastMCP, profile: str, allowed: frozenset[str] | None) -> Server:
-    server: Server = Server(mcp.name, instructions=mcp.instructions)
+    server: Server = Server(
+        mcp.name, version=os.environ.get("APP_VERSION", "dev"), instructions=mcp.instructions
+    )
 
     @server.list_tools()
     async def _list_tools() -> list[MCPTool]:

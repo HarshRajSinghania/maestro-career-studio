@@ -9,7 +9,7 @@ To pair it with your laptop, so your agent can work while the laptop is off, see
 
 Use it when a small machine stays on all day and an AI agent works from it. The
 agent finds jobs, scores them, tailors resumes and fills applications through
-Maestro's MCP server. You do not want Docker or a browser UI on that machine.
+the backend's local `/mcp` endpoint. You do not want Docker or a browser UI on that machine.
 
 If you have a laptop and want the full app, use [GETTING_STARTED.md](GETTING_STARTED.md)
 instead.
@@ -18,8 +18,8 @@ instead.
 
 - Linux (the memory numbers below were measured on arm64).
 - Python 3.12 or newer, with the `venv` module.
-- About 250 MB of free memory at rest: the backend plus one MCP server. Scoring
-  needs a short extra burst, covered under "What the slim settings do".
+- Room for the backend's 200 MB RSS budget at rest, plus your agent. The HTTP MCP
+  measurement is pending; scoring needs the extra burst below.
 - Disk for resumes, rendered PDFs and the database, plus about 300 MB for the
   scoring model, which downloads on the first score.
 - A clone of this repository. The scripts run from the clone; your data lives
@@ -197,16 +197,22 @@ by hand.
 
 ## Connect an agent
 
-The backend is the only long-running process. The MCP server is started on demand
-by the agent's own tooling, talks over stdio, and exits when the run ends.
+Register an HTTP MCP connection to this machine's own backend:
 
-```bash
-BACKEND_URL=http://127.0.0.1:8001 "$MAESTRO_HOME/venv/bin/python" -m mcp_server.server
+```text
+http://127.0.0.1:8001/mcp
 ```
 
-Register that command in the agent's MCP settings, with `BACKEND_URL` in its
-environment. Do not leave the MCP server running between runs. One server
-costs about 76 MB. The agent should stop it, or let its harness kill it, after each run.
+Use `/mcp` exactly — no trailing slash (`POST /mcp/` is a 307 redirect).
+Use `/mcp/hunt` or `/mcp/apply` for a scoped tool set, and enable one at a time.
+If you changed `MAESTRO_PORT`, change the URL's port too. `start.sh` exports
+`BACKEND_URL` for the MCP tools' REST loopback calls and
+`MAESTRO_CS_PUBLIC_BACKEND_URL` for the connection card. MCP is part of the
+backend; there is no separate server to start or stop per run.
+
+The URL is the bot's own backend, not the laptop's published sync address.
+`/mcp` has no auth by design and uses REST's Host/Origin checks. Never publish
+port 8001 or proxy `/mcp` beyond this computer.
 
 ## Read the memory
 
@@ -226,9 +232,9 @@ On a machine near 640 MB, the order of your work matters more than any setting.
 
 - **Score and tailor with the browser closed.** Or keep it under about 130 MB.
   Open it only to browse job sites and fill forms.
-- **The numbers.** At rest, the backend is about 130 MB, one MCP server about
-  75 MB, and the helper's bookkeeping about 11 MB. A browser adds about 350 MB.
-  That is about 565 MB, which fits, but only thinly.
+- **Measure the total.** MCP now shares the backend process. Read `/health/memory`
+  after connecting and `free -m` for the whole machine. A browser added about
+  350 MB in the earlier pilot; the HTTP MCP footprint still needs measurement.
 - **A score adds a helper.** It takes about 260-290 MB for 1 to 3 seconds. That
   covers tailoring, quick tailor and creating an application, because each one scores.
 - **With the browser open at 350 MB, a score does not fit.** In a test on a
@@ -268,20 +274,26 @@ tailor at :20, apply at :40. Pick times that leave each batch room to finish.
 
 ## Measured footprint
 
-Measured on Linux arm64 (Python 3.12 slim image) with `MALLOC_ARENA_MAX=2`,
-five typical cycles of save, score, render, fill and list:
+These backend readings predate HTTP MCP. They were measured on Linux arm64
+(Python 3.12 slim image) with `MALLOC_ARENA_MAX=2`, over five typical cycles of
+save, score, render, fill and list. The post-HTTP reading is pending; the
+200 MB budget stays unchanged.
 
 | | Helper on (`start.sh` default) | Helper off |
 |---|---|---|
 | Backend at startup | about 140-160 MB | about 140-160 MB |
 | Backend after scoring | about 157-173 MB | about 408-427 MB |
-| One MCP server | about 76 MB | about 76 MB |
 
 - The helper costs about 0.8 seconds per score. The first score takes about 3
   seconds, because the model's files load cold.
 - While a score runs, memory rises by about 290 MB for 1 to 3 seconds, then falls.
-- Backend plus one MCP server at rest is about 220-250 MB. Leave room for the
-  scoring burst and for your agent's browser. See "Order of work on a small machine".
+- Leave room for the scoring burst and your agent's browser. See "Order of work
+  on a small machine"; do not count a separate stdio server process.
+
+To check the HTTP footprint, start a fresh scratch backend with the native slim
+settings, read `/health/memory`, then initialize one `/mcp` session, list tools
+and call `list_jobs`. Read `/health/memory` again and record both RSS values.
+If the final reading exceeds 200 MB, report it rather than raising the budget.
 
 A test pins the backend's memory: `backend/tests/test_memory_budget.py` runs three
 typical cycles and fails if the backend ends above 200 MB. It runs on Linux only
@@ -317,8 +329,8 @@ VM has about 640 MB available, no swap, and a browser the agent drives during ru
    use `stop.sh`, `git fetch --tags && git checkout <tag>`, `setup.sh`,
    `start.sh --unpause`, then wait for the watchdog and run `health.sh`.
    At a keyboard, `start.sh` is still fine (see "Maintenance").
-5. **Connect.** The app registers the stdio command above as an MCP server. The
-   agent starts it for a run and kills it afterward.
+5. **Connect.** Register `http://127.0.0.1:8001/mcp` in the agent's HTTP MCP
+   settings. This is the VM's own backend and stays available between runs.
 6. **Browser.** Attended applications open the browser on the same machine. It is
    the largest memory user during a run. Follow "Order of work on a small
    machine": tailor with the browser closed, then open it to fill the form.
@@ -331,6 +343,8 @@ The agent on the always-on machine fills this in and sends it back.
 - [ ] Machine: CPU architecture, total memory, swap (`free -m`), Python version.
 - [ ] Free memory before starting: the `available` column of `free -m`.
 - [ ] `/health/memory` right after `start.sh`.
+- [ ] `/health/memory` before and after one HTTP MCP initialize → list tools →
+  `list_jobs`; record RSS and whether it stays within 200 MB.
 - [ ] Run one job hunt. Record `/health/memory` and `free -m` during it and after it.
   Gather jobs with the browser, close it, then save and score the batch.
 - [ ] Run one attended apply, with its browser open. Record `/health/memory` and

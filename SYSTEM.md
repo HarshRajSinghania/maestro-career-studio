@@ -250,8 +250,8 @@ this contract. Code citing "§4" lands here; the table says which file to open.
      Raw ASGI, never `BaseHTTPMiddleware`: it wraps chat SSE. **Host → Origin → CORS** follows `add_middleware`
      PREPENDING, so `main.py` reads in reverse (pinned by test); CORS and the gate read ONE `ALLOWED_ORIGINS` list.
   3. **Extension origins are exact ids**, never a pattern: `settings.maestro_cs_extension_ids` →
-     `chrome-extension://<id>` entries in `allow_origins` (a regex trusts EVERY installed extension). Empty = no
-     extension may call the API, logged at startup; this enforces §11 item 19's refusal of untrusted origins.
+     `chrome-extension://<id>` entries in `allow_origins` (a regex trusts EVERY installed extension). Empty refuses
+     extension writes carrying Origin; Chromium's host-permitted extension GETs omit Origin, so reads are not blocked.
   4. **Template source is data, not code.** `pdf_render._environment()` is a `SandboxedEnvironment` — `Template.source`
      comes from the web editor, chat and MCP, and a plain `Environment` turns any of those into arbitrary Python (`(((
      x.__init__.__globals__ )))`). The `(((`/`((*` delimiters are ergonomics, not a control.
@@ -298,15 +298,15 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   `services/placement_targets.py` owns the placement-target contract, and the frontend's `buildPlacementTargets`
   hand-mirrors its targets shape. Extra targets require `section="extra"`, a stable `section_key`, and either an enabled
   entry's original index or, for a flat bullets section, the same stable key as `index_or_category`.
-- **MCP control invariants** `{#inv-mcp-controls}`: no MCP tool name contains "delete"; no set-default-template tool.
-  Registration is pinned in `mcp_server/tests/test_server.py` — add new tools there.
-- **MCP lives inside the app.** `{#inv-mcp-inside-the-app}` `/mcp` and `/mcp/{profile}` use plain Routes behind
-  REST's Host → Origin → CORS stack; SDK DNS-rebinding protection is OFF. Never a second port or `/api/sync` route.
-  Pins: `tests/test_mcp_http_boundary.py` (Host/Origin, sync host, placement), `mcp_server/tests/test_http.py` (SDK protection).
+- **MCP control invariants** `{#inv-mcp-controls}`: no tool name contains "delete"; no set-default-template tool (`mcp_server/tests/test_server.py`).
+- **MCP lives inside the app.** `{#inv-mcp-inside-the-app}` `/mcp` and `/mcp/{profile}` are routed inside FastAPI behind
+  REST's SyncPublicHost → Host → Origin → CORS stack; SDK DNS-rebinding protection is OFF so that stack stays the one
+  definition; never a second port or `/api/sync` route. Pins: `tests/test_mcp_http_boundary.py`, `mcp_server/tests/test_http.py`.
+- **MCP tools run off the event loop.** `{#inv-tools-off-loop}` Every registered MCP tool runs on a worker thread
+  through `mcp_server.http`'s own limiter; module functions stay sync (`tests/test_mcp_http_loopback.py`, `mcp_server/tests/test_http.py`).
 - **`tailor_application` vs `edit_application`** `{#inv-tailor-vs-edit}` (MCP): the former REPLACES `customized_json`
   wholesale from the BASE resume; the latter applies ops to the CURRENT draft — docstrings lead with this; keep them
-  unmistakable. Edit indices are **0-based into the full JSON section array**, including `enabled: false` rows (PDF
-  render omits those — never display ordinals). Successful PATCH `/edits` responses echo `applied[]`.
+  unmistakable. Edit indices are **0-based into the full JSON array**, including `enabled: false` rows omitted from PDF; PATCH `/edits` echoes `applied[]`.
 - **Autofill telemetry and run traces carry no VALUES.** `{#inv-autofill-telemetry-no-values}` `POST
   /api/autofill/telemetry` stores label, kind, rule id, option texts, outcome, host — never what was typed, was there
   before, or any AI answer: no value column, `extra="forbid"`, sw re-filters to six keys. `POST /runs` stores one strict
@@ -470,40 +470,21 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   **The docstring is the API**: behavior, records and requirements, never instructions (directory policy).
   `test_server.py` ratchets `title`, four `ToolAnnotations` (`_read`/`_write`) and ~2048-dedented-char docstrings;
   overflow facts live in param `Field(description=…)` (`_EDIT_OPS_FIELD`). Lists page with bounded defaults;
-  `_best_effort_hint` returns `next: null` on a failed lookup after a landed write. Coverage: jobs (ingest/list/get/export;
-  `get_job_search_brief` with verbatim work-auth, typed `job_preferences` and the `auto_apply` guardrail block;
-  `find_job_by_url` posting-equality lookup; `store_extracted_jd` takes `source="agent"`; playbook in
-  docs/agentic-job-search.md, capture-and-score only), the proposal-ledger family (consent-gated
-  propose/decide/triage/resume/final-review/evidence/mark_submitted/report_failure; `record_filled_answers` records
-  each form page's answers and `get_final_review` names their `flags` (inv-filled-answers-local); `record_consent` stores the user's
-  yes/no, or the agent's automatic yes with channel `auto` while full automation is On; `mark_submitted(auto)` records the agent's confirmation note;
-  `get_job_site_login` hands the login to a Queued/approved job's agent (§6); filer and create-lock rules: `docs/entities/others.md`, "MCP proposal filer"), base resumes
-  (`list_resume_versions`/`get_resume_version`/`restore_resume_version` — kind is REST `base`|`application`, details carry the parent diff, a restore
-  is a new version; `archive_base_resume`/`unarchive_base_resume` hide from `list_base_resumes` without deleting; those
-  five and `set_base_resume_identity` (a base's only anchor writer, `""`/`[]` clear) are **full-profile only**), health
-  (run/get + waivers; a finding carries its bullet's own `question`, `ask_kind`, `measure_target`/`alt_question`, `evidence` and `gain`, a report `next_grade`; disputes and the word bank
-  are web-only; the bank uses GET/PUT), the full tailoring workflow (session tools take **`tailoring_session_id`** — breaking rename, no
-  legacy alias — and carry `base_anchors`; `resolve_gaps`' evidence-carrying actions are gated server-side — §4;
-  `quick_tailor` is the profile-driven fast path; `score_ats(include_other_countries)` returns a `countries` block
-  naming bases skipped for the job's country), render + PDF inspection/upload (`docs/entities/others.md`, "PDF tools"), application
-  tracking, `record_run` (finished automation reports; `docs/entities/agent-runs.md`), the apply package,
-  templates (draft/validate only; Typst constraints in `create_template_draft`'s
-  docstring, `fmt.*` knobs on `get_template`), explore analytics, `get_autofill_profile` (`profile.eeo` consent-gated),
-  and `get_career_context` (read-only; anti-fabrication framing in the docstring). The Career KB is writable via MCP:
-  reads carry IDs the context prose does not; entity/profile writes land directly, but POINTS go through the user's
-  gate — ingest lands drafts, `kb_sync_base` drafts new/drifted base-resume items (no LLM, no auto-approve), and
-  `kb_approve_points` is the ONE approval path (`approved|retired`), its gate a convention the docstring states (the
-  value is the user's decision), not server enforcement (`record_consent` precedent). `kb_edit_point` has no `state`
-  param; a text change forces `state="draft"`. No delete tool; document upload stays web-only. **Scoped profiles**:
+  `_best_effort_hint` returns `next: null` on a failed lookup after a landed write.
+  Coverage: [docs/entities/others.md](docs/entities/others.md), "MCP tool coverage".
+  **Scoped profiles**:
   `profiles.py` owns `full` / `hunt` / `apply` / `explore` / `templates` / `career` (88 tools); `/mcp` = `full`, `/mcp/{profile}` = its allowlist.
-  Lifespans run fresh stateful JSON sessions; `http.py` offloads sync tools to its eight-worker limiter. Stdio filters `MAESTRO_CS_MCP_PROFILE` (default `full`; §13 `mcp-stdio-venv`).
+  Lifespans run fresh stateful JSON sessions; tools use `http.py`'s eight-worker limiter (§6 inv-tools-off-loop).
+  Stdio filters `MAESTRO_CS_MCP_PROFILE` (default `full`; migration state: §13 `mcp-stdio-venv`).
   Hints use request `CURRENT_PROFILE`, else env (pins: `mcp_server/tests/test_profiles.py`, `test_server.py`, `test_http.py`).
   Enable ONE profile per chat (`full` carries KB writes); `MAESTRO_CS_*` has no legacy fallback. **Apply executor:** headed Chrome (`docs/entities/others.md`, "Attended executor"; apply playbook, "Unattended (full automation)").
   **Plugin:** `plugins/maestro-career-studio/`: Claude Code's `.mcp.json` and Codex's `.codex-mcp.json` connect by URL; Codex prompts for durable decisions, login/upload, health-gate waivers, restores, KB approval and sync. Claude installs use a tagged local checkout; Codex uses a release-tag Git ref and sparse paths `.agents/plugins` + `plugins`; policy `PRIVACY.md`.
   Settings › Connected agents' **Connect an agent app** (`connect-assistant`) selects a tool set and copies commands/URLs, opens install links or downloads the Claude Desktop bundle.
   `GET /api/setup/connect?profile=full` composes values from `MAESTRO_CS_PUBLIC_BACKEND_URL` (default localhost:8000; compose host port unless overridden); `/api/setup/connect/bundle` serves `MCPB_BUNDLE_PATH` (compose read-only mount; `tests/test_setup_connect.py`).
-  The dependency-free Node ≥18 `.mcpb` bridges stdio↔HTTP: `MAESTRO_CS_BACKEND_URL` defaults to localhost:8001; `MAESTRO_CS_MCP_PROFILE` selects `/mcp` or `/mcp/{profile}`.
-  Requests are ordered; a stale session replays initialize + initialized before one retry, preserving `clientInfo` (`mcpb/tests/bridge.test.js`).
+  The dependency-free Node ≥18 `.mcpb` bridges stdio↔HTTP with no assistant-side Docker/Python: `MAESTRO_CS_BACKEND_URL`
+  defaults to localhost:8001; `MAESTRO_CS_MCP_PROFILE` selects `/mcp` or `/mcp/{profile}` (no trailing slash).
+  Requests are ordered; stale sessions replay initialize + initialized before one retry, preserving `clientInfo`
+  (`mcpb/tests/bridge.test.js`). HTTP `serverInfo.version` reads `APP_VERSION`, else `dev` (`mcp_server/tests/test_http.py`).
 - **Guided tailoring workflow** (`mcp_server/workflow.py`): wrapped tools carry a `next` envelope
   (`state`/`blocking`/`offer`/`ask_user`/`options`/`call`) that walks §5's arc — score all bases → recommend →
   quick|custom → tailor → render → apply readiness — unnarrated. `workflow.py` is PURE (no httpx/DB/LLM), a
@@ -638,10 +619,11 @@ with the failure mode that bought it. Code citing "§8" lands here.
 
 ## 9. Dev & test environment
 
-- Use the Python interpreter from the backend's virtual environment; backend installed editable
-  (`pip install -e ".[dev,mcp]"` — beware the stale-`.pth` gotcha: it can pin `app`/`mcp_server` to an OLD
-  worktree for anything run outside a repo dir, including the Claude Desktop MCP server; reinstall + restart
-  client to fix).
+- Use the backend venv's Python, installed editable (`pip install -e ".[dev,mcp]"`); run from `backend/`.
+  A stale `.pth` can pin `app`/`mcp_server` to an old worktree outside that cwd; reinstall and restart the process.
+- **MCP loopback and public URL:** `BACKEND_URL` targets REST inside this backend (`http://localhost:8000` in Docker;
+  native exports `http://127.0.0.1:$MAESTRO_PORT`). `MAESTRO_CS_PUBLIC_BACKEND_URL` is the assistant-facing local address
+  used by Connect an agent app (compose host port, default 8001; native exports its port). Neither publishes `/mcp`.
 - **The database is a file.** `data/maestro_cs.sqlite3` (compose bind-mounts `./data` to `/app/data`), WAL,
   pragmas set per connection by `app/db.make_engine` — the ONE engine constructor (app, tests, tools);
   `prepare_sqlite_file` mints it 0600 and `migrations/env.py` calls it too, so a first boot creates the file
@@ -684,7 +666,7 @@ with the failure mode that bought it. Code citing "§8" lands here.
   `/mnt/c` (SQLite WAL over the Windows share is untrusted; the scripts are bash). `.gitattributes` forces LF
   so a clone cannot CRLF scripts or `.env`; `setup-mcp.sh` is not a Windows route. The `.mcpb` uses HTTP on macOS, Windows and Linux without Docker on the assistant's side.
   The upload host root is `${PWD}` (compose cwd; `update.sh` pins it to the repo) unless `MAESTRO_CS_UPLOAD_HOST_ROOT` overrides it; Windows joins with `\`.
-- **Native run (no Docker)** — `docs/native-install.md`: `backend/scripts/native/` runs one loopback worker under `$MAESTRO_HOME`; `BACKEND_URL` and `MAESTRO_CS_PUBLIC_BACKEND_URL` use `http://127.0.0.1:$MAESTRO_PORT`, `MCPB_BUNDLE_PATH` uses the checkout's `mcpb/maestro-career-studio.mcpb` (`tests/test_native_scripts.py`).
+- **Native run (no Docker)** — `docs/native-install.md`: `backend/scripts/native/` runs one loopback worker under `$MAESTRO_HOME`; URLs follow the MCP rule above, `MCPB_BUNDLE_PATH` uses the checkout's `mcpb/maestro-career-studio.mcpb` (`tests/test_native_scripts.py`).
   `slow` tests skip with `MAESTRO_SKIP_SLOW` (CI); `integration` MCP loopback and `tests/sync/test_two_machines.py`
   run in CI ON PURPOSE, never `slow`: no downloads. With `EMBEDDINGS_OUT_OF_PROCESS` at most ONE embedding
   helper runs per process (`embeddings._HELPER_LOCK`); two ~290 MB helpers OOM. `GET /health/memory` reports memory.
@@ -854,6 +836,8 @@ citation. Priority lives in the item text, not in the ordinal.
 
 ## 12. Gotchas that have bitten before
 
+- **Sync MCP tools deadlock on the event loop** (2026-10-10 spike): a same-backend REST call blocks single-worker
+  uvicorn → `http.offload_tools` uses its own worker limiter; pinned by `tests/test_mcp_http_loopback.py`.
 - **Owned-session prompt reads never seed** (2026-10-10): a lazy INSERT waited out `busy_timeout` behind a caller's
   write and hid a mocked outage → only caller-supplied sessions seed; startup seeds the rest (`tests/test_prompts_service.py`).
 - **Guard files before commit** (2026-10-06): refusal still deleted documents/changed previews → check before disk I/O, including helpers (`tests/sync/test_guard.py`).
@@ -874,12 +858,10 @@ citation. Priority lives in the item text, not in the ordinal.
   `id_key` (`resume_lint.py`). v3 kept the measure, digit-quoting analogue and uncertain keys; detail asks are new.
 - **A prompt-contract change bumps `RUBRIC_VERSION`** (2026-09-25): cache rows key on text + rubric version + model,
   so unchanged text kept its old judgment → bump it and resync the prompt row; overrides and "no number" survive.
-- **A GUI-launched process has no shell `PATH`** (2026-09-20): MacTeX at `/Library/TeX/texbin` is invisible to the
-  desktop shell and to a Claude Desktop child, so a bare `pdflatex` does not resolve. `engines.find_pdflatex` searches
-  the TeX homes after PATH, and every run spawns the resolved ABSOLUTE path.
-- **A seeded template copies its source only on INSERT** (2026-09-20): v0.4.0's Postgres import landed rows AFTER
-  migrations ran, so a migration-time rewrite hit an empty file and the importer re-landed old bytes →
-  `template_registry.SUPERSEDED_SEED_DIGESTS` resyncs at SEED time.
+- **A GUI-launched process has no shell `PATH`** (2026-09-20): a bare `pdflatex` misses MacTeX's `/Library/TeX/texbin`
+  in desktop apps → `engines.find_pdflatex` searches TeX homes after PATH; every run spawns its absolute path.
+- **A seeded template copies source only on INSERT** (2026-09-20): import landed rows after migrations, restoring
+  old bytes → `template_registry.SUPERSEDED_SEED_DIGESTS` resyncs at seed time.
 - **`foreign_keys` is per connection, and defaults OFF** (2026-09-19): `journal_mode` persists in the file; `foreign_keys`,
   `synchronous` and `busy_timeout` reset every connect, so 21 `ondelete=` cascades silently stopped → every SQLite
   engine goes through `app.db.make_engine`.

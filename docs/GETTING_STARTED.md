@@ -218,119 +218,105 @@ and the [README's Companion section](../README.md#the-companion-browser-extensio
 
 ## 5. Connect your AI assistant (optional)
 
-MCP is a connector that lets Claude, ChatGPT or Codex use the app for you, by
-chat instead of clicking. The app must be running (`docker compose up -d`).
+MCP lets an AI assistant use Maestro by chat. Keep the app running. HTTP MCP
+clients connect to the backend on this computer; claude.ai and chatgpt.com web
+connectors are outside this setup.
 
-It works in the **desktop and command-line apps** — Claude Desktop, Claude
-Code, the Codex CLI and the ChatGPT desktop app — not in claude.ai or
-chatgpt.com in a web browser.
+Open Settings › Connected agents › **Connect an agent app**. Its **Tool set**
+selector defaults to `full` (all 88 tools). Choose one set per chat.
 
-### Claude
+### Claude Desktop
 
-Settings → **Extensions** → **Install Extension**, then select
-`maestro-career-studio/mcpb/maestro-career-studio.mcpb` inside your project
-folder. Leave the fields as they are. One install covers Claude Desktop and
-Claude Code sessions inside the Claude app. It works on macOS and Windows; on
-Windows with WSL, the file is at
-`\\wsl.localhost\Ubuntu\home\<your-user>\maestro-career-studio\mcpb\maestro-career-studio.mcpb`.
+Download `maestro-career-studio.mcpb` from the card or the
+[release](https://github.com/seinun-ai/maestro-career-studio/releases), then
+double-click it to install in Claude Desktop. You can also use Settings →
+**Extensions** → **Install Extension** and select the downloaded file.
 
-Do **not** use Settings → Connectors → Add custom connector — that is for
-online services, and this runs on your computer.
+The bundle is a Node stdio-to-HTTP bridge to Maestro on this computer. It needs
+no Docker or Python on Claude's side and works on macOS, Windows and Linux.
+Leave **Maestro address** at `http://localhost:8001` unless you changed the
+backend port. The bundle's **Tool profile** selects the tool set. If you used
+the older Docker-based bundle, reinstall this one.
 
-### Codex / ChatGPT desktop
+### URL clients: Claude Code, Codex, Cursor and VS Code
 
-Settings → **Plugins** → **Add** → **Add plugin marketplace**, with:
+The card copies a command for Claude Code or Codex CLI, opens an install link
+for Cursor or VS Code, and copies the URL for any other HTTP MCP client. With
+the default Docker install, the commands are:
+
+```bash
+claude mcp add --transport http maestro-career-studio http://localhost:8001/mcp
+codex mcp add maestro-career-studio --url http://localhost:8001/mcp
+```
+
+Use `/mcp` exactly — no trailing slash (`POST /mcp/` redirects with 307).
+Scoped tool sets use `/mcp/hunt`, `/mcp/apply`, `/mcp/explore`, `/mcp/templates`
+or `/mcp/career`. If you changed the backend port, copy the card's values.
+
+For the Codex app, open **Plugins** › **Add** › **Create custom MCP server**,
+choose **Server URL**, paste the URL and set **Authentication** to **No authentication**. Leave
+**Tunnel** off: it would share your unauthenticated local Maestro.
+
+For the Codex plugin route, choose **Add a marketplace** with:
 
 | field | value |
 | --- | --- |
 | Source | `seinun-ai/maestro-career-studio` |
-| Git ref | `main` |
-| Sparse paths | *leave empty* |
+| Git ref | the release tag you are installing, for example `v0.9.0` |
+| Sparse paths | `.agents/plugins` and `plugins` |
 
-Then open the **Maestro Career Studio** entry and press **Install**. From a
-terminal instead:
+Install **Maestro Career Studio**. The CLI equivalent is (replace `v0.9.0`
+with your release tag):
 
 ```bash
-codex plugin marketplace add seinun-ai/maestro-career-studio
-```
-```bash
+codex plugin marketplace add seinun-ai/maestro-career-studio --ref v0.9.0 --sparse .agents/plugins --sparse plugins
 codex plugin add maestro-career-studio@maestro-career-studio
 ```
 
-A standalone Claude Code CLI uses the same marketplace:
-`claude plugin marketplace add https://github.com/seinun-ai/maestro-career-studio`.
+For a Claude Code plugin install, use the release-tag local checkout in the
+[plugin guide](../plugins/maestro-career-studio/README.md#install).
+Choose one connection route per client so tools appear once.
 
-### Other apps: the setup script
-
-For Cursor, Windsurf and other apps, run this from the project folder. It
-needs **Python 3.12 or newer** on your computer, and prints the settings to
-paste into each app:
-
-```bash
-./scripts/setup-mcp.sh
-```
-
-On Windows, skip the script: it writes Linux paths that Windows apps can't
-run. Use the extension, the plugin, or the config below.
-
-### If the install did not work: write the config by hand
-
-Both apps read a plain config file, and adding the server there always
-works. Use it **instead of** the extension or plugin, never alongside it —
-otherwise every tool shows up twice.
-
-<details><summary><b>Claude Desktop</b> — claude_desktop_config.json</summary>
-
-Open the file from **Settings → Developer → Edit Config**. It lives at
-`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS
-and `%APPDATA%\Claude\claude_desktop_config.json` on Windows.
-
-**Fully quit Claude first** (Cmd+Q on macOS; on Windows, right-click the Claude
-icon by the clock and choose Quit — closing the window is not enough), or
-your edit may be lost. Add to `mcpServers`:
-
-```json
-"maestro-career-studio": {
-  "command": "docker",
-  "args": ["exec", "-i",
-           "-e", "BACKEND_URL=http://localhost:8000",
-           "-e", "MAESTRO_CS_MCP_PROFILE=full",
-           "maestro-career-studio-backend-1",
-           "python", "-m", "mcp_server.server"]
-}
-```
-
-Reopen Claude and check that it is listed under **Settings → Connectors**.
-
-</details>
-
-<details><summary><b>Codex / ChatGPT desktop</b> — ~/.codex/config.toml</summary>
-
-Open the file from **Settings → Configuration → open config.toml** (labels
-vary between versions). It lives at `~/.codex/config.toml`
-(`%USERPROFILE%\.codex\config.toml` on Windows). Append:
+**Hand-config fallback.** Codex CLI and the Codex app share
+`~/.codex/config.toml`. Append:
 
 ```toml
 [mcp_servers.maestro-career-studio]
-command = "docker"
-args = ["exec", "-i",
-        "-e", "BACKEND_URL=http://localhost:8000",
-        "-e", "MAESTRO_CS_MCP_PROFILE=full",
-        "maestro-career-studio-backend-1",
-        "python", "-m", "mcp_server.server"]
+url = "http://localhost:8001/mcp"
 enabled = true
 ```
 
-Restart the app and check that it is listed under **Settings → MCPs**. You
-can also enter the same command and arguments in **MCPs → Connect to a custom
-MCP**, type **STDIO**.
+Claude Code and Cursor use an HTTP entry in their `mcpServers` map:
 
-</details>
+```json
+{
+  "mcpServers": {
+    "maestro-career-studio": {
+      "type": "http",
+      "url": "http://localhost:8001/mcp"
+    }
+  }
+}
+```
 
-If the tools don't appear, check that the app is running (`docker compose ps`).
-Leave the tool profile on `full`. Every tool, the other profiles and more
-troubleshooting are in
-[`backend/mcp_server/README.md`](../backend/mcp_server/README.md).
+VS Code's `.vscode/mcp.json` uses `servers` instead of `mcpServers`, with the
+same `type` and `url`. Claude Desktop uses the bundle above; its manual Node
+bridge fallback is in the [MCP guide](../backend/mcp_server/README.md#by-hand).
+
+`/mcp` has no authentication by design: a local process can already reach REST.
+It sits behind the same Host/Origin checks as REST. Never publish port 8001 or
+proxy `/mcp` beyond this computer.
+
+### Legacy stdio (one release)
+
+Existing stdio connections keep working for one release. If your client only
+speaks stdio, use [`scripts/setup-mcp.sh`](../scripts/setup-mcp.sh). The script
+and host stdio venv are deprecated and removed in v0.10.0; the
+`maestro-career-studio-mcp` entry point remains as a compatibility fallback.
+
+If tools do not appear, check that Maestro is running and that your URL uses
+its backend port. Every tool, profile and troubleshooting step is in the
+[MCP guide](../backend/mcp_server/README.md).
 
 ## 6. Where it can go next
 

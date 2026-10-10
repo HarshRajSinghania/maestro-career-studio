@@ -92,6 +92,22 @@ def test_responses_are_json_and_stateful(client):
     assert r.headers.get("mcp-session-id")
 
 
+@pytest.mark.parametrize("profile", ["full", "hunt", "apply", "explore", "templates", "career"])
+@pytest.mark.parametrize("app_version, expected", [("0.9.0", "0.9.0"), (None, "dev")])
+def test_initialize_reports_maestro_version_for_every_profile(
+    monkeypatch, profile, app_version, expected
+):
+    if app_version is None:
+        monkeypatch.delenv("APP_VERSION", raising=False)
+    else:
+        monkeypatch.setenv("APP_VERSION", app_version)
+    path = "/mcp" if profile == "full" else f"/mcp/{profile}"
+    with TestClient(_app(mcp_http.McpEndpoint())) as c:
+        response = c.post(path, json=INIT, headers=HDR)
+        assert response.status_code == 200, response.text
+        assert response.json()["result"]["serverInfo"]["version"] == expected
+
+
 def test_an_unknown_profile_is_404(client):
     assert client.post("/mcp/nope", json=INIT, headers=HDR).status_code == 404
 

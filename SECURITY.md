@@ -30,17 +30,14 @@ as costing all of that.
 
 ### Zero authentication is a real constraint
 
-There is **no authentication or authorization on any HTTP or MCP endpoint.** Any
-client that can reach the port can read and write everything. Consequences:
+REST and `/mcp` have **no authentication by design**: a local process can already
+reach REST and read or change your data. MCP uses the same FastAPI app and the
+same Host → Origin → CORS checks as REST. Consequences:
 
 - **Never bind these services to `0.0.0.0`, a LAN interface, or the public
-  internet.** If you must reach the app from another machine, put it behind a
-  reverse proxy that terminates TLS and enforces authentication itself, and add
-  that proxy's hostname to **both** `ALLOWED_HOSTS` and `FRONTEND_ALLOWED_HOSTS`,
-  plus its origin to `ALLOWED_WEB_ORIGINS` (§3). All three, or one of the layers
-  refuses the traffic.
-- **Keep MCP on the STDIO transport.** The HTTP transport means exposing an
-  unauthenticated backend holding your full employment history.
+  internet. Never publish port 8001 or proxy `/mcp` beyond this computer.** This
+  includes MCP client tunnel options. The sealed `/api/sync` channel in §5 is
+  the only route intended for another machine.
 - Anything else running as your user on the same machine can reach the API. This
   is inherent to the design, and it is the trade that buys you a tool with no
   cloud account attached.
@@ -80,10 +77,10 @@ API with no authentication the write lands and the browser merely withholds the
 reply. Reading the answer was never the attack.
 
 So an `Origin` header that is present and not on the allowlist is refused
-outright, before routing. A request with **no** `Origin` is allowed: MCP over
-stdio-to-HTTP, `curl`, and the container healthcheck send none, and none of them
-is a browser. Browsers are the only clients that attach the header, and they
-attach it truthfully.
+outright, before routing. A request with **no** `Origin` is allowed: HTTP MCP,
+`curl`, and the container healthcheck send none. Chromium also omits `Origin`
+on an extension's GET to a host it has permission for; the Origin gate does
+not block those reads.
 
 Default: `http://localhost:3000,http://127.0.0.1:3000`. A host is `studio.lan`;
 an origin is `http://studio.lan` — this list and `ALLOWED_HOSTS` move together.
@@ -92,9 +89,10 @@ an origin is `http://studio.lan` — this list and `ALLOWED_HOSTS` move together
 
 The companion extension calls the API from a `chrome-extension://` origin, and
 CORS admits those origins **by exact id**. Set it to the id shown on
-`chrome://extensions`; leave it unset and no extension can call the API. Do not
-widen this to a pattern — every extension you have installed would then be able
-to read your entire career record.
+`chrome://extensions`; leave it unset and extension writes carrying an Origin
+are refused. This allowlist blocks extension writes, not reads: Chromium can
+send extension GETs without Origin when the extension has host permission.
+Do not widen it to a pattern, which would admit writes from every installed extension.
 
 ### Template rendering is sandboxed, and the compiler's file access is restricted
 

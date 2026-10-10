@@ -2,6 +2,32 @@
 
 > Reference tier, extracted from [SYSTEM.md](../../SYSTEM.md) (§4 Core entities). The header contract there governs this file too: integrate don't append, present tense, no dates outside the ledgers, update in the same change that alters the behaviour described.
 
+- **MCP tool coverage:** jobs (ingest/list/get/export;
+  `get_job_search_brief` with verbatim work-auth, typed `job_preferences` and the `auto_apply` guardrail block;
+  `find_job_by_url` posting-equality lookup; `store_extracted_jd` takes `source="agent"`; playbook in
+  docs/agentic-job-search.md, capture-and-score only), the proposal-ledger family (consent-gated
+  propose/decide/triage/resume/final-review/evidence/mark_submitted/report_failure; `record_filled_answers` records
+  each form page's answers and `get_final_review` names their `flags` (inv-filled-answers-local); `record_consent` stores the user's
+  yes/no, or the agent's automatic yes with channel `auto` while full automation is On; `mark_submitted(auto)` records the agent's confirmation note;
+  `get_job_site_login` hands the login to a Queued/approved job's agent (§6); filer and create-lock rules: `docs/entities/others.md`, "MCP proposal filer"), base resumes
+  (`list_resume_versions`/`get_resume_version`/`restore_resume_version` — kind is REST `base`|`application`, details carry the parent diff, a restore
+  is a new version; `archive_base_resume`/`unarchive_base_resume` hide from `list_base_resumes` without deleting; those
+  five and `set_base_resume_identity` (a base's only anchor writer, `""`/`[]` clear) are **full-profile only**), health
+  (run/get + waivers; a finding carries its bullet's own `question`, `ask_kind`, `measure_target`/`alt_question`, `evidence` and `gain`, a report `next_grade`; disputes and the word bank
+  are web-only; the bank uses GET/PUT), the full tailoring workflow (session tools take **`tailoring_session_id`** — breaking rename, no
+  legacy alias — and carry `base_anchors`; `resolve_gaps`' evidence-carrying actions are gated server-side — §4;
+  `quick_tailor` is the profile-driven fast path; `score_ats(include_other_countries)` returns a `countries` block
+  naming bases skipped for the job's country), render + PDF inspection/upload (`docs/entities/others.md`, "PDF tools"), application
+  tracking, `record_run` (finished automation reports; `docs/entities/agent-runs.md`), the apply package,
+  templates (draft/validate only; Typst constraints in `create_template_draft`'s
+  docstring, `fmt.*` knobs on `get_template`), explore analytics, `get_autofill_profile` (`profile.eeo` consent-gated),
+  and `get_career_context` (read-only; anti-fabrication framing in the docstring). The Career KB is writable via MCP:
+  reads carry IDs the context prose does not; entity/profile writes land directly, but POINTS go through the user's
+  gate — ingest lands drafts, `kb_sync_base` drafts new/drifted base-resume items (no LLM, no auto-approve), and
+  `kb_approve_points` is the ONE approval path (`approved|retired`), its gate a convention the docstring states (the
+  value is the user's decision), not server enforcement (`record_consent` precedent). `kb_edit_point` has no `state`
+  param; a text change forces `state="draft"`. No delete tool; document upload stays web-only.
+
 - **BaseResume**: DB row + `base_resumes/<slug>.json` on disk; soft-deleted
   rows still serve on GET-by-slug but are excluded from lists. Renders like
   applications do. **Archive** (`archived_at`) is a SEPARATE axis from

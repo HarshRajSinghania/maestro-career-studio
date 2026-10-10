@@ -419,29 +419,30 @@ the PDF. It runs on **your computer** against **your** data.
      capture is one tool call ending on a question with no result. Re-capture
      against a scored instance, then save here and add below the dashboard. -->
 
-With the app running, both install from their own settings — no terminal, no
-config file:
+With the app running, open Settings › Connected agents › **Connect an agent app**
+and choose a **Tool set**:
 
-- **Claude** — Settings → **Extensions** → **Install Extension** → select
-  `maestro-career-studio/mcpb/maestro-career-studio.mcpb` inside the folder you
-  cloned. One install covers Claude Desktop *and* Claude Code sessions inside the
-  Claude app.
-- **Codex / ChatGPT desktop** — Settings → **Plugins** → **Add** → add
-  `seinun-ai/maestro-career-studio` as a marketplace (ref `main`, sparse paths
-  empty), then **Install**.
+- **Claude Desktop** — download the `.mcpb` bundle from the card or the
+  [release](https://github.com/seinun-ai/maestro-career-studio/releases), then
+  double-click it. It bridges Claude's stdio connection to Maestro's local HTTP
+  endpoint and needs no Docker or Python on Claude's side. Reinstall the bundle
+  if you have the older Docker-based extension.
+- **URL clients** — Claude Code and Codex CLI get a copyable command; Cursor and
+  VS Code get install buttons; other HTTP MCP clients get a URL. The default is
+  `http://localhost:8001/mcp`. Use `/mcp` exactly — no trailing slash.
 
-Neither needs Python on your computer: both run inside the app you already
-started.
-
-**Other assistants** (Cursor, Windsurf, and others) — run the setup script; it
-prints a ready-to-paste config for each one (needs **Python 3.12+**):
+For Claude Code or Codex CLI, the commands are:
 
 ```bash
-./scripts/setup-mcp.sh
+claude mcp add --transport http maestro-career-studio http://localhost:8001/mcp
+codex mcp add maestro-career-studio --url http://localhost:8001/mcp
 ```
 
-Or open Claude Code or the Codex CLI in this folder and ask it to run the
-script for you.
+The [plugin guide](plugins/maestro-career-studio/README.md) covers release-tag
+marketplace installs. In Codex's app, use the release tag as **Git ref** and
+`.agents/plugins` plus `plugins` as **Sparse paths**. Plugins connect by URL too.
+Legacy stdio through `./scripts/setup-mcp.sh` remains for one release and is
+removed in v0.10.0; see the [MCP guide](backend/mcp_server/README.md#legacy-stdio).
 
 **Things to ask once it's connected:**
 
@@ -455,8 +456,9 @@ script for you.
 
 **Tool sets.** All 88 tools are on by default (`full`). Smaller sets — `hunt`,
 `apply`, `explore`, `templates`, `career` — keep a chat focused; pick one in the
-Claude extension's **Tool profile** setting or with
-`setup-mcp.sh --profile`. Use one set at a time.
+card's **Tool set** selector or the Claude Desktop bundle's **Tool profile**
+setting. Scoped URLs end in `/mcp/hunt`, `/mcp/apply`, `/mcp/explore`,
+`/mcp/templates` or `/mcp/career`. Use one set at a time.
 
 **Skills.** [`docs/skills/`](docs/skills/) has ready-made skills for a daily job
 hunt, an apply run that asks you only for what the app doesn't know (plus one
@@ -467,9 +469,10 @@ and scheduler. The **Automations** page in the app puts each one on the
 clipboard: copy a prompt into Claude Desktop, Codex or any MCP agent, and your
 agent asks when to run it.
 
-Keep the connection type **STDIO** (the default). The HTTP option would expose
-the app, which has no login — don't. (ChatGPT on the *web* can't reach a local
-app; use the desktop app.)
+`/mcp` has no authentication by design: a local process can already reach REST.
+It sits behind the same Host/Origin checks as REST. Never publish port 8001 or
+proxy `/mcp` beyond this computer. claude.ai and chatgpt.com web connectors are
+outside this local setup.
 
 Manual setup, every tool, and troubleshooting:
 [`backend/mcp_server/README.md`](backend/mcp_server/README.md).
