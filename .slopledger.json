@@ -12,7 +12,7 @@
         },
         {
           "kind": "command",
-          "cmd": "git grep -l 'docker\", \"exec\"\\|docker exec -i' -- ':!CHANGELOG.md' ':!docs/plans' ':!.slopledger.json'; test \"$?\" -eq 1"
+          "cmd": "git grep -lE '\"exec\", \"-i\"|docker exec -i' -- ':!CHANGELOG.md' ':!docs/plans' ':!.slopledger.json'; test \"$?\" -eq 1"
         }
       ]
     },

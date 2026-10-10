@@ -10,7 +10,7 @@
         "get_job_site_login": {"approval_mode": "prompt"},
         "prepare_application_pdf_upload": {"approval_mode": "prompt"},
         "report_failure": {"approval_mode": "prompt"},
-        "archive_base_resume": {"approval_mode": "prompt"},
+        "waive_health_gate": {"approval_mode": "prompt"},
         "restore_resume_version": {"approval_mode": "prompt"},
         "record_triage": {"approval_mode": "prompt"},
         "kb_approve_points": {"approval_mode": "prompt"},

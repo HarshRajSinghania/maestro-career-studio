@@ -54,8 +54,6 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-warn "setup-mcp.sh is deprecated and leaves in the next release. Connect by URL instead: open Settings › Connected agents › Connect an agent app, or run: claude mcp add --transport http maestro-career-studio http://localhost:8001/mcp"
-
 case "$PROFILE" in
   full|hunt|apply|explore|templates|career) ;;
   *) die "unknown profile '$PROFILE' (full, hunt, apply, explore, templates, career)" ;;
@@ -73,6 +71,7 @@ if [ -z "$BACKEND_URL" ]; then
   fi
   BACKEND_URL="http://localhost:$port"
 fi
+warn "setup-mcp.sh is deprecated and leaves in the next release. Connect by URL instead: open Settings › Connected agents › Connect an agent app, or run: claude mcp add --transport http maestro-career-studio $BACKEND_URL/mcp"
 note "backend url: $BACKEND_URL"
 
 # ---------------------------------------------------------------------------

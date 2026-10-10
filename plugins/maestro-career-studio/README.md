@@ -16,14 +16,33 @@ are in the
 
 ## Install
 
+For Claude Code, add a local marketplace from a release-tag checkout. Replace
+`v0.9.0` with the release you are installing:
+
+```bash
+git clone --branch v0.9.0 --depth 1 https://github.com/seinun-ai/maestro-career-studio.git maestro-career-studio-v0.9.0
+claude plugin marketplace add ./maestro-career-studio-v0.9.0
+claude plugin install maestro-career-studio@maestro-career-studio
+```
+
+Claude Code's marketplace-add help accepts local paths and
+`--sparse <paths...>`, but shows no Git ref option. The tagged checkout above
+pins the release without relying on an undocumented ref syntax.
+
 In the Codex app, choose **Add a marketplace** and enter:
 
 - **Source:** `seinun-ai/maestro-career-studio`
 - **Git ref:** the release tag you are installing, for example `v0.9.0`
-- **Sparse paths:** `plugins/`
+- **Sparse paths:** `.agents/plugins` and `plugins`
 
 Install **Maestro Career Studio** from that marketplace. Pin the Git ref to
 a release tag so updates are deliberate.
+
+The Codex CLI equivalent (replace `v0.9.0` with your release tag) is:
+
+```bash
+codex plugin marketplace add seinun-ai/maestro-career-studio --ref v0.9.0 --sparse .agents/plugins --sparse plugins
+```
 
 For a direct URL connection in Claude Code or Codex CLI, open Maestro's
 Settings › Connected agents › **Connect an agent app**, or run:
@@ -52,10 +71,11 @@ Maestro's backend. It starts no subprocess. Never publish port 8001 or proxy
 
 The Codex plugin asks for approval before these tools:
 `mark_submitted`, `record_consent`, `record_decision`, `get_job_site_login`,
-`prepare_application_pdf_upload`, `report_failure`, `archive_base_resume`,
+`prepare_application_pdf_upload`, `report_failure`, `waive_health_gate`,
 `restore_resume_version`, `record_triage`, `kb_approve_points`, and `sync_now`.
-These can record a durable decision, share a login, stage an upload, replace
-resume content, or sync data to your paired copy. The client prompts are
+These can record a durable decision, waive a health gate, share a login,
+stage an upload, replace resume content, or sync data to your paired copy.
+The client prompts are
 **in addition to Maestro's own consent gates**. Other tools have no per-tool
 client prompt in this configuration.
 
@@ -65,7 +85,8 @@ client prompt in this configuration.
 - **Tool results go to your assistant.** A tool exists to hand information to
   the assistant that called it: job postings, resume text, your career history
   and saved answers. They are then handled under your assistant provider's
-  privacy policy. MCP tools withhold voluntary EEO values.
+  privacy policy. Voluntary EEO answers are returned only after you turn on the
+  standing EEO consent in the app.
 - **AI features call the model provider you configured in the app.** Tools that
   generate text (tailoring, cover letters, screening answers, building your
   career history, health checks) make the backend send resume and job content
