@@ -347,6 +347,7 @@ class Connector:
             self.say(f"Add this under mcpServers in {path}:")
             self.say(json.dumps({"mcpServers": {SERVER_NAME: entry}}, indent=2))
             return 0
+        self._stop_previous_waiter()  # any call supersedes a pending one, whatever it does next
         servers = _servers(read_desktop_config(path), path)  # a broken file is refused before any wait
         if servers.get(SERVER_NAME) == entry:
             self.say("Maestro is already in Claude Desktop's config. Open Claude Desktop to load it.")
@@ -364,13 +365,12 @@ class Connector:
         return code
 
     def _stop_previous_waiter(self) -> None:
-        """One waiter at a time: a new deferral replaces a live earlier one."""
+        """One waiter at a time: any new call replaces a live earlier one."""
         old = procs.live_process(procs.read_json(self.waiter_record))
         if old is not None and old.pid != self.pid():
             procs.kill_tree(old, grace=2.0)
 
     def _defer(self, profile: str) -> int:
-        self._stop_previous_waiter()
         try:
             self.detach([WAITER_VERB, "--profile", profile], self.log_file)
         except detach_mod.DetachError as exc:

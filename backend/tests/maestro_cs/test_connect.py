@@ -864,3 +864,21 @@ def test_the_waiter_removes_its_record_when_it_finishes(tmp_path):
     write_config(conn, {"mcpServers": {}})
     assert conn.wait_and_write("full", timeout=10.0, poll=1.0) == 0
     assert not conn.waiter_record.exists()
+
+
+@pytest.mark.parametrize("scenario", ["now", "already_configured"])
+def test_any_call_stops_a_pending_waiter_not_only_a_deferral(tmp_path, scenario):
+    from maestro_cs import procs
+
+    conn, rec = make_connector(tmp_path, Recorder(running=(scenario == "now")))
+    write_config(conn, {"mcpServers": {"maestro-career-studio": ENTRY} if scenario != "now" else {}})
+    old = _sleeper()
+    try:
+        procs.write_record(conn.waiter_record, old.pid)
+        assert conn.connect("claude-desktop", now=(scenario == "now")) == 0
+        assert old.wait(timeout=10) is not None  # terminated
+        assert rec.detached == []
+    finally:
+        if old.poll() is None:
+            old.kill()
+            old.wait()
