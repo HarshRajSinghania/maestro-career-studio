@@ -51,7 +51,7 @@ const LINKS = [
  * - Daily limit: services/proposals._enforce_daily_cap refuses a recorded yes
  *   past the cap (reserved in the last 24 hours). The yes is recorded by the
  *   agent, so the app can't stop one that skips it, as the paragraph says.
- * - Browser apps: stdio MCP on this computer only (docs/GETTING_STARTED.md §5).
+ * - Assistant apps: HTTP MCP on this computer; connection actions are in the next card.
  */
 export function ConnectedAgentsCard() {
   const canId = useId();

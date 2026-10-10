@@ -501,8 +501,8 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   Hints use request `CURRENT_PROFILE`, else env (pins: `mcp_server/tests/test_profiles.py`, `test_server.py`, `test_http.py`).
   Enable ONE profile per chat (`full` carries KB writes); `MAESTRO_CS_*` has no legacy fallback. **Apply executor:** headed Chrome (`docs/entities/others.md`, "Attended executor"; apply playbook, "Unattended (full automation)").
   **Directory listing:** `plugins/maestro-career-studio/` (not `.mcpb`); policy `PRIVACY.md`.
-  `GET /api/setup/connect?profile=full` composes client commands, links and profile URLs from `MAESTRO_CS_PUBLIC_BACKEND_URL` (default localhost:8000; compose host port).
-  `/api/setup/connect/bundle` downloads `MCPB_BUNDLE_PATH` (read-only mount); availability/errors pinned in `tests/test_setup_connect.py`.
+  Settings › Connected agents' **Connect your assistant** (`connect-assistant`) selects a profile and copies commands/URLs, opens install links or downloads the Claude Desktop bundle.
+  `GET /api/setup/connect?profile=full` composes values from `MAESTRO_CS_PUBLIC_BACKEND_URL` (default localhost:8000; compose host port); `/api/setup/connect/bundle` serves `MCPB_BUNDLE_PATH` (read-only mount; `tests/test_setup_connect.py`).
 - **Guided tailoring workflow** (`mcp_server/workflow.py`): wrapped tools carry a `next` envelope
   (`state`/`blocking`/`offer`/`ask_user`/`options`/`call`) that walks §5's arc — score all bases → recommend →
   quick|custom → tailor → render → apply readiness — unnarrated. `workflow.py` is PURE (no httpx/DB/LLM), a

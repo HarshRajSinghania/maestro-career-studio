@@ -27,7 +27,7 @@ def test_full_automation_is_mounted_after_the_connected_agents_card():
     assert page.index("<ConnectedAgentsCard />") < page.index("<FullAutomationSection />")
     assert page.index("<FullAutomationSection />") < page.index("<McpWorkflowSection />")
     tabs = (_FRONTEND / "lib/settings-tabs.ts").read_text()
-    assert 'anchors: ["connected-agents", "full-automation",' in tabs
+    assert 'anchors: ["connected-agents", "connect-assistant", "full-automation",' in tabs
 
 
 def test_the_card_explains_what_the_switch_allows(source):

@@ -130,6 +130,22 @@ def test_connected_agents_keeps_its_order_and_a_place_for_the_explainer():
     assert agents.index("<McpWorkflowSection />") < agents.index("<AutoApplySection />")
 
 
+def test_connect_assistant_renders_right_after_the_connected_agents_explainer():
+    """Connection actions belong beside the explainer, before agent settings."""
+    page = _read("app/settings/page.tsx")
+    panels = _panels(page, list(_tab_table("SETTINGS_TABS")))
+    assert page.count("<ConnectAssistantCard />") == 1
+    assert re.search(r"<ConnectedAgentsCard />\s*<ConnectAssistantCard />", panels["agents"])
+
+
+def test_connect_assistant_card_id_matches_the_agents_tab_anchor():
+    """A connection-card deep link must open Connected agents and find its card."""
+    agents = re.search(r'value: "agents",.*?anchors: \[([^\]]*)\]', _TABS_LIB, re.S).group(1)
+    anchors = re.findall(r'"([\w-]+)"', agents)
+    assert anchors[anchors.index("connected-agents") + 1] == "connect-assistant"
+    assert 'id="connect-assistant"' in _read("components/settings/connect-assistant-card.tsx")
+
+
 def test_profile_lands_a_hash_once():
     """Planner decision 18 (Q9): one `useFocusSection()` on /profile, so a hash landing polls
     and rings once. The strip is handed the page's `focus`."""

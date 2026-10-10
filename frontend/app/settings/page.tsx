@@ -8,6 +8,7 @@ import { AboutSection } from "@/components/settings/about-section";
 import { AppearanceSection } from "@/components/settings/appearance-section";
 import { AutoApplySection } from "@/components/settings/auto-apply-section";
 import { ConnectedAgentsCard } from "@/components/settings/connected-agents-card";
+import { ConnectAssistantCard } from "@/components/settings/connect-assistant-card";
 import { FormFillingSection } from "@/components/settings/form-filling-section";
 import { FullAutomationSection } from "@/components/settings/full-automation-section";
 import { McpWorkflowSection } from "@/components/settings/mcp-workflow-section";
@@ -83,6 +84,7 @@ export default function SettingsPage({
           agents: (
             <>
               <ConnectedAgentsCard />
+              <ConnectAssistantCard />
               <FullAutomationSection />
               <McpWorkflowSection />
               <AutoApplySection />

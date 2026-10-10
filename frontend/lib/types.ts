@@ -475,6 +475,27 @@ export interface JobSiteLoginStatus {
   password_set: boolean;
 }
 
+/** GET /api/setup/connect: the backend composes every client's connection value. */
+export interface ConnectClient {
+  id: "claude-code" | "codex" | "codex-app" | "cursor" | "vscode" | "claude-desktop" | "other";
+  label: string;
+  kind: "command" | "deeplink" | "url" | "download" | "steps";
+  value: string;
+}
+
+export interface ConnectProfile {
+  name: "full" | "hunt" | "apply" | "explore" | "templates" | "career";
+  url: string;
+}
+
+export interface ConnectInfo {
+  backend_url: string;
+  mcp_url: string;
+  profiles: ConnectProfile[];
+  bundle_available: boolean;
+  clients: ConnectClient[];
+}
+
 interface SetupStep {
   done: boolean;
   detail: Record<string, unknown>;

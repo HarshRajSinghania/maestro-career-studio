@@ -1099,11 +1099,11 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 
 | Gate | Baseline (Task 0) | After |
 |---|---|---|
-| Full suite passed / skipped / wall | | 11,110 passed / 7 skipped (+1 known flaky sync replay test, pre-existing on main); Task 6 sandbox: 10,255 passed / 860 skipped / 23 failed / 1 error in 70.82 s (same socket/ps failures as Task 5; all 11 connect cases pass) |
+| Full suite passed / skipped / wall | | 11,110 passed / 7 skipped (+1 known flaky sync replay test, pre-existing on main); Task 6 sandbox: 10,255 passed / 860 skipped / 23 failed / 1 error in 70.82 s (same socket/ps failures as Task 5; all 11 connect cases pass). Task 7 sandbox: 10,257 passed / 860 skipped / 23 failed / 1 error in 85.40 s; failure/error names exactly match Task 6 |
 | Same in a CI-shaped venv | | Task 3: pending controller (online fresh install prohibited here) |
 | ruff / check_system_md / check_mcpb_bundle / node --test mcpb | | Task 3: pass / pass (994/1000) / pass / 4 passed, 3 Docker-dependent skipped. Tasks 4–5: ruff and check_system_md pass (994/1000); bundle/bridge untouched. Task 5: shellcheck unavailable locally (CI/controller pending) |
-| slop backend / frontend / extension | | Tasks 3–6: backend pass; frontend and extension untouched |
-| frontend tsc / lint / build | | |
+| slop backend / frontend / extension | | Tasks 3–6: backend pass; Task 7: backend and frontend pass; extension untouched |
+| frontend tsc / lint / build | | Task 7: tsc pass; lint pass (2 existing warnings); standard build blocked by Turbopack port bind; Webpack build blocked by offline Google Fonts; controller reruns the standard build |
 | G4 end to end (88 tools, list_jobs, render, get PDF) | — | |
 | G5 Claude Desktop bridge + restart mid-chat (owner) | — | |
 | G6 Claude Code / Cursor / Codex list 88; /mcp/hunt allowlist | — | Task 3: Codex checks pending controller/owner; scratch plugin candidates prepared |
@@ -1115,6 +1115,7 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 | Task 4 loopback / disabled-offload proof | — | green 1 passed; red: offload_tools disabled → TimeoutError at 10 s (controller) |
 | Task 5 loopback proxy / native BACKEND_URL | — | RED: 7 failed / 3 passed (missing trust_env=False and native URL); GREEN: all 10 new regression cases pass. Complete two-file run: 105 passed / 2 skipped / 21 existing socket/ps failures |
 | Task 6 setup connect / bundle | — | RED: 11 failed (missing settings/routes); GREEN: 30 passed (11 connect + 19 setup-status); ruff/docs/backend slop pass (994/1000); Compose YAML parses; Docker config and official link-doc recheck pending controller |
+| Task 7 Settings connect card | — | RED: 2 source pins failed; settings-tabs node 5 passed / 1 failed. GREEN: frontend slice 1,618 passed; settings-tabs node 6 passed; ruff/docs pass (994/1000); profile/clipboard/deeplink/bundle browser checks pending controller |
 
 ## Deviation log (append-only)
 
@@ -1156,3 +1157,12 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 | 6 | Change only the task's six implementation/test files | SYSTEM.md's header requires new endpoints and configuration conventions to be documented when they land | Integrate `/api/setup/connect` and bundle configuration in §7; tighten that section to keep 994/1000 lines | No Goal Card change; documentation contract |
 | 6 | `docker compose config -q` and task commit | Implementer instructions prohibit Docker and all git writes | Parse YAML and check the public URL/mount offline; leave Compose interpolation validation and commit to the controller | No Goal Card change; execution constraint |
 | 6 | Green full suite | The same 23 socket/ps failures and MCP loopback bind error as Task 5 recur; Chrome execution is prohibited | Keep scratch data destinations and the offline model cache, leave Chrome unavailable, record 10,255 passed / 860 skipped / 23 failed / 1 error; controller reruns with socket/process/browser access | Pinned behaviour never moves silently; verification constraint |
+| 7 | Positional `useQuery(["connect", profile], ...)` | The repo uses React Query 5, whose API takes an options object | Use `queryKey: ["connect", profile]` and `queryFn: () => getConnectInfo(profile)` | No Goal Card change; implementation adaptation |
+| 7 | Optional Connect an assistant setup row | Every checklist completion state comes from server status; there is no optional, undetectable completion state | Skip the optional row as the task permits; leave setup status untouched | Never expand scope |
+| 7 | Change only the listed frontend/test files | SYSTEM.md's header requires changed workflows and frontend conventions to stay current | Update §7 and the Settings convention in place without adding orientation lines | No Goal Card change; documentation contract |
+| 7 | Commit after the task and browser check | Implementer instructions prohibit git writes and Chrome | Leave changes uncommitted; controller checks the card on a fresh scratch stack and commits | No Goal Card change; execution constraint |
+| 7 | Bundle hint uses the supplied semicolon | The mandatory vocabulary ratchet forbids every UI semicolon | Say "The bundle is not on this install. See the guide." with a guide link | No Goal Card change; task copy rules |
+| 7 | Only add tests beside existing pins | `test_frontend_full_automation.py` pins the old adjacent anchors, conflicting with this task's required insertion | Retain the test and all ordering assertions; update its anchor sequence to include `connect-assistant`, alongside the new pins | Pinned behaviour never moves silently; mandated card placement |
+| 7 | `npm run build` | Turbopack's CSS worker binds a port; the sandbox refuses it (`Operation not permitted`) | Record the build failure; controller reruns the standard build with socket access | No Goal Card change; verification constraint |
+| 7 | Complete the production build offline | Next's documented Webpack fallback avoids the port bind but `next/font` cannot fetch Geist or Geist Mono from Google Fonts | Keep the app's font setup unchanged; controller runs `npm run build` with network/socket access | No Goal Card change; verification constraint |
+| 7 | Green full suite | First run: 10,251 passed / 860 skipped / 29 failed / 1 error; writable default scratch settings/artifacts add six failures beyond Task 6 | Restore Task 6's unavailable default destinations under scratch and rerun: 10,257 passed / 860 skipped / 23 failed / 1 error, exactly Task 6's socket/ps failure set; controller reruns with socket/process/browser access | Pinned behaviour never moves silently; verification constraint |

@@ -5,6 +5,8 @@ import type {
   AtsCompare,
   AtsScore,
   CareerExportMetadata,
+  ConnectInfo,
+  ConnectProfile,
   KBCaptureRequest,
   KBCaptureResponse,
   KBDocumentOut,
@@ -862,6 +864,10 @@ export function validateTemplate(templateId: string) {
     `/api/templates/${encodeURIComponent(templateId)}/validate`,
     { method: "POST" },
   );
+}
+
+export function getConnectInfo(profile: ConnectProfile["name"] = "full") {
+  return apiFetch<ConnectInfo>(`/api/setup/connect?profile=${encodeURIComponent(profile)}`);
 }
 
 export function listCareerExports() {
