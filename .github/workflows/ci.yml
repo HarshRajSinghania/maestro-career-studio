@@ -387,6 +387,7 @@ jobs:
         if: runner.os == 'Linux'
         shell: python
         run: |
+          import os
           import shutil
           import subprocess
           import sys
@@ -395,16 +396,37 @@ jobs:
 
           from maestro_cs import autostart
 
-          if shutil.which("systemd-analyze") is None:
+          tool = shutil.which("systemd-analyze")
+          if tool is None:
               print("::notice::systemd-analyze is not installed here; the unit was not verified")
               sys.exit(0)
           with tempfile.TemporaryDirectory() as tmp:
+              env = dict(os.environ)
+              if not env.get("XDG_RUNTIME_DIR"):  # a runner has no login session to provide one
+                  runtime = Path(tmp) / "runtime"
+                  runtime.mkdir(mode=0o700)
+                  env["XDG_RUNTIME_DIR"] = str(runtime)
               unit = Path(tmp) / autostart.UNIT_NAME
               # sys.executable stands in for the shim: verify checks that ExecStart exists
               unit.write_text(autostart.render_unit(sys.executable, Path(tmp) / "Maestro Home"),
                               encoding="utf-8")
               print(unit.read_text(encoding="utf-8"))
-              subprocess.run(["systemd-analyze", "--user", "verify", str(unit)], check=True)
+              help_text = subprocess.run([tool, "--help"], capture_output=True, text=True).stdout
+              command = [tool, "--user", "--man=no"]
+              if "--recursive-errors" in help_text:  # newer systemd only; keep other units' errors out
+                  command.append("--recursive-errors=no")
+              done = subprocess.run([*command, "verify", str(unit)], env=env,
+                                    capture_output=True, text=True)
+              output = (done.stdout or "") + (done.stderr or "")
+              print(output)
+              ours = [line for line in output.splitlines() if autostart.UNIT_NAME in line]
+              if ours:
+                  print("::error::systemd-analyze reports problems with the rendered unit:")
+                  print("\n".join(ours))
+                  sys.exit(1)
+              if done.returncode != 0:  # the manager or the bus would not start; not the unit's fault
+                  print(f"::warning::systemd-analyze exited {done.returncode} without naming the "
+                        "unit (no user manager on this runner?); the unit was not verified")
 
       # The runner is an administrator, so this proves the XML is accepted and the task can be
       # created, found and removed, NOT that a standard (non-admin) user can create it: that is

@@ -104,8 +104,21 @@ def test_maestro_cli_verifies_the_rendered_unit_with_systemd_analyze_on_linux():
     assert (step["if"], step["shell"]) == ("runner.os == 'Linux'", "python")
     run = step["run"]
     assert "autostart.render_unit(" in run
-    assert '["systemd-analyze", "--user", "verify", str(unit)], check=True' in run
     assert 'shutil.which("systemd-analyze")' in run  # a missing tool: a notice, not a failure
+
+
+def test_the_systemd_step_survives_a_runner_without_a_user_manager_but_fails_on_unit_errors():
+    run = _named_step(_workflow("ci.yml")["jobs"]["maestro-cli"], "Verify the rendered systemd unit")["run"]
+    # a runner has no user session: give the tool a runtime dir, skip man-page lookups, and add
+    # --recursive-errors=no only when this systemd-analyze lists it
+    expected = ['env["XDG_RUNTIME_DIR"]', '"--man=no"', 'if "--recursive-errors" in help_text',
+                '"--recursive-errors=no"', '"verify"', '"--user"',
+                # only a line that names OUR unit fails the step
+                "autostart.UNIT_NAME in line"]
+    for text in expected:
+        assert text in run, text
+    # a manager or bus failure that names nothing of ours is only a warning
+    assert run.index("::error::") < run.index("::warning::")
 
 
 def test_maestro_cli_creates_queries_and_deletes_the_logon_task_on_windows():

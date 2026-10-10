@@ -719,27 +719,79 @@ def test_posix_replaces_files_in_place_so_it_never_looks_for_blockers(tmp_path, 
     assert rig.up.run(yes=True) == 0
 
 
+class TreeProc(FakeVenvProc):
+    """A fake process with a name, a parent and children, for the launcher-chain cases."""
+
+    def __init__(self, pid, exe, name, **links):
+        super().__init__(pid, exe)
+        self._name, self._parent, self._kids = name, links.get("parent"), list(links.get("kids", ()))
+
+    def name(self):
+        return self._name
+
+    def parent(self):
+        return self._parent
+
+    def children(self, recursive=False):
+        return list(self._kids)
+
+
+def _blockers_for(rig, tree, listed, records):
+    """`_venv_blockers` with `records` = {file stem: TreeProc} written into run/."""
+    for stem, proc in records.items():
+        (rig.ctx.run_dir / f"{stem}.json").write_text(json.dumps({"pid": proc.pid, "create_time": 1.0}))
+    by_pid = {proc.pid: proc for proc in records.values()}
+    update_procs = update.procs
+    original = update_procs.live_process
+    update_procs.live_process = lambda record: record and by_pid.get(record["pid"])
+    try:
+        up = update.Updater(rig.ctx, platform="win32", launcher_pids=lambda: [4242, 4243],
+                            process_iter=lambda: listed, prefix=PREFIX, resolve=lambda p: p)
+        return up._venv_blockers()
+    finally:
+        update_procs.live_process = original
+
+
 def test_the_default_blockers_skip_this_process_its_launchers_and_the_servers_stop_will_stop(
         tmp_path, monkeypatch):
     rig = Rig(tmp_path, monkeypatch, platform="win32", uv=WIN_UV)
-    run_dir = rig.ctx.run_dir
-    for name, pid in (("supervisor", 500), ("web", 501), ("backend", 502)):
-        (run_dir / f"{name}.json").write_text(json.dumps({"pid": pid, "create_time": 1.0}))
+    web = TreeProc(501, PREFIX + r"\node.exe", "node.exe")
+    backend = TreeProc(502, PREFIX + r"\Scripts\python.exe", "python.exe")
+    child = TreeProc(600, PREFIX + r"\Scripts\python.exe", "python.exe")
+    supervisor = TreeProc(500, PREFIX + r"\Scripts\python.exe", "python.exe", kids=[child])
+    listed = [FakeVenvProc(pid, PREFIX + r"\Scripts\python.exe") for pid in
+              (4242, 4243, 500, 501, 502, 600, 700)]
+    got = _blockers_for(rig, None, listed, {"supervisor": supervisor, "web": web, "backend": backend})
+    assert got == [(700, [])]
 
-    class Live:
-        def __init__(self, pid, kids=()):
-            self.pid, self._kids = pid, kids
 
-        def children(self, recursive=False):
-            return [Live(k) for k in self._kids]
+def test_the_venv_launcher_above_a_recorded_supervisor_is_not_a_blocker(tmp_path, monkeypatch):
+    # On Windows `Scripts\python.exe` is a launcher that starts the base interpreter as its child:
+    # the record holds the child's pid, and the launcher (exe under the prefix) is its parent.
+    # It exits when its child does, which `stop` causes, so it must not block the update.
+    rig = Rig(tmp_path, monkeypatch, platform="win32", uv=WIN_UV)
+    explorer = TreeProc(1, r"C:\Windows\explorer.exe", "explorer.exe")
+    outer = TreeProc(398, PREFIX + r"\Scripts\maestro.exe", "maestro.exe", parent=explorer)
+    launcher = TreeProc(400, PREFIX + r"\Scripts\python.exe", "python.exe", parent=outer)
+    base = r"C:\Python312\python.exe"
+    supervisor = TreeProc(500, base, "python.exe", parent=launcher)
+    mcp = FakeVenvProc(700, PREFIX + r"\Scripts\maestro.exe", ["maestro.exe", "mcp"])
+    listed = [outer, launcher, supervisor, explorer, mcp]
+    got = _blockers_for(rig, None, listed, {"supervisor": supervisor})
+    assert got == [(700, ["maestro.exe", "mcp"])]  # Claude Desktop's bridge still blocks
 
-    monkeypatch.setattr(update.procs, "live_process",
-                        lambda record: Live(record["pid"], [600] if record["pid"] == 500 else []))
-    seen = [FakeVenvProc(pid, PREFIX + r"\Scripts\python.exe") for pid in
-            (4242, 4243, 500, 501, 502, 600, 700)]
-    up = update.Updater(rig.ctx, platform="win32", launcher_pids=lambda: [4242, 4243],
-                        process_iter=lambda: seen, prefix=PREFIX, resolve=lambda p: p)
-    assert up._venv_blockers() == [(700, [])]
+
+def test_the_ancestor_walk_goes_two_levels_and_stops_at_a_foreign_process(tmp_path, monkeypatch):
+    rig = Rig(tmp_path, monkeypatch, platform="win32", uv=WIN_UV)
+    far = TreeProc(10, PREFIX + r"\Scripts\python.exe", "python.exe")
+    near2 = TreeProc(20, PREFIX + r"\Scripts\python.exe", "python.exe", parent=far)
+    near1 = TreeProc(30, PREFIX + r"\Scripts\python.exe", "python.exe", parent=near2)
+    supervisor = TreeProc(40, r"C:\Python312\python.exe", "python.exe", parent=near1)
+    assert _blockers_for(rig, None, [far, near2, near1, supervisor], {"supervisor": supervisor}) == [(10, [])]
+    shell = TreeProc(50, r"C:\Windows\cmd.exe", "cmd.exe")
+    inside_shell = TreeProc(60, PREFIX + r"\Scripts\python.exe", "python.exe", parent=shell)
+    sup2 = TreeProc(70, r"C:\Python312\python.exe", "python.exe", parent=inside_shell)
+    assert _blockers_for(rig, None, [shell, inside_shell, sup2], {"supervisor": sup2}) == []
 
 
 # --- the command line --------------------------------------------------------------------------

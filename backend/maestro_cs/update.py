@@ -253,6 +253,19 @@ def windows_handoff_argv() -> list[str]:
 Found = tuple[int, list[str]]
 
 
+def _inside_prefix(prefix: str, platform: str,
+                   resolve: Callable[[str], str]) -> Callable[[str], bool]:
+    """A test for "this path is inside `prefix`" (case-insensitive on Windows)."""
+    windows = platform == "win32"
+    sep = "\\" if windows else "/"
+
+    def norm(path: str) -> str:
+        return ntpath.normcase(resolve(path)) if windows else resolve(path)
+
+    root = norm(prefix).rstrip(sep) + sep
+    return lambda path: (norm(path) + sep).startswith(root)
+
+
 def find_venv_processes(prefix: str, exclude: set[int], processes: Iterable[Any],
                         platform: str = sys.platform,
                         resolve: Callable[[str], str] = os.path.realpath) -> list[Found]:
@@ -261,13 +274,7 @@ def find_venv_processes(prefix: str, exclude: set[int], processes: Iterable[Any]
     Windows paths compare case-insensitively. A process that vanishes or won't say (AccessDenied)
     is skipped, or listed without a command line, never an error.
     """
-    windows = platform == "win32"
-    sep = "\\" if windows else "/"
-
-    def norm(path: str) -> str:
-        return ntpath.normcase(resolve(path)) if windows else resolve(path)
-
-    root = norm(prefix).rstrip(sep) + sep
+    inside = _inside_prefix(prefix, platform, resolve)
     found: list[Found] = []
     for proc in processes:
         if proc.pid in exclude:
@@ -276,7 +283,7 @@ def find_venv_processes(prefix: str, exclude: set[int], processes: Iterable[Any]
             exe = proc.exe()
         except psutil.Error:
             continue
-        if not exe or not (norm(exe) + sep).startswith(root):
+        if not exe or not inside(exe):
             continue
         try:
             cmdline = list(proc.cmdline())
@@ -426,7 +433,14 @@ class Updater:
         return pids
 
     def _will_be_stopped(self) -> set[int]:
-        """Pids `stop` ends (the supervisor, its servers and their children): not blockers."""
+        """Pids `stop` ends (the supervisor, its servers and their children): not blockers.
+
+        Also up to two launcher ancestors of each. On Windows `Scripts\\python.exe` in a uv venv is
+        a launcher that starts the base interpreter as its child, so a record holds the child's pid
+        and the launcher (an exe under the prefix) is its parent. It waits on that child and exits
+        with it, so stopping the supervisor ends it too. The connect waiter is NOT here: `stop`
+        leaves it running, and it holds files uv must replace, so it correctly blocks.
+        """
         pids: set[int] = set()
         for name in ("supervisor", "web", "backend"):
             live = procs.live_process(procs.read_json(self.ctx.run_dir / f"{name}.json"))
@@ -435,7 +449,24 @@ class Updater:
             pids.add(live.pid)
             with contextlib.suppress(psutil.Error):
                 pids.update(child.pid for child in live.children(recursive=True))
+            pids.update(self._launcher_ancestors(live))
         return pids
+
+    def _launcher_ancestors(self, proc: Any) -> list[int]:
+        """Up to two parents that are Python or inside this venv (mirrors `_own_pids`)."""
+        inside = _inside_prefix(self.prefix, self.platform, self.resolve)
+        found: list[int] = []
+        with contextlib.suppress(psutil.Error):  # a vanished ancestor just ends the walk
+            node = proc
+            for _ in range(2):
+                node = node.parent()
+                if node is None:
+                    break
+                is_python = node.name().lower().startswith("python")
+                if not (is_python or inside(node.exe())):
+                    break
+                found.append(node.pid)
+        return found
 
     def _venv_blockers(self) -> list[Found]:
         """Other processes running from this venv: they lock files uv must replace (Windows)."""
