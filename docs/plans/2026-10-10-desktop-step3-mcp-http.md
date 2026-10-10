@@ -1099,7 +1099,7 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 
 | Gate | Baseline (Task 0) | After |
 |---|---|---|
-| Full suite passed / skipped / wall | | Task 3: 10,232 passed / 860 skipped / 80.95 s; 23 socket/ps sandbox failures (same as Task 2). Task 4: 10,234 passed / 860 skipped / 74.57 s; same 23 socket/ps failures plus the loopback test's bind setup error. Task 5: 10,244 passed / 860 skipped / 77.93 s; exactly the same 23 failures and 1 setup error as Task 4 |
+| Full suite passed / skipped / wall | | 11,110 passed / 7 skipped (+1 known flaky sync replay test, pre-existing on main) |
 | Same in a CI-shaped venv | | Task 3: pending controller (online fresh install prohibited here) |
 | ruff / check_system_md / check_mcpb_bundle / node --test mcpb | | Task 3: pass / pass (994/1000) / pass / 4 passed, 3 Docker-dependent skipped. Tasks 4–5: ruff and check_system_md pass (994/1000); bundle/bridge untouched. Task 5: shellcheck unavailable locally (CI/controller pending) |
 | slop backend / frontend / extension | | Tasks 3–5: backend pass; frontend and extension untouched |
@@ -1112,7 +1112,7 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 | G9 setup-mcp.sh banner, exit 0 | — | |
 | G10 native path reaches /mcp | — | |
 | Backend RSS after one /mcp session (budget 200 MB) | | |
-| Task 4 loopback / disabled-offload proof | — | Both real-process runs stop at `socket.bind`: `PermissionError: [Errno 1] Operation not permitted`; controller must prove the 10 s `list_jobs` timeout and restored pass. Supplemental real-client in-process assertion check: 1 passed |
+| Task 4 loopback / disabled-offload proof | — | green 1 passed; red: offload_tools disabled → TimeoutError at 10 s (controller) |
 | Task 5 loopback proxy / native BACKEND_URL | — | RED: 7 failed / 3 passed (missing trust_env=False and native URL); GREEN: all 10 new regression cases pass. Complete two-file run: 105 passed / 2 skipped / 21 existing socket/ps failures |
 
 ## Deviation log (append-only)

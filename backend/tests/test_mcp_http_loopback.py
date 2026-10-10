@@ -1,6 +1,5 @@
 """A single-worker backend must serve sync MCP tools that call its REST API."""
 
-import functools
 import json
 import os
 import socket
@@ -13,7 +12,7 @@ import anyio
 import httpx
 import pytest
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 from mcp.types import Implementation
 
 from mcp_server import server as srv
@@ -85,11 +84,13 @@ def loopback_backend(tmp_path):
 async def test_single_worker_mcp_loopback_tools_and_client_label(loopback_backend):
     # The process owns the sessions: avoid a DELETE waiting on a deadlocked server
     # during failure cleanup. The fixture always kills and reaps that process.
-    transport_options = {
-        "httpx_client_factory": functools.partial(httpx.AsyncClient, trust_env=False),
-        "terminate_on_close": False,
-    }
-    async with streamablehttp_client(f"{loopback_backend}/mcp", **transport_options) as streams:
+    timeout = httpx.Timeout(30, read=300)
+    async with (
+        httpx.AsyncClient(trust_env=False, timeout=timeout) as http_client,
+        streamable_http_client(
+            f"{loopback_backend}/mcp", http_client=http_client, terminate_on_close=False
+        ) as streams,
+    ):
         async with ClientSession(streams[0], streams[1], client_info=CLIENT_INFO) as session:
             with anyio.fail_after(10):
                 await session.initialize()
@@ -123,9 +124,12 @@ async def test_single_worker_mcp_loopback_tools_and_client_label(loopback_backen
                 "Item created by Loopback Test"
             ]
 
-    async with streamablehttp_client(
-        f"{loopback_backend}/mcp/hunt", **transport_options
-    ) as streams:
+    async with (
+        httpx.AsyncClient(trust_env=False, timeout=timeout) as http_client,
+        streamable_http_client(
+            f"{loopback_backend}/mcp/hunt", http_client=http_client, terminate_on_close=False
+        ) as streams,
+    ):
         async with ClientSession(streams[0], streams[1], client_info=CLIENT_INFO) as session:
             with anyio.fail_after(10):
                 await session.initialize()
