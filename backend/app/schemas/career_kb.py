@@ -640,12 +640,3 @@ class KBContextResponse(BaseModel):
 
     resume: dict[str, Any]
     memory: str
-
-
-class ExtraSectionPreset(BaseModel):
-    """Canonical extra section preset schema."""
-
-    key: str
-    title: str
-    type: Literal["entries", "bullets"]
-    match: list[str] = Field(default_factory=list)

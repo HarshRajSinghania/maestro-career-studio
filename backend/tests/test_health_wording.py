@@ -481,9 +481,11 @@ def test_save_normalizes_and_load_reads_it_back(db_session):
     assert bank.ignored == ("dynamic",)
 
 
-def test_reset_restores_the_defaults_but_keeps_the_ignored_list(db_session):
+def test_save_restores_the_defaults_but_keeps_the_ignored_list(db_session):
     health_wording.save(db_session, cliche=["rockstar"], filler=[], ignored=["dynamic"])
-    bank = health_wording.reset(db_session)
+    saved = health_wording.load(db_session)
+    bank = health_wording.save(db_session, cliche=DEFAULT.cliche, filler=DEFAULT.filler,
+                              ignored=saved.ignored)
     assert (bank.cliche, bank.filler) == (DEFAULT.cliche, DEFAULT.filler)
     assert bank.ignored == ("dynamic",)
     assert health_wording.load(db_session) == bank
@@ -594,14 +596,3 @@ def test_put_wording_accepts_200_entries_after_dedupe(client):
                    json={"cliche": words + ["W0"], "filler": [], "ignored": []})
     assert r.status_code == 200
     assert len(r.json()["cliche"]) == 200
-
-
-def test_reset_wording_restores_defaults_and_keeps_ignored(client):
-    client.put("/api/resume-lint/wording",
-               json={"cliche": ["rockstar"], "filler": [], "ignored": ["dynamic"]})
-    r = client.post("/api/resume-lint/wording/reset")
-    assert r.status_code == 200
-    assert r.json() == {
-        "cliche": list(DEFAULT.cliche), "filler": list(DEFAULT.filler), "ignored": ["dynamic"],
-        "defaults": {"cliche": list(DEFAULT.cliche), "filler": list(DEFAULT.filler)},
-    }

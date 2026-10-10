@@ -1,12 +1,12 @@
 """End-to-end integration smoke for custom (extra) resume sections.
 
-Exercises the whole phase-1 pipeline through the real HTTP surface:
+Exercises the phase-1 HTTP pipeline and its version-diff service:
 
   1. create a base resume that carries extras via ``POST /api/base-resumes``;
   2. render its stored data and assert extra-section text reaches the ``.tex``;
   3. build a from-base application (extras inherited into ``customized_json``);
   4. apply a typed ``add_extra_section`` edit op via ``PATCH .../edits``;
-  5. read the resulting version diff and assert it names the new section.
+  5. diff the stored version snapshots and assert it names the new section.
 
 Rendering is asserted at the ``.tex`` layer (pdflatex-free) so the smoke runs
 in any environment; the PDF/extraction fidelity path is covered separately in
@@ -22,7 +22,8 @@ from app.db import get_db
 from app.main import app
 from app.models.base_resume import BaseResume
 from app.models.job import Job
-from app.services import base_resume_render, pdf_render
+from app.models.resume_version import ResumeVersion
+from app.services import base_resume_render, pdf_render, resume_versions
 
 
 def _override_db(db_session):
@@ -164,9 +165,11 @@ def test_extra_sections_e2e_create_render_frombase_edit_diff(
         ).json()
         latest = max(v["version_number"] for v in versions)
         assert latest >= 2, versions  # from-base v1, edit-ops v2
-        diff = client.get(
-            f"/api/resume-versions/application/{application_id}/{latest}/diff"
-        ).json()
+        row = resume_versions.get_version(db_session, "application", application_id, latest)
+        assert row is not None
+        parent = db_session.get(ResumeVersion, row.parent_version_id)
+        assert parent is not None
+        diff = resume_versions.diff_versions(parent.snapshot, row.snapshot)
     finally:
         app.dependency_overrides.clear()
 

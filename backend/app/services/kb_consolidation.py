@@ -1045,7 +1045,7 @@ def _cluster_points_for_entity(
 
     session.flush()  # new points get ids before port-log FKs
     # Idempotent backfill: re-running consolidate() with identical sources must
-    # not accumulate duplicate rows (POST /api/kb/consolidate is re-invokable).
+    # not accumulate duplicate rows.
     # Dedup against existing rows in one query rather than N.
     existing_logs = session.scalars(
         select(KBPortLog).where(KBPortLog.entity_id == entity.id)

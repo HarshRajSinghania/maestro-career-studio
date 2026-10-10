@@ -46,6 +46,13 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
   when no saved prompt exists, avoiding a SQLite lock wait behind another
   transaction. Startup seeding and caller-supplied sessions still seed defaults.
 
+### Removed
+
+- Four API routes with no caller outside tests: `POST /api/resume-lint/wording/reset`,
+  `GET /api/kb/extra-section-presets`, `GET /api/resume-versions/{kind}/{key}/{number}/diff`,
+  and `POST /api/kb/consolidate`. Word-bank reset still saves through `PUT /wording`;
+  the preset catalog, version-detail diffs, and onboarding import remain available.
+
 ## [0.8.0] — 2026-10-07
 
 ### Breaking changes

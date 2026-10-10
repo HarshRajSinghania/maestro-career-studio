@@ -1,6 +1,5 @@
 """Career Knowledge Base router: entity/point CRUD, draft inbox, derived detail."""
 
-import json as _json
 import logging
 import shutil
 from collections import defaultdict
@@ -9,7 +8,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -54,7 +53,6 @@ from app.schemas.career_kb import (
     KBPortResponse,
     KBProfileOut,
     KBProfilePatch,
-    ExtraSectionPreset,
 )
 from app.schemas.resume import ResumeData
 from app.services import base_resume_data, kb_import, career_kb as svc
@@ -674,28 +672,6 @@ def kb_context(db: Annotated[Session, Depends(get_db)]):
 # --- Consolidation ---------------------------------------------------------
 
 
-def _parse_consolidation_slugs(raw: str | None) -> list[str]:
-    """Decode the multipart slug field without trusting its JSON shape."""
-    if not raw:
-        return []
-    try:
-        parsed = _json.loads(raw)
-    except (TypeError, _json.JSONDecodeError) as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="slugs must be a JSON array of non-empty strings",
-        ) from exc
-    if not isinstance(parsed, list) or any(
-        not isinstance(slug, str) or not slug.strip() for slug in parsed
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="slugs must be a JSON array of non-empty strings",
-        )
-    # Repeated sources only inflate duplicate counts and LLM prompt size.
-    return list(dict.fromkeys(slug.strip() for slug in parsed))
-
-
 def _source_error(index: int, path: tuple, msg: str, err_type: str) -> dict:
     """One validation error for one source, in FastAPI's own {loc, msg, type}
     shape. The handler shares this endpoint's 422 with FastAPI's request-model
@@ -850,64 +826,3 @@ def import_consolidate_endpoint(
     report = kb_import.consolidate_imported(db, slugs)
     career_exports.best_effort_refresh(db)
     return report
-
-
-@router.post("/consolidate", response_model=ConsolidationReport)
-def consolidate_endpoint(
-    db: Annotated[Session, Depends(get_db)],
-    slugs: str | None = Form(default=None),          # JSON-encoded list of base-resume slugs
-    files: list[UploadFile] = File(default=[]),
-):
-    sources: list[tuple[str, dict]] = []
-    parse_warnings: list[str] = []
-
-    # slug sources
-    slug_list = _parse_consolidation_slugs(slugs)
-    if slug_list:
-        allowed = set(base_resume_data.active_base_resume_slugs(db))
-        for slug in slug_list:
-            if slug not in allowed:
-                raise HTTPException(status_code=404, detail=f"Unknown base resume: {slug}")
-            row = db.get(BaseResume, slug)
-            if row is None or row.deleted_at is not None:
-                raise HTTPException(status_code=404, detail=f"Unknown base resume: {slug}")
-            sources.append((slug, row.data_json))
-
-    # file sources
-    for f in files:
-        safe_name = Path(f.filename or "upload").name or "upload"
-        try:
-            data = f.file.read()
-        except OSError as exc:
-            raise HTTPException(status_code=400, detail=UPLOAD_UNREADABLE) from exc
-        if len(data) > 10 * 1024 * 1024:
-            raise HTTPException(status_code=413, detail="File exceeds 10 MB limit")
-        try:
-            text = extract_text(safe_name, f.content_type, data)
-        except Exception as exc:  # noqa: BLE001 — parser libraries raise their own error types
-            raise HTTPException(status_code=400, detail=f"{safe_name}: {exc}") from exc
-        try:
-            parsed, warnings = kb_consolidation.parse_resume_text(db, text)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=f"{safe_name}: {exc}") from exc
-        except RuntimeError as exc:
-            # Upstream LLM outage — retryable, not a bad file.
-            raise HTTPException(status_code=502, detail=f"{safe_name}: {exc}") from exc
-        sources.append((safe_name, parsed))
-        parse_warnings.extend(f"{safe_name}: {warning}" for warning in warnings)
-
-    if not sources:
-        raise HTTPException(status_code=400, detail="Provide at least one slug or file")
-
-    report = kb_consolidation.consolidate(db, sources)
-    report.warnings.extend(parse_warnings)
-    career_exports.best_effort_refresh(db)
-    return report
-
-
-@router.get("/extra-section-presets", response_model=list[ExtraSectionPreset])
-def list_extra_section_presets():
-    """Canonical extra-section presets shared between studio and Career KB."""
-    from app.services.extra_section_presets import PRESETS
-
-    return PRESETS

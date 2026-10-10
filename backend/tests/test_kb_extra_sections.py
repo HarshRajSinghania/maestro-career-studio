@@ -48,23 +48,6 @@ def _make_resume(**kwargs: Any) -> dict[str, Any]:
     return ResumeData.model_validate(base).model_dump(mode="json")
 
 
-def test_extra_section_preset_catalog_endpoint(client):
-    """GET /api/kb/extra-section-presets serves the 8 canonical backend presets."""
-    r = client.get("/api/kb/extra-section-presets")
-    assert r.status_code == 200, r.text
-    presets = r.json()
-    assert len(presets) == len(PRESETS)
-    assert len(presets) == 8
-
-    preset_keys = [p["key"] for p in presets]
-    expected_keys = [p["key"] for p in PRESETS]
-    assert preset_keys == expected_keys
-    assert "publications" in preset_keys
-    assert "awards" in preset_keys
-    assert "volunteer" in preset_keys
-    assert "clearance" in preset_keys
-
-
 def test_extra_entity_schema_validations():
     """Validates kind='extra' rules and core section collisions."""
     # Valid entries-type

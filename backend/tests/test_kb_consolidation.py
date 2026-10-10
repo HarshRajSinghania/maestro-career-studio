@@ -1,28 +1,13 @@
-import json
 from datetime import UTC, datetime
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.models.base_resume import BaseResume
 from app.models.career_kb import KBEntity, KBPoint, KBPortLog
 from app.services.career_kb import get_or_create_profile
 from app.services.kb_consolidation import (
     collect_entries, consolidate, group_by_identity, parse_resume_text,
 )
-
-
-@pytest.fixture
-def client(db_session):
-    from app.db import get_db
-    from app.main import app
-
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
 
 
 def _resume(**sections):
@@ -345,7 +330,7 @@ def test_consolidate_idempotent_rerun(db_session, monkeypatch):
     assert len(db_session.scalars(select(KBPortLog)).all()) == n_log
 
 
-# --- POST /api/kb/consolidate endpoint + parse_resume_text -----------------
+# --- parse_resume_text() + consolidate() ----------------------------------
 
 
 _VALID_RESUME_DICT = {
@@ -356,7 +341,7 @@ _VALID_RESUME_DICT = {
 
 
 def _file_llm(resume_dict, entity_payload=None, cluster_payload=None):
-    """Dispatch fake spanning all three consolidate-endpoint prompts: the
+    """Dispatch fake spanning all three parse-and-consolidate prompts: the
     kb_resume_parse prompt (unique token "ResumeData") returns a ResumeData
     dict; entity-resolve ("group_indices") and cluster ("bullet_indices")
     return their consolidate payloads."""
@@ -371,7 +356,7 @@ def _file_llm(resume_dict, entity_payload=None, cluster_payload=None):
     return fake
 
 
-def test_consolidate_endpoint_from_slugs(client, db_session, monkeypatch):
+def test_consolidate_from_snapshots(db_session, monkeypatch):
     monkeypatch.setattr(
         "app.services.llm.call_openai",
         _make_llm(
@@ -383,49 +368,13 @@ def test_consolidate_endpoint_from_slugs(client, db_session, monkeypatch):
     )
     a = _resume(projects=[{"name": "Orbit", "bullets": ["Built the pipeline"]}])
     b = _resume(projects=[{"name": "Orbit", "bullets": ["Built the pipeline"]}])
-    db_session.add(BaseResume(slug="a", data_json=a))
-    db_session.add(BaseResume(slug="b", data_json=b))
-    db_session.commit()
-
-    r = client.post("/api/kb/consolidate", data={"slugs": json.dumps(["a", "b"])})
-    assert r.status_code == 200, r.text
-    report = r.json()
-    assert report["entities_created"] >= 1
+    report = consolidate(db_session, [("a", a), ("b", b)])
+    assert report.entities_created >= 1
     ents = db_session.scalars(select(KBEntity)).all()
     assert len(ents) == 1 and ents[0].kind == "project"
 
 
-def test_consolidate_endpoint_unknown_slug_404(client, db_session):
-    r = client.post("/api/kb/consolidate", data={"slugs": json.dumps(["does_not_exist"])})
-    assert r.status_code == 404
-
-
-@pytest.mark.parametrize(
-    "raw_slugs",
-    [
-        json.dumps({"slug": "a"}),
-        json.dumps(["a", 1]),
-        json.dumps(["a", ""]),
-        "not-json",
-    ],
-)
-def test_consolidate_endpoint_rejects_malformed_slug_payload(client, raw_slugs):
-    r = client.post("/api/kb/consolidate", data={"slugs": raw_slugs})
-    assert r.status_code == 400, r.text
-    assert r.json()["detail"] == "slugs must be a JSON array of non-empty strings"
-
-
-def test_consolidate_endpoint_soft_deleted_slug_404(client, db_session):
-    # active_base_resume_slugs excludes soft-deleted rows -> not an allowed source.
-    db_session.add(
-        BaseResume(slug="retired", data_json=_resume(), deleted_at=datetime.now(UTC))
-    )
-    db_session.commit()
-    r = client.post("/api/kb/consolidate", data={"slugs": json.dumps(["retired"])})
-    assert r.status_code == 404
-
-
-def test_consolidate_endpoint_from_file(client, db_session, monkeypatch):
+def test_parse_and_consolidate_resume_text(db_session, monkeypatch):
     monkeypatch.setattr(
         "app.services.llm.call_openai",
         _file_llm(
@@ -436,20 +385,16 @@ def test_consolidate_endpoint_from_file(client, db_session, monkeypatch):
             ]},
         ),
     )
-    r = client.post(
-        "/api/kb/consolidate",
-        files={"files": ("r.md", b"# Resume\nProject P: did x", "text/markdown")},
-    )
-    assert r.status_code == 200, r.text
-    report = r.json()
-    assert report["entities_created"] >= 1
+    parsed, warnings = parse_resume_text(db_session, "# Resume\nProject P: did x")
+    assert warnings == []
+    report = consolidate(db_session, [("r.md", parsed)])
+    assert report.entities_created >= 1
     ents = db_session.scalars(select(KBEntity)).all()
     assert [e.title for e in ents] == ["P"]
 
 
-def test_consolidate_endpoint_surfaces_salvage_warnings(client, monkeypatch):
-    """The router prefixes per-file salvage warnings with the filename and
-    extends report.warnings — deleting that plumbing must go red here."""
+def test_parse_resume_text_surfaces_salvage_warnings(db_session, monkeypatch):
+    """An invalid entry is dropped and the parser reports the loss."""
     with_bad_entry = {
         **_VALID_RESUME_DICT,
         "experience": [{"company": "Bad Co"}],  # missing role -> salvage drops it
@@ -457,56 +402,20 @@ def test_consolidate_endpoint_surfaces_salvage_warnings(client, monkeypatch):
     monkeypatch.setattr(
         "app.services.llm.call_openai", _file_llm(with_bad_entry)
     )
-    r = client.post(
-        "/api/kb/consolidate",
-        files={"files": ("r.md", b"# Resume\nBad Co entry", "text/markdown")},
-    )
-    assert r.status_code == 200, r.text
-    warnings = r.json()["warnings"]
-    assert "r.md: Couldn't read 1 item in Experience, so it was left out." in warnings, warnings
+    parsed, warnings = parse_resume_text(db_session, "# Resume\nBad Co entry")
+    assert parsed["experience"] == []
+    assert "Couldn't read 1 item in Experience, so it was left out." in warnings, warnings
 
 
-def test_consolidate_endpoint_unparseable_file_422(client, monkeypatch):
+def test_parse_resume_text_missing_contact_raises(db_session, monkeypatch):
     def fake(*, prompt, model, response_format="json", **kw):
         if "ResumeData" in prompt:
             return {"summary": "no contact here"}  # missing required contact -> invalid
         raise AssertionError("unexpected prompt")
 
     monkeypatch.setattr("app.services.llm.call_openai", fake)
-    r = client.post(
-        "/api/kb/consolidate",
-        files={"files": ("r.md", b"some resume text", "text/markdown")},
-    )
-    assert r.status_code == 422, r.text
-
-
-def test_consolidate_endpoint_corrupt_supported_file_400(client):
-    r = client.post(
-        "/api/kb/consolidate",
-        files={"files": ("broken.pdf", b"not a pdf", "application/pdf")},
-    )
-    assert r.status_code == 400, r.text
-    assert "broken.pdf" in r.json()["detail"]
-
-
-def test_consolidate_endpoint_llm_outage_is_502_not_422(client, monkeypatch):
-    # A valid file uploaded during a provider outage must surface as retryable
-    # 502, not 422 (which would tell the client its file is bad).
-    def fake(*, prompt, model, response_format="json", **kw):
-        raise RuntimeError("provider unavailable")
-
-    monkeypatch.setattr("app.services.llm.call_openai", fake)
-    r = client.post(
-        "/api/kb/consolidate",
-        files={"files": ("r.md", b"# Resume\nreal content", "text/markdown")},
-    )
-    assert r.status_code == 502, r.text
-    assert "r.md" in r.json()["detail"]
-
-
-def test_consolidate_endpoint_empty_request_400(client):
-    r = client.post("/api/kb/consolidate")
-    assert r.status_code == 400
+    with pytest.raises(ValueError):
+        parse_resume_text(db_session, "some resume text")
 
 
 def test_parse_resume_text_valid(db_session, monkeypatch):
@@ -525,13 +434,13 @@ def test_parse_resume_text_invalid_raises(db_session, monkeypatch):
 
 def test_parse_resume_text_llm_failure_raises_runtime_error(db_session, monkeypatch):
     # A transient provider outage is NOT a bad file: parse_resume_text raises
-    # RuntimeError (router -> 502), reserving ValueError (-> 422) for invalid data.
+    # RuntimeError, reserving ValueError for invalid data.
     def fail(**kw):
         raise RuntimeError("provider unavailable")
 
     monkeypatch.setattr("app.services.llm.call_openai", fail)
     with pytest.raises(RuntimeError, match="resume parse LLM call failed"):
         parse_resume_text(db_session, "text")
-    # And it is NOT a ValueError (which the router would map to a misleading 422).
+    # Invalid resume data has a distinct ValueError contract.
     with pytest.raises(RuntimeError):
         parse_resume_text(db_session, "text")

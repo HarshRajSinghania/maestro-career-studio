@@ -1,11 +1,11 @@
 """The health check's word bank: clichés and filler words matched in CODE.
 
 The model never decides what counts as a cliché: the same words always flag,
-and the user owns the list (`GET/PUT /api/resume-lint/wording`, plus reset).
+and the user owns the list (`GET/PUT /api/resume-lint/wording`).
 Storage is two `Setting` rows holding JSON:
 
 - `health.word_bank` — `{"cliche": [...], "filler": [...]}`. ABSENT until the
-  first edit, and absent means the built-in defaults (reset deletes it).
+  first edit, and absent means the built-in defaults.
 - `health.ignored_words` — the "Never flag" list, lower-cased. It silences a
   bank word AND a classifier slip whose span matches it.
 
@@ -145,15 +145,6 @@ def save(db: Session, *, cliche: Iterable[str], filler: Iterable[str],
     _write(db, {BANK_KEY: {"cliche": list(bank.cliche), "filler": list(bank.filler)},
                 IGNORED_KEY: list(bank.ignored)})
     return bank
-
-
-def reset(db: Session) -> WordBank:
-    """Back to the default clichés and filler; the Never flag list is kept."""
-    row = db.get(Setting, BANK_KEY)
-    if row is not None:
-        db.delete(row)
-        db.commit()
-    return load(db)
 
 
 # --------------------------------------------------------------------------- #

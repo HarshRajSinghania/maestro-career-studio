@@ -58,27 +58,6 @@ def get_version(kind: Kind, key: str, number: int, db: Annotated[Session, Depend
     return _detail(row, diff)
 
 
-@router.get("/{kind}/{key}/{number}/diff", response_model=list[dict])
-def diff_version(
-    kind: Kind,
-    key: str,
-    number: int,
-    db: Annotated[Session, Depends(get_db)],
-    against: int | None = None,
-):
-    """Diff version `number` against `against` (defaults to its parent)."""
-    row = _get_version_or_404(db, kind, key, number)
-    if against is not None:
-        other = _get_version_or_404(db, kind, key, against)
-        return service.diff_versions(other.snapshot, row.snapshot)
-    parent = (
-        db.get(service.ResumeVersion, row.parent_version_id)
-        if row.parent_version_id is not None
-        else None
-    )
-    return service.diff_versions(parent.snapshot if parent else None, row.snapshot)
-
-
 @router.post("/{kind}/{key}/{number}/restore", response_model=ResumeVersionRestoreResult)
 def restore_version(
     kind: Kind,

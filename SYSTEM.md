@@ -482,11 +482,11 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   each form page's answers and `get_final_review` names their `flags` (inv-filled-answers-local); `record_consent` stores the user's
   yes/no, or the agent's automatic yes with channel `auto` while full automation is On; `mark_submitted(auto)` records the agent's confirmation note;
   `get_job_site_login` hands the login to a Queued/approved job's agent (§6); filer and create-lock rules: `docs/entities/others.md`, "MCP proposal filer"), base resumes
-  (`list_resume_versions`/`get_resume_version`/`restore_resume_version` — kind is REST `base`|`application`, a restore
+  (`list_resume_versions`/`get_resume_version`/`restore_resume_version` — kind is REST `base`|`application`, details carry the parent diff, a restore
   is a new version; `archive_base_resume`/`unarchive_base_resume` hide from `list_base_resumes` without deleting; those
   five and `set_base_resume_identity` (a base's only anchor writer, `""`/`[]` clear) are **full-profile only**), health
   (run/get + waivers; a finding carries its bullet's own `question`, `ask_kind`, `measure_target`/`alt_question`, `evidence` and `gain`, a report `next_grade`; disputes and the word bank
-  are web-only), the full tailoring workflow (session tools take **`tailoring_session_id`** — breaking rename, no
+  are web-only; the bank uses GET/PUT), the full tailoring workflow (session tools take **`tailoring_session_id`** — breaking rename, no
   legacy alias — and carry `base_anchors`; `resolve_gaps`' evidence-carrying actions are gated server-side — §4;
   `quick_tailor` is the profile-driven fast path; `score_ats(include_other_countries)` returns a `countries` block
   naming bases skipped for the job's country), render + PDF inspection/upload (`docs/entities/others.md`, "PDF tools"), application

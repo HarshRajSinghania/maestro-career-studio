@@ -1,8 +1,7 @@
 """Onboarding import: uploaded resumes become base resumes AND Career KB content.
 
-`POST /api/kb/consolidate` already turned uploads into KB entities, but minted
-no base resumes — so a new user uploading three resumes got a knowledge base and
-nothing to tailor from. This closes that gap in one action.
+Each upload mints a base resume and contributes Career KB content, so a
+new user can tailor from the imported resumes in the same action.
 
 ## Resumable, NOT atomic — deliberately
 

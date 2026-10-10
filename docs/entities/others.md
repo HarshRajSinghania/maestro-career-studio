@@ -463,9 +463,10 @@
   every whole-word occurrence cut, and a slip's the fix swapped in only when the span occurs once —
   each only when `health_wording` finds the seam clean (the Remove safety net: rubric, "Remove and
   Apply") and `guard_violations` is empty. The bank is two `Setting` rows: `health.word_bank`
-  (absent = defaults; reset deletes it) and `health.ignored_words` (Never flag, which also silences a
-  slip; reset keeps it), edited through `GET`/`PUT /api/resume-lint/wording` and `POST
-  /wording/reset`, all three answering `{cliche, filler, ignored, defaults}`; entries are trimmed,
+  (absent = defaults) and `health.ignored_words` (Never flag, which also silences a
+  slip), edited through `GET`/`PUT /api/resume-lint/wording`, both answering
+  `{cliche, filler, ignored, defaults}`; Reset to defaults changes the dialog's draft, and Save
+  persists it through `PUT`. Entries are trimmed,
   lower-cased and deduped (1–40 chars, ≤200 per list, else 422) and an unreadable row reads as the
   default. Tailoring avoids the same words: `prompt_assembly._skill_preamble` appends one "Never use
   these words: …" line (clichés then filler, minus Never flag).

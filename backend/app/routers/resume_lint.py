@@ -268,12 +268,6 @@ def put_wording(body: WordingBody, db: Annotated[Session, Depends(get_db)]):
         db, cliche=body.cliche, filler=body.filler, ignored=body.ignored).payload()
 
 
-@router.post("/wording/reset", response_model=WordingRead)
-def reset_wording(db: Annotated[Session, Depends(get_db)]):
-    """Default clichés and filler again; the Never flag list is kept."""
-    return health_wording.reset(db).payload()
-
-
 @router.post("/{kind}/{key}/run", response_model=LintReportRead)
 def run_lint(kind: Kind, key: str, db: Annotated[Session, Depends(get_db)]):
     resume, template_id = _load_resume(db, kind, key)
