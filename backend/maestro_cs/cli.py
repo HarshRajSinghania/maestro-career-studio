@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from maestro_cs import control, maintenance, package_version
+from maestro_cs import bridge, control, maintenance, package_version
 from maestro_cs.home import HomeError
 
 DESCRIPTION = "Maestro Career Studio, run from a uv install."
@@ -42,10 +42,15 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("migrate", help="bring the database up to date (Maestro must be stopped)")
     sub.add_parser("check", help="print install facts as JSON (no network)")
     sub.add_parser("run", help="run Maestro in the foreground (used by autostart)")
+    mcp = sub.add_parser("mcp", help="connect an agent over stdio (used by Claude Desktop)")
+    mcp.add_argument("--profile", default="full", help="tool profile (default: full)")
+    mcp.add_argument("--url", help="backend URL (default: this install's, from maestro.env)")
     return parser
 
 
 def _dispatch(args: argparse.Namespace) -> int:
+    if args.command == "mcp":  # needs only the port: no folder is created, no environment applied
+        return bridge.run(args.url, args.profile)
     ctx = control.load_context()
     if args.command == "run":
         return control.run(ctx)
