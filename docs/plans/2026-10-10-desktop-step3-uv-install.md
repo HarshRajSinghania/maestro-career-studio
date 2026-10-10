@@ -1233,7 +1233,7 @@ Pure render functions (tested by snapshot-style asserts) + an injected `runner` 
   start when you log in; it is starting now.") — harmless if it already runs, because `maestro run`
   exits 0 when a live supervisor exists; `off` (`bootout`) stops the launchd copy, so print
   "Maestro no longer starts at login and has stopped; run `maestro start` to use it now."
-  **Linux** `enable` without `--now` and **Windows** ONLOGON do not start it now ("Maestro will
+  **Linux** `enable` without `--now` and the **Windows** logon task do not start it now ("Maestro will
   start when you log in."). Test each message.
 
 **Commit** `feat(maestro): autostart at login on macOS, Linux and Windows`.
