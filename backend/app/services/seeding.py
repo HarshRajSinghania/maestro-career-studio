@@ -40,11 +40,15 @@ KB_SEEDED_FLAG = "kb.seeded"
 DEMO_SLUG = "example"
 
 
-def run_migrations() -> None:
+def migrations_dir() -> Path:
     # No alembic.ini: in a wheel this file sits in site-packages/app/services/, so parents[2] is
     # site-packages, where the `migrations` package is installed; in a checkout it is backend/.
+    return Path(__file__).resolve().parents[2] / "migrations"
+
+
+def run_migrations() -> None:
     cfg = Config()
-    cfg.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "migrations"))
+    cfg.set_main_option("script_location", str(migrations_dir()))
     command.upgrade(cfg, "head")
 
 

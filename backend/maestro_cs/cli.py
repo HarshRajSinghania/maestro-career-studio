@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from maestro_cs import control, package_version
+from maestro_cs import control, maintenance, package_version
 from maestro_cs.home import HomeError
 
 DESCRIPTION = "Maestro Career Studio, run from a uv install."
@@ -36,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
     logs.add_argument("-n", "--lines", type=int, default=50, help="how many lines (default 50)")
     logs.add_argument("-f", "--follow", action="store_true", help="keep printing new lines")
     sub.add_parser("open", help="open Maestro in the browser")
+    backup = sub.add_parser("backup", help="save a verified snapshot of your data")
+    backup.add_argument("--out", metavar="PATH",
+                        help="write the snapshot here (default: backups/ in your data folder)")
+    sub.add_parser("migrate", help="bring the database up to date (Maestro must be stopped)")
+    sub.add_parser("check", help="print install facts as JSON (no network)")
     sub.add_parser("run", help="run Maestro in the foreground (used by autostart)")
     return parser
 
@@ -44,6 +49,11 @@ def _dispatch(args: argparse.Namespace) -> int:
     ctx = control.load_context()
     if args.command == "run":
         return control.run(ctx)
+    if args.command in ("backup", "migrate", "check"):
+        upkeep = maintenance.Maintenance(ctx)
+        if args.command == "backup":
+            return upkeep.backup(args.out)
+        return upkeep.migrate() if args.command == "migrate" else upkeep.check()
     ctl = control.Controller(ctx)
     if args.command == "start":
         return ctl.start(no_browser=args.no_browser, skip_model=args.skip_model)
