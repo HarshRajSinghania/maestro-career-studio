@@ -52,7 +52,7 @@ anything here that contradicts the Goal Card. Scope is never self-expanded.
 | Signing | Designed now as a CI switch: Developer ID + notarization when the secrets exist, ad-hoc otherwise. The first PUBLIC desktop release waits for the Developer ID. |
 | Existing installs | One-time import from a Docker checkout; the old install is left untouched. |
 | Before building | Branch 0: an evidence-first trim of dead code, unused dependencies, ledger debt and test bloat. |
-| Until the app is signed (2026-10-10) | Branch B′: a `uv tool` install from PyPI with a `maestro` command, right after branch A. Priorities: frictionless install, close & restart, update, MCP connecting. |
+| Until the app is signed (2026-10-10) | Branch B′: a `uv tool` install from PyPI with a `maestro` command, right after branch A. Priorities: frictionless install, close & restart, update, MCP connecting. Targets: macOS, Linux, Windows x64 required; Windows ARM64 and musl Linux best-effort. |
 
 ## What changed since the step 2 design (drift audit, HEAD aa2b155f)
 
@@ -383,9 +383,29 @@ piece it builds is reused by B and C, and it remains the CLI/Linux channel after
    update check reads PyPI/GitHub), SYSTEM.md §9 (the B′ route). Docker stays the
    contributor and server route; native scripts stay for the always-on bot until
    they can call `maestro` too (a later §13 row).
-7. **Windows.** Branch B §8's `import resource` guard is required here; Windows
-   is supported best-effort (CI smoke on windows-latest is a stretch goal), with
-   §11 item 39 updated to say what was verified.
+7. **Platforms (owner, 2026-10-10).** Every native dependency ships a binary
+   wheel for macOS (arm64, x86_64), glibc Linux (x86_64, aarch64) and Windows x64
+   (checked with `pip download --only-binary` for Python 3.12: typst,
+   onnxruntime, nodejs-wheel-binaries, pypdfium2, tokenizers, numpy,
+   cryptography). **Required targets:** macOS, Linux, **Windows x64**, each with a
+   CI smoke job (macos-latest, ubuntu-latest, windows-latest).
+   - **Windows x64 work:** the `services/memory.py` `import resource` guard
+     (branch B §8 moves here); the `maestro` supervisor uses Windows process
+     groups (`CREATE_NEW_PROCESS_GROUP` / `DETACHED_PROCESS`, `taskkill`-style
+     stop) instead of `setsid`/signals; `autostart` is a Task Scheduler logon task
+     (or Startup entry); file modes (0600/0700 on the DB and `settings/secrets/`)
+     are no-ops there, so protection rests on the per-user `%APPDATA%` ACLs —
+     verified and stated in SECURITY.md; §11 item 39 updated with what was
+     verified.
+   - **Best-effort, documented:** Windows ARM64 (no typst wheel; run an x64
+     Python under emulation, which `uv python install` provides) and musl Linux
+     (Alpine).
+   - **Linux headless:** `autostart on` also enables `loginctl enable-linger` so
+     the user unit runs without a login session.
+   - **Every platform:** GUI apps (Claude Desktop) do not have `~/.local/bin`
+     (uv's tool dir) on `PATH` — the TeX lesson in §12 — so `maestro connect
+     claude-desktop` writes the ABSOLUTE path of the `maestro` shim, never a bare
+     command.
 
 Not in B′: PyInstaller, Electron, signing, a GUI tray. Those stay B and C.
 
