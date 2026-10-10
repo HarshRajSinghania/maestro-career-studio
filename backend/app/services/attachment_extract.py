@@ -141,6 +141,16 @@ def _w_text(node) -> str:
     return "".join(out)
 
 
+def _grid_value(node, default: str) -> int:
+    """A gridSpan/gridBefore count; a non-numeric value is an unreadable file."""
+    if node is None:
+        return int(default)
+    try:
+        return int(node.get(f"{_W}val", default))
+    except ValueError:
+        raise UnreadableFile("This file isn't a readable Word document.") from None
+
+
 def _docx_text(data: bytes) -> str:
     import posixpath
     import zipfile
@@ -170,12 +180,12 @@ def _docx_text(data: bytes) -> str:
         previous: dict[int, str] = {}
         for row in table.findall(f"{_W}tr"):
             before = row.find(f"{_W}trPr/{_W}gridBefore")
-            column = int(before.get(f"{_W}val", "0")) if before is not None else 0
+            column = _grid_value(before, "0")
             cells: list[str] = []
             current: dict[int, str] = {}
             for tc in row.findall(f"{_W}tc"):
                 span_node = tc.find(f"{_W}tcPr/{_W}gridSpan")
-                span = int(span_node.get(f"{_W}val", "1")) if span_node is not None else 1
+                span = _grid_value(span_node, "1")
                 merge = tc.find(f"{_W}tcPr/{_W}vMerge")
                 # Horizontal spans repeat the cell; vertical continuations use the cell above.
                 if merge is not None and merge.get(f"{_W}val", "continue") == "continue":

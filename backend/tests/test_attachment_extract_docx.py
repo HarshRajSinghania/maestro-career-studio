@@ -116,6 +116,23 @@ def test_docx_vertical_merge_without_a_cell_above_is_unreadable(case):
     assert attachment_extract.plain_read_error(caught.value) == str(caught.value)
 
 
+@pytest.mark.parametrize("tag", ["gridSpan", "gridBefore"])
+def test_docx_non_numeric_grid_value_is_unreadable(tag):
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    with zipfile.ZipFile(FIXTURES / "tables.docx") as source:
+        document = ElementTree.fromstring(source.read("word/document.xml"))
+    row = document.find(f"{w}body/{w}tbl").find(f"{w}tr")
+    parent = (
+        row.find(f"{w}tc/{w}tcPr") if tag == "gridSpan" else ElementTree.SubElement(row, f"{w}trPr")
+    )
+    ElementTree.SubElement(parent, f"{w}{tag}", {f"{w}val": "x"})
+    data = _repack_fixture("tables.docx", {"word/document.xml": ElementTree.tostring(document)})
+    with pytest.raises(attachment_extract.UnreadableFile) as caught:
+        attachment_extract.extract_text("broken.docx", None, data)
+    assert attachment_extract.plain_read_error(caught.value) == str(caught.value)
+    assert "invalid literal" not in str(caught.value)
+
+
 @pytest.mark.parametrize("declared_size", [50 * 1024 * 1024, 50 * 1024 * 1024 + 1])
 def test_docx_main_part_size_is_checked_before_reading(declared_size):
     output = io.BytesIO()
