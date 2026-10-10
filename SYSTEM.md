@@ -96,7 +96,7 @@ backend/
                        source of the Automations page; indexed by docs/skills/README.md
     templates/         bundled .tex.j2 sources, typst_classic.typ and cover_letter.typ
     tools/             operator tools, `python -m app.tools.<name>`: backup_db
-  mcp_server/          FastMCP server (server.py tools → client.py httpx → REST)
+  mcp_server/          FastMCP registry + http.py per-profile ASGI endpoint; client.py httpx → REST
   migrations/          alembic: the SQLite chain, baseline 871d0425b64c + revisions (ids: §9; §12 has the revision-id gotcha)
   tests/               pytest on a throwaway SQLite file, no service; mcp_server/tests/ uses respx (no DB)
   scripts/             calibration + parity tooling (ats_*, template_parity, health_golden, fill_trace), run from backend/
@@ -498,10 +498,10 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   `kb_approve_points` is the ONE approval path (`approved|retired`), its gate a convention the docstring states (the
   value is the user's decision), not server enforcement (`record_consent` precedent). `kb_edit_point` has no `state`
   param; a text change forces `state="draft"`. No delete tool; document upload stays web-only. **Scoped profiles**:
-  `mcp_server/profiles.py` owns `hunt` / `apply` / `explore` / `templates` / `career`; env `MAESTRO_CS_MCP_PROFILE` defaults to `full`.
-  Imports keep all 88 tools; stdio `main()` filters once. Hints use request `CURRENT_PROFILE`, else the env (pins: `mcp_server/tests/test_profiles.py`, `test_server.py`).
-  Enable ONE per chat (`full` carries KB writes); `MAESTRO_CS_*` has no legacy fallback. Stdio: `mcp_server/`; ChatGPT.com cannot use stdio `mcp.run()`.
-  **Apply executor:** headed real Chrome; `docs/entities/others.md`, "Attended executor", and the apply playbook's "Unattended (full automation)" section.
+  `profiles.py` owns `full` / `hunt` / `apply` / `explore` / `templates` / `career`; imports keep 88 tools. Stdio `main()` filters
+  `MAESTRO_CS_MCP_PROFILE` (default `full`); `http.py` builds per-profile ASGI servers with stateful JSON sessions and a separate
+  eight-worker limiter; module functions stay sync. Hints use request `CURRENT_PROFILE`, else env (pins: `mcp_server/tests/test_profiles.py`, `test_server.py`, `test_http.py`).
+  Enable ONE per chat; `MAESTRO_CS_*` has no legacy fallback. **Apply executor:** headed real Chrome; `docs/entities/others.md`, "Attended executor", and the apply playbook's "Unattended (full automation)" section.
   **Directory listing** = plugin bundle `plugins/maestro-career-studio/`, not `.mcpb`; policy `PRIVACY.md`.
 - **Guided tailoring workflow** (`mcp_server/workflow.py`): wrapped tools carry a `next` envelope
   (`state`/`blocking`/`offer`/`ask_user`/`options`/`call`) that walks §5's arc — score all bases → recommend →
