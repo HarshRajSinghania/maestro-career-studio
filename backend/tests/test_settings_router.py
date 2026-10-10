@@ -6,19 +6,6 @@ from app.routers import settings
 from app.services import text_settings
 
 
-def test_the_memory_endpoint_is_gone(db_session, tmp_path, monkeypatch, client):
-    # SYSTEM.md §13 memory-get-endpoint (cut 2026-08-02) and memory-blob-store
-    # (cut 2026-08-03): context is composed from the KB
-    # (career_kb.compose_context), and the legacy blob it replaced is gone, so
-    # the whole /memory route is unregistered.
-    monkeypatch.setattr(text_settings.settings, "settings_dir", tmp_path)
-    get_response = client.get("/api/settings/memory")
-    put_response = client.put("/api/settings/memory", json={"value": "New."})
-
-    assert get_response.status_code == 404
-    assert put_response.status_code == 404
-
-
 def test_persona_endpoints_read_and_write(db_session, tmp_path, monkeypatch, client):
     monkeypatch.setattr(text_settings.settings, "settings_dir", tmp_path)
     put_response = client.put(

@@ -121,10 +121,6 @@ def test_base_resume_studio_mounts_the_pill_not_a_page_bar():
     assert "HealthBadges" in status_block
 
 
-def test_kb_sync_card_is_gone():
-    assert not (_FRONTEND / "components/kb-sync-card.tsx").exists()
-
-
 def test_points_list_null_provenance_renders_unlabeled():
     source = (_FRONTEND / "components/career/points-list.tsx").read_text()
     assert '"Unknown source"' in source

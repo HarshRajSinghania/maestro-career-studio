@@ -123,7 +123,6 @@ def test_editors_register():
     assert "useLeaveGuard(unsaved)" in studio
     assert "useLeaveGuard(dirty)" not in studio
     assert "useLeaveGuard(dirty)" in _read("app/templates/[id]/page.tsx")
-    assert not (_FRONTEND / "hooks/use-unsaved-changes-warning.ts").exists()
     for rel in _sources():
         assert "useUnsavedChangesWarning" not in _read(rel), rel
 

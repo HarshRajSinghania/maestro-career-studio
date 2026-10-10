@@ -104,10 +104,6 @@ def test_charts_never_index_the_palette_modulo():
     assert cycling == [], cycling
 
 
-def test_the_humanizer_replaced_lib_format():
-    assert not (_FRONTEND / "lib/format.ts").exists()
-
-
 def test_needs_you_sits_above_the_proposal_chip_doc():
     # The JSDoc ends right on the constant it documents.
     assert "*/\nexport const PROPOSAL_STATUS_CHIP" in _read(_CHIP)

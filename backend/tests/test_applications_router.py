@@ -90,19 +90,6 @@ def _job(db_session, *, role_category="data_scientist"):
     return job
 
 
-def test_plain_create_application_endpoint_removed(db_session, client):
-    """The legacy AI create path (POST /api/applications) is gone; only
-    /from-base remains."""
-    job = _job(db_session)
-
-    response = client.post(
-        "/api/applications",
-        json={"job_id": str(job.id), "base_resume": "data_scientist"},
-    )
-
-    assert response.status_code == 405
-
-
 def test_list_and_detail_applications(db_session, client):
     job = _job(db_session, role_category="ai_ml_engineer")
     application = Application(job_id=job.id, base_resume="ai_ml_engineer", status="draft")

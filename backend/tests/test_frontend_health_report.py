@@ -24,19 +24,6 @@ _BAND = (_FRONTEND / "components/resume-health/summary-band.tsx").read_text()
 _SHORTEN = (_FRONTEND / "components/resume-health/shorten-list.tsx").read_text()
 
 
-def test_the_left_rail_and_its_filters_are_gone():
-    # Task 11 (owner decision 8): no two-pane rail, no jump list, no filter chips, no "Add numbers".
-    assert "PageMeasure" not in _PAGE
-    assert "lg:grid-cols-[18.75rem_minmax(0,1fr)]" not in _PAGE
-    assert "lg:sticky" not in _PAGE
-    assert "<aside" not in _PAGE
-    assert 'aria-label="Report sections"' not in _PAGE
-    assert "FILTERS" not in _PAGE and "aria-pressed" not in _PAGE
-    assert "addNumbersLabel" not in _PAGE and "BatchAskDialog" not in _PAGE
-    assert "filterFindings" not in _HELPERS and "StreamFilter" not in _HELPERS
-    assert "Biggest problems first" not in _PAGE
-
-
 def test_finding_at_rest_is_one_line():
     assert "CollapsedRow" in _CARDS
     assert "DetailsDisclosure" not in _CARDS

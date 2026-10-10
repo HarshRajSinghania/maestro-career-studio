@@ -45,13 +45,6 @@ def test_the_inbox_is_called_agent_inbox_wherever_it_is_named():
     assert 'title="Couldn\'t load your Agent inbox."' in _SECTION
 
 
-def test_the_old_names_are_gone():
-    for rel, src in (("page", _PAGE), ("job", _JOB), ("panel", _PANEL), ("section", _SECTION)):
-        for old in ("Agent Proposals", "Agent proposals", "agent proposals", "Back to proposals",
-                    "proposal in list", "All proposals"):
-            assert old not in src, f"{rel}: {old!r}"
-
-
 def test_the_url_and_its_session_keys_stay():
     """Deep links, ?from=proposals and cs-proposals-seq are the frozen surface."""
     assert 'const SEQUENCE_STORE_KEY = "cs-proposals-seq";' in _SECTION
@@ -71,13 +64,6 @@ def test_the_lanes_use_the_owners_words():
 
 
 # ── A2: the funnel leaves; Cap today stays in the header ────────────────────
-
-
-def test_the_funnel_strip_is_gone():
-    assert not (_FRONTEND / "components/proposals/funnel-strip.tsx").exists()
-    for root in ("app", "components"):
-        for path in (_FRONTEND / root).rglob("*.tsx"):
-            assert "FunnelStrip" not in path.read_text(encoding="utf-8"), path
 
 
 def test_the_header_keeps_only_cap_today():

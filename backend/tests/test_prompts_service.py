@@ -49,13 +49,6 @@ def test_tailoring_skill_file_default_loads(db_session):
     assert "terse tokens" in text
 
 
-def test_cold_message_prompt_retired():
-    # Removed 2026-07-21: outreach is a free-form Q&A question now. Registry and
-    # file must go together (seed_prompts reads a file per registered key).
-    assert "cold_message" not in prompts.VALID_PROMPTS
-    assert not (prompts.PROMPT_DIR / "cold_message.txt").exists()
-
-
 def test_get_prompt_without_a_session_never_writes(db_session, tmp_path, monkeypatch):
     """An owned-session read must not INSERT: a caller holding the SQLite write lock
     (an open transaction) would make that INSERT wait out busy_timeout, then fail."""

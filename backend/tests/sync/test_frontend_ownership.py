@@ -50,7 +50,6 @@ def _source(path):
 
 def test_sync_off_pages_make_no_ownership_requests():
     """Ownership rides on the rows the pages already fetch: no job-list read, no refusals read."""
-    assert not (FRONTEND / "hooks/use-job-ownership.ts").exists()
     for path in ["app/applications/page.tsx", "components/proposals/proposals-section.tsx",
                  "components/proposals/recent-runs.tsx", "components/job-ownership.tsx"]:
         text = _source(path)

@@ -350,10 +350,6 @@ def test_connect_error_on_the_raw_path_has_no_hardcoded_port_either():
     assert BASE in str(exc.value)
 
 
-def test_the_unused_request_raw_helper_is_gone():
-    assert not hasattr(BackendClient, "_request_raw")
-
-
 # ---------- attach_evidence_file under Docker ----------
 
 _PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 32

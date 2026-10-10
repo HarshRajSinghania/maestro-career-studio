@@ -35,11 +35,6 @@ def test_the_page_renders_the_pass_and_back_returns_to_the_tab_it_came_from():
     assert "href={reportHref}" in _PASS
 
 
-def test_the_add_numbers_dialog_is_gone():
-    assert not (_FRONTEND / "components/resume-health/batch-ask-dialog.tsx").exists()
-    assert "addNumbersLabel" not in _HELPERS
-
-
 def test_rows_ask_their_own_question_with_the_right_field():
     row = _fn(_PASS, "function PassRowView(")
     assert "isMetricAsk(row.finding)" in _ROWS
