@@ -97,6 +97,13 @@ the process env before `maestro.env`; the web process's secret strip is in code;
 sentences; the migration test isolates its database; `apply_env` changes to the home folder (no cwd
 `.env`); the full list of places that print `claude mcp add`; minors.
 
+**Lessons review (Sonnet over the agent-lessons KB, 2026-10-10):** folded in Claude Desktop's
+config overwrite while running (Task 9 defers the write until it quits), agent sandboxes killing
+processes a tool call started (ground rules), newest-dependency drift in `uv tool install` (smoke
+asserts the security boundary over HTTP), smoke/fixture cleanup, text content blocks through the
+bridge, and the close-the-terminal check in G5. The KBs had nothing on uv, PyPI, Next standalone,
+launchd/systemd/schtasks or Windows supervision.
+
 **Not in B′ (stays where the design put it):** the one-time import from a Docker checkout (C);
 PyInstaller, Electron, signing, a tray (B, C); the native bot scripts calling `maestro` (a later
 §13 row); publishing `maestro mcp` to the MCP Registry as a PyPI package (follow-up, owner call).
@@ -151,7 +158,10 @@ scope. ADD tests beside pinned tests, never replace them.
 - `backend/requirements.lock` is regenerated only inside `python:3.12-slim` with the recipe in
   `backend/Dockerfile`. If Docker is not running, log it and leave the lock for release time.
 - New tests for `maestro_cs` live in `backend/tests/maestro_cs/`, with an `__init__.py` like every
-  other `tests/` subdir (`ats/`, `sync/`, `tools/`, `browser/`). Unit tests never bind 8001/3000, never touch
+  other `tests/` subdir (`ats/`, `sync/`, `tools/`, `browser/`). The root `tests/conftest.py`
+  already blanks sync/AI keys at import (a worktree nested in the main checkout would otherwise
+  inherit the developer's real `.env` — agent-lessons 5e5a35db); any subprocess a test starts gets
+  an explicit env built from it, never the developer's shell. Unit tests never bind 8001/3000, never touch
   the real `MAESTRO_HOME`, never call `launchctl`/`systemctl`/`schtasks`/`uv`/the network: inject
   runners and use `tmp_path`.
 - Lint: `cd backend && python -m ruff check .`; frontend: `npx tsc --noEmit && npm run lint &&
@@ -159,6 +169,11 @@ scope. ADD tests beside pinned tests, never replace them.
 - Never verify against the running compose stack. Local end-to-end checks use a scratch
   `UV_TOOL_DIR`, `UV_TOOL_BIN_DIR`, `MAESTRO_HOME`, and `MAESTRO_PORT`/`MAESTRO_WEB_PORT` on spare
   ports.
+- **Agent sandboxes kill what a tool call starts.** A process started inside an executor's tool
+  call can die when that call ends, even with `setsid`/`nohup` (agent-lessons a8adeb47/a3fc2647:
+  graceful shutdowns, no OOM, no reboot). Local end-to-end proofs therefore run inside ONE tool
+  call (start → checks → stop, as the smoke script does), or through `autostart on`/launchd; never
+  "start now, check in the next call". A stack that vanished between calls is this, not a bug.
 - Commit after every task; end messages with the executing model's `Co-Authored-By` line.
 
 ---
@@ -1165,13 +1180,22 @@ strings — no second copy of them.
   Read (missing → `{}`; invalid JSON → refuse with a sentence, never overwrite), back up to
   `<name>.bak-<UTC stamp>` when it exists, set
   `mcpServers["maestro-career-studio"] = {"command": <shim_path()>, "args": ["mcp"] (+ ["--profile", P])}`,
-  write atomically, print "Restart Claude Desktop to load Maestro." If the old Docker bundle may be
-  installed, add: "If Claude Desktop also lists the older Maestro extension, remove it in
+  write atomically. **Claude Desktop keeps its server list in memory and writes the file back on
+  routine events while it runs, silently erasing edits** (agent-lessons 542d774e/2fe8ba3d/f7eb8621;
+  its `main.log` shows "Config file written"). So: if a Claude Desktop process is running (psutil;
+  verify the process names on macOS, Windows and Linux and record them), say "Quit Claude Desktop
+  fully (not just close the window); Maestro will add itself as soon as it has quit." and hand the
+  write to a detached waiter (same detach helper as Task 11's Windows handoff) that waits ≤ 10 min
+  for the process to exit, backs up, writes, re-reads to confirm the entry, and logs to
+  `logs/connect.log`; `--now` skips the wait for users who know it is closed. After any write,
+  re-read and warn if the entry is missing. Final message: "Open Claude Desktop to load Maestro."
+  If the old Docker bundle may be installed, add: "If Claude Desktop also lists the older Maestro extension, remove it in
   Settings › Extensions."
 - `other`: print the URL.
 
 Tests: config merge keeps other servers and keys; backup created; invalid JSON untouched; absolute
-shim path (never bare `maestro`); runners injected for `claude`/`codex`; deep links match `build()`.
+shim path (never bare `maestro`); a running-Desktop fake defers the write to the waiter (injected)
+and nothing is written in-process; runners injected for `claude`/`codex`; deep links match `build()`.
 
 **Commit** `feat(maestro): maestro connect for every agent app; the card shows it on uv installs`.
 
@@ -1292,9 +1316,21 @@ key** through whatever path the Companion/agents use (read `backend/app/routers/
 tools — `store_extracted_jd` + `score_ats` is the likely pair; record the one you use); pipe
 `initialize`/`tools/list` through `maestro mcp`; `maestro backup` (file exists, gzip magic);
 `maestro check` (JSON, `db_revision == code_head`); `maestro status --json` (records RSS);
+**newest-dependency guard** — `uv tool install` resolves the newest FastAPI/Starlette/uvicorn, not
+`requirements.lock` (the CI lesson agent-lessons 670100d9/e354b9bb: Starlette 1.7 once changed
+empty 404s), so assert over HTTP what the security boundary relies on: forged Host → 400 on both
+ports, foreign Origin → 403 on :8001, the `next.config.ts` security headers on :3000, and the
+anti-fingerprint 404 shape (find the test that pins it in `backend/tests/` and assert the same
+headers/body); one real tool call through `maestro mcp` (e.g. `list_jobs`) returns a `text`
+content block (Claude Desktop reads `content`, not `structuredContent` — agent-lessons fed70244);
 `maestro stop`; both ports free; no process of the tool venv left (psutil-free check: the ports
 plus `maestro status` exit 3). Prints a summary block (versions, timings, RSS). Exit 1 on the first
-failure with the last 40 lines of each log.
+failure with the last 40 lines of each log **and the exception type** for anything that is not a
+connection failure (never report "not running" for a bug — agent-lessons 575efc4a). Everything
+runs under `try/finally`: `maestro stop`, then delete the temp tool dir and home unless `--keep`
+(a 522 MB venv per run fills a disk, and disk-full shows up first as SQLite I/O errors —
+agent-lessons dd6bc03c/9edb9066). Pytest fixtures in `tests/maestro_cs` likewise stop every
+supervisor they start (`stop.request`, then kill) in teardown and assert no child is left.
 
 **Local proof (this Mac):** `python3 scripts/build_wheel.py --out $SP/dist` → check passes, size
 recorded; `python3 scripts/smoke_uv_install.py --wheel $SP/dist/*.whl --expect-version <v>` on
@@ -1415,7 +1451,7 @@ Run each, record in the Gate table (with numbers), fix or log anything red.
 | G2 wheel | `build_wheel.py` + `check_wheel.py` pass; `py3-none-any`; size ≤ 30 MB (spike: 10.6 MB) | |
 | G3 smoke | `smoke_uv_install.py` green on macOS (local) and on the CI macOS/Ubuntu/Windows jobs | |
 | G4 upgrade | dev1 → dev2 via `maestro update --source` on Ubuntu and Windows CI: version moves, data kept, snapshot present | |
-| G5 owner Mac | Owner: `uv tool install` the built wheel, `maestro start`, UI works in Chrome, the Companion connects, `maestro connect claude-desktop` → Claude Desktop lists Maestro's tools, `maestro stop`/`start` round-trip | |
+| G5 owner Mac | Owner: `uv tool install` the built wheel, `maestro start`, UI works in Chrome, the Companion connects, `maestro connect claude-desktop` (with Desktop running: the deferred write lands after quitting) → Claude Desktop lists Maestro's tools, `maestro stop`/`start` round-trip; start from a terminal, close that terminal, Maestro keeps running | |
 | G6 autostart | macOS: `autostart on` → log out/in (or `launchctl kickstart`) starts it; `off` removes it. Linux CI: unit renders and `systemd-analyze --user verify` passes where available. Windows CI: task created and deleted | |
 | G7 Docker | Frontend image builds and serves `/` + `/api/version` with `node server.js` (CI images job or local when the daemon is up) | |
 | G8 boundary | During the smoke: both listeners on 127.0.0.1 only; forged Host → 400 on :8001 and :3000; foreign Origin → 403 on :8001 | |
