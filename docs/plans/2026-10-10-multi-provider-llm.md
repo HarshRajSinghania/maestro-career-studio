@@ -82,9 +82,16 @@ plan says the pinned behavior changes, and say so in the commit.
    between requests (id normalization and meta filtering are deterministic, so they are safe).
 4. **No `image` part in the persisted transcript.** Chat has no image input (attachments are
    read via the `read_attachment` tool). `ImagePart` exists in memory for one-shot calls only.
-5. **Anthropic signature 400 → one retry without reasoning, paid once.** Thinking from another
-   account (a key change) or an unexpected history edit can 400 on a signature. Such a 400 is
-   retried once with reasoning parts removed, and the result carries `reasoning_dropped=True`.
+5. **Anthropic signature 400 → one retry without reasoning, paid once.** Anthropic's
+   preserved-thinking docs (checked 2026-10-10) name what changes the checked prefix: the
+   top-level `system`, the `tools` set, or any earlier message. In this app that means a
+   persona edit (it is in the system prompt) or an app upgrade that changes `TOOL_SPECS`,
+   mid-conversation. Thinking from a DIFFERENT account (Sonnet 5.5 / Haiku 5.5 bind to the
+   producing account) is dropped silently by the API, not a 400; a key change within the same
+   or a linked account changes nothing. The docs also say removing thinking blocks from the
+   start, the end, or all of them is valid, and putting back a removed block is not — which is
+   why the strip is persisted. Such a 400 is retried once with reasoning parts removed, and the
+   result carries `reasoning_dropped=True`.
    `run_turn` then removes `reasoning` parts from the session's earlier persisted assistant
    rows (one rewrite), so the next turn does not pay the same 400 again. If the Task 14 live
    check shows the retry firing in normal use, stop and send a deviation note: the alternative
@@ -997,7 +1004,7 @@ use `set_api_keys`). Run the routing tests (PASS) and the full suite.
 ### Task 5: `anthropic` dependency + Claude adapter `generate` / `list_models`
 
 **Files:**
-- Modify: `backend/pyproject.toml:20` — add `"anthropic>=1.12,<2"` (use the newest 1.x on PyPI
+- Modify: `backend/pyproject.toml:20` — add `"anthropic>=1.13,<2"` (use the newest 1.x on PyPI
   on the day; record the version in the Deviation log)
 - Regenerate: `backend/requirements.lock` (inside `python:3.12-slim`, Dockerfile recipe)
 - Create: `backend/app/services/llm_providers/anthropic.py`
@@ -1010,7 +1017,7 @@ use `set_api_keys`). Run the routing tests (PASS) and the full suite.
 
 **Step 0: Dev environment.** The anaconda interpreter ships `anthropic` 0.77.x, whose
 `beta.messages.stream` lacks `fallbacks`/`cache_control`. Install the pinned 1.x into the dev
-interpreter (`python -m pip install "anthropic>=1.12,<2"`) BEFORE writing code, and confirm
+interpreter (`python -m pip install "anthropic>=1.13,<2"`) BEFORE writing code, and confirm
 `python -c "import anthropic; print(anthropic.__version__)"` prints 1.x. Otherwise the
 `extra_body` escape hatch below would fire silently on a stale SDK.
 
@@ -1123,17 +1130,25 @@ def _block(**kw):
     return SimpleNamespace(model_dump=lambda **_: kw, **kw)
 
 
-def test_parts_from_message_drops_pre_fallback_non_text():
+def test_parts_from_message_keeps_fallback_block_in_place_and_drops_pre_fallback_non_text():
+    fallback = {"type": "fallback", "from": {"model": "claude-opus-5-5"}, "to": {"model": "claude-opus-4-8"}}
     msg = SimpleNamespace(model="claude-opus-4-8", content=[
         _block(type="thinking", thinking="", signature="old"),
+        _block(type="tool_use", id="early", name="f", input={}),
         _block(type="text", text="partial "),
-        _block(type="fallback", **{"from": {"model": "claude-opus-5-5"}}, to={"model": "claude-opus-4-8"}),
+        _block(**fallback),
         _block(type="thinking", thinking="", signature="new"),
         _block(type="text", text="answer"),
     ])
     parts = ap.parts_from_message(msg)
-    assert [type(p).__name__ for p in parts] == ["TextPart", "ReasoningPart", "TextPart"]
-    assert parts[1].meta.data["signature"] == "new" and parts[1].meta.model == "claude-opus-4-8"
+    assert [type(p).__name__ for p in parts] == ["TextPart", "ReasoningPart", "ReasoningPart", "TextPart"]
+    # Anthropic: keep the fallback block exactly where it appeared (its position validates the
+    # thinking around it); drop thinking/redacted_thinking/tool_use before it; text stays.
+    assert parts[1].meta.data == fallback
+    assert parts[2].meta.data["signature"] == "new" and parts[2].meta.model == "claude-opus-4-8"
+    # ...and it replays verbatim, in place
+    replayed = ap.build_messages([Message("assistant", parts)])[0]["content"]
+    assert [b["type"] for b in replayed] == ["text", "fallback", "thinking", "text"]
 
 
 def test_refusal_is_a_plain_sentence():
@@ -1155,8 +1170,11 @@ def test_refusal_is_a_plain_sentence():
 - Thinking is adaptive (the default on Claude 5 models); effort only when a caller asks.
 - Thinking blocks are replayed unchanged (meta.data is the raw block); removing them can 400.
 - Refusals: server-side `fallbacks: "default"` on models that accept it; a final refusal is a
-  plain sentence. After a mid-output fallback, only text before the last `fallback` block is
-  kept (Anthropic's echo rule).
+  plain sentence. After a mid-output fallback (Anthropic's echo rule, refusals-and-fallback
+  docs, checked 2026-10-10): the `fallback` block is KEPT exactly where it appeared (the API
+  uses its position to validate the thinking around it; omitting or moving it is rejected);
+  thinking, redacted_thinking and client tool_use blocks before the last `fallback` block are
+  dropped; text is kept. The fallback block rides as an opaque `anthropic` ReasoningPart.
 """
 
 from __future__ import annotations
@@ -1265,11 +1283,12 @@ def parts_from_message(msg: Any) -> list[Any]:
     parts: list[Any] = []
     for i, b in enumerate(blocks):
         kind = b.get("type")
-        if kind == "fallback" or (i < last_fallback and kind != "text"):
+        if i < last_fallback and kind != "text":
             continue
         if kind == "text":
             parts.append(TextPart(b.get("text", "")))
-        elif kind in ("thinking", "redacted_thinking"):
+        elif kind in ("thinking", "redacted_thinking", "fallback"):
+            # Opaque to us, replayed verbatim and in place by _assistant_blocks.
             parts.append(ReasoningPart(b.get("thinking", ""), ProviderMeta("anthropic", msg.model, b)))
         elif kind == "tool_use":
             parts.append(ToolCallPart(b["id"], b["name"], b.get("input") or {}))
@@ -1324,7 +1343,7 @@ class AnthropicProvider:
             try:
                 return once(req), False
             except anthropic.BadRequestError as exc:
-                # Planning decision 5: a thinking signature from another account/key.
+                # Planning decision 5: the checked prefix changed (system prompt or tools).
                 text = str(exc).lower()
                 if "signature" in text or "thinking" in text:
                     return once(_strip_reasoning(req)), True
@@ -1455,10 +1474,15 @@ This depends on `stream` (Tasks 8–10). Until those land, keep the old `_probe_
 behind `if ref.provider in {"openai", "gemini"}` and switch in Task 12 Step 6 — note the
 temporary branch in the Deviation log so the reviewer checks it is gone.
 
-**Step 2: OpenRouter discovery filter.** `OpenAICompatProvider.list_models` for `openrouter`
-lists `/models`. If OpenRouter documents an endpoint listing ZDR-capable endpoints (research §4
-names its ZDR docs), filter to models that have one; if not, list all and rely on Task 6's
-sentence. Record which in the Deviation log.
+**Step 2: OpenRouter discovery lists only zero-retention models.** Do NOT use the SDK's
+`models.list()` for OpenRouter: its `GET /api/v1/models` response is `{data, total_count,
+links}` with `links.next` paging, which the SDK does not follow (OpenRouter models API docs,
+checked 2026-10-10). `list_models` for `openrouter` makes a plain GET to
+`OPENROUTER_BASE_URL + "/models?zdr=true"` with the OpenRouter key in `Authorization: Bearer`,
+follows `links.next` until null (cap at 20 pages), and maps each `data[].id` / `name` to a
+row. `zdr=true` returns "only models with zero data retention endpoints", so users only see
+models that can actually run under the forced privacy prefs. Test with recorded two-page JSON.
+OpenAI and custom servers keep the SDK `models.list()` path unchanged.
 
 **Step 3:** Tests: sync each provider with a stub adapter registered via `monkeypatch.setitem(
 registry._adapters, ...)`; `add_extra_model(..., "anthropic")` accepted; the tools probe passes
@@ -1482,10 +1506,27 @@ with a `FakeProvider` script that returns a `ToolCallPart` and fails with text o
 - system → first `{"role": "system"}`; user text; assistant with text `None` + `tool_calls`
   (`arguments` = `json.dumps(args or {})`); tool → `{"role": "tool", "tool_call_id", "content"}`;
   tools → `{"type": "function", "function": {name, description, parameters}}`;
-  `stream=True`; `completion_extras` merged (gpt-5.6 → `reasoning_effort: "none"`).
-  Change `llm.completion_extras` to test the id after any vendor prefix
-  (`model.rsplit("/", 1)[-1].startswith("gpt-5.6")`) so OpenRouter's `openai/gpt-5.6-…` ids
-  get the same rule; add that case to the test.
+  `stream=True`; `completion_extras` merged (`reasoning_effort: "none"` for the families below).
+  Widen `llm.completion_extras`: OpenAI's migration guide (checked 2026-10-10) says "Starting
+  with GPT-5.4, Chat Completions does not support tool calling with `reasoning_effort` values
+  other than `none`", so the rule covers gpt-5.4, gpt-5.5 and gpt-5.6, tested on the id after
+  any vendor prefix so OpenRouter's `openai/gpt-5.x-…` ids match:
+
+```python
+_TOOLS_NEED_NO_REASONING = re.compile(r"^gpt-5\.[4-9]")  # OpenAI: "starting with GPT-5.4"
+
+
+def completion_extras(model: str) -> dict[str, Any]:
+    if _TOOLS_NEED_NO_REASONING.match(model.rsplit("/", 1)[-1]):
+        return {"reasoning_effort": "none"}
+    return {}
+```
+
+  Tests: gpt-5.4-x, gpt-5.6-luna and `openai/gpt-5.6-luna` get it; gpt-4o, gpt-5.3-x and
+  `llama3.2:3b` do not. GPT-6 models are NOT covered: OpenAI's page doesn't name them. The
+  Task 14 live check runs a GPT-6 model with and without the field; if tools 400 without it,
+  extend the regex and log the deviation. Until then the tools probe marks such a model as
+  tool-incapable, which is a safe failure.
 - accumulate: text deltas → `TextDelta`s; tool-call deltas across chunks join into one
   `ToolCallPart` with parsed arguments; unparseable arguments → `arguments=None`.
 - OpenRouter: chunks whose delta carries `reasoning_details` (read via
@@ -1917,8 +1958,10 @@ Read `frontend/AGENTS.md` and `docs/frontend-conventions.md` first. Desktop-only
   problems become `Record<Provider, …>` driven by one `KEY_FIELDS` table (label, hint link,
   configured/source field names); four `KeyField`s (OpenAI, Claude, Gemini, OpenRouter);
   description: "Lets the app use OpenAI, Claude, Gemini or OpenRouter. You need one unless you
-  use a custom AI server."; OpenRouter's hint adds "Requests use only providers that keep no
-  data." Picker groups built from `PROVIDERS` with `providerLabel`. Role rows show a warning
+  use a custom AI server."; OpenRouter's hint adds "OpenRouter sends requests only to model
+  providers that keep no data. OpenRouter itself may keep what you send." (OpenRouter's privacy
+  policy, updated 2026-08-31, says inputs containing personal data are collected by
+  OpenRouter; zero data retention covers only the providers behind it.) Picker groups built from `PROVIDERS` with `providerLabel`. Role rows show a warning
   line when the role's model provider has no key configured (and no custom server for
   `openai`): "<Role> uses <Provider>, but no <Provider> key is saved."
 - `frontend/components/settings/model-catalog-panel.tsx` — `SyncProvider = Provider`; buttons
@@ -1944,7 +1987,7 @@ line. **Commit** — `feat(settings): Claude and OpenRouter keys and models`.
 
 For each provider whose key is in the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
 `GEMINI_API_KEY`, `OPENROUTER_API_KEY`) and a model id given on the command line
-(`--openai gpt-5.6-luna --anthropic claude-sonnet-5-5 --gemini gemini-3.7-flash
+(`--openai gpt-5.6-luna --anthropic claude-sonnet-5-5 --gemini gemini-3.8-flash
 --openrouter anthropic/claude-sonnet-5-5`), run against a scratch `DATA_DIR`:
 1. `call_openai` text; 2. `call_openai` json; 3. `call_openai` with a small PNG (OCR);
 4. `adapter.stream` with a two-tool scenario that forces two sequential tool steps (tool A's
@@ -1955,7 +1998,10 @@ usage per call. Exit non-zero on any failure.
 Run it with the owner's keys on a throwaway stack (memory recipe: fresh uvicorn on a spare
 port, every `*_DIR` under `$SP`). Record the table in the Gate table. Expected deviations to
 resolve here: Gemini `parametersJsonSchema` acceptance (Task 10), OpenRouter's no-ZDR error
-text (Task 6), Claude fallback acceptance per model (Task 5 `FALLBACK_MODELS`).
+text (Task 6), Claude fallback acceptance per model (Task 5 `FALLBACK_MODELS`), and whether a
+GPT-6 model (e.g. `--openai-extra gpt-6-luna`) needs `reasoning_effort: "none"` for tools
+(Task 8 regex), plus the Gemini parallel-call order (all calls, then all results) — run the
+two-tool scenario once with both tools requested in one step.
 
 **Commit** — `test(llm): live provider check script (manual, real keys)`.
 
@@ -1969,8 +2015,10 @@ text (Task 6), Claude fallback acceptance per model (Task 5 `FALLBACK_MODELS`).
 listed (`grep -rln "GEMINI_API_KEY\|OpenAI or Gemini" docs README.md`).
 
 - PRIVACY.md "AI services you choose": Anthropic (api.anthropic.com, your key, Anthropic's
-  retention terms); OpenRouter (openrouter.ai, your key, requests forced to providers with zero
-  data retention and no data collection; OpenRouter itself is a processor).
+  retention terms); OpenRouter (openrouter.ai, your key; requests are forced to model providers
+  with zero data retention and no data collection, but OpenRouter ITSELF may keep inputs — its
+  privacy policy says inputs containing personal data are collected — so a resume sent through
+  OpenRouter reaches OpenRouter under its terms). Link https://openrouter.ai/privacy.
 - SYSTEM.md (orientation tier stays ≤ 1000; pay for lines):
   - §3: the LLM row describes `llm.py` front door + `llm_providers/` adapters + registry rule.
   - §6: new invariant `{#inv-provider-tagged-meta}` — **Provider data** opaque blocks

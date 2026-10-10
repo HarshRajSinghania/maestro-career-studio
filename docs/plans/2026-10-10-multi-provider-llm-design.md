@@ -137,8 +137,9 @@ plain sentence naming the reason.
   sentence. Server-side `fallbacks: "default"` (beta
   `server-side-fallback-2026-07-01`) is on, so a classifier false positive
   (e.g. a resume describing security work) reroutes; billed at the fallback
-  model's rates. `fallback` content blocks are audit markers and are dropped;
-  non-text blocks before the last one are dropped too (Anthropic's echo rule).
+  model's rates. A `fallback` content block is kept exactly where it appeared
+  (Anthropic validates the thinking around it by its position); thinking,
+  redacted_thinking and tool_use blocks before the last one are dropped; text stays.
 - Images: base64 image blocks (attachment OCR path).
 - Errors: auth → "Claude refused your API key"; 429/529 → "too many requests";
   Anthropic error strings added to `llm_capabilities._UNREACHABLE_SIGNS`.
