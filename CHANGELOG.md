@@ -30,7 +30,13 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ### Breaking changes
 
-- Pre-rename environment aliases no longer work; use the `MAESTRO_CS_*` names.
+- **Pre-rename environment variables are now ignored silently:**
+  `CAREER_STUDIO_EXTENSION_IDS`, `CAREER_STUDIO_MCP_PROFILE`,
+  `CAREER_STUDIO_MCP_CLIENT`, `CAREER_STUDIO_PDF_DIR`,
+  `CAREER_STUDIO_UPLOAD_DIR` and `RESUME_TAILOR_PDF_DIR`.
+  Use the `MAESTRO_CS_*` names. Leaving these set without their replacements
+  means an unpacked Companion id loses API access, the MCP profile falls back
+  to `full`, and PDFs/uploads go to the default folders.
 
 ### Added
 
@@ -54,8 +60,6 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ### Removed
 
-- The pre-rename `CAREER_STUDIO_*` and `RESUME_TAILOR_PDF_DIR` environment variables;
-  use the `MAESTRO_CS_*` names.
 - Four API routes with no caller outside tests: `POST /api/resume-lint/wording/reset`,
   `GET /api/kb/extra-section-presets`, `GET /api/resume-versions/{kind}/{key}/{number}/diff`,
   and `POST /api/kb/consolidate`. Word-bank reset still saves through `PUT /wording`;
