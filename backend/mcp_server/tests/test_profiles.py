@@ -120,14 +120,18 @@ def test_importing_the_server_never_deletes_tools():
     import os
     import subprocess
     import sys
+    from pathlib import Path
+
+    import mcp_server.server as srv
 
     out = subprocess.run(
         [sys.executable, "-c",
          "import mcp_server.server as s; print(len(s.mcp._tool_manager.list_tools()))"],
         env={**os.environ, "MAESTRO_CS_MCP_PROFILE": "hunt"},
+        cwd=Path(__file__).resolve().parents[2],
         capture_output=True, text=True, check=True,
     ).stdout.strip()
-    assert out == "88"
+    assert int(out) == len(srv.list_registered_tool_names("full"))
 
 
 def test_the_request_profile_wins_over_the_env_for_hints(monkeypatch):
