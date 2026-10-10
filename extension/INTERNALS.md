@@ -479,7 +479,7 @@ know, and each one was learned from a live failure.
   can route a message to a tab (its one message, `fields_touched`, has no SW
   handler; the panel hears it directly).
 - **The COMMIT GESTURE.** `visitControl`/`leaveControl` (plus the
-  `guided`-prefixed and injected copies) wrap everything that is not a text
+  `guided`-prefixed and twin copies) wrap everything that is not a text
   commit, because a `<select>` set through the native setter and a radio driven
   by `click()` fire no focus events, so Workday's required-field validation
   never ran.
@@ -1491,8 +1491,9 @@ comma-separated.
   side-effect-free. This is a personal, locally loaded extension — narrow it if
   that bothers you.
 - **`tabs` stays.** Without it Chrome omits `tab.url` (and `changeInfo.url`) for
-  any tab outside `host_permissions` — `chrome://newtab`, settings, the PDF viewer.
-  A bound tab that navigates from a posting to one of those then fires
+  any tab outside `host_permissions` — `chrome://newtab`, settings, `file://` and other
+  non-http(s) pages (an http(s) PDF keeps its url: it is the PDF's own, covered by
+  `host_permissions`). `panel.js` rebinds only on a truthy `changeInfo.url`. A bound tab that navigates from a posting to one of those then fires
   `tabs.onUpdated` with a status and no url, `onTab` never runs, and the panel
   keeps the posting it left (`healPosting` sees a loaded preview and does
   nothing). Measured in Chromium, same tab, `http` page to `chrome://version`:

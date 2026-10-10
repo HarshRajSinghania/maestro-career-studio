@@ -6,6 +6,6 @@
                          "**/.slop-baseline.json", "**/graphify-out/**"],
   "allowed_clones": [
     {"a": "content/autofill.js", "b": "content/open-questions.js",
-     "reason": "Deliberate page-context self-copy: the setNativeValue→commitValue ladder exists in both fillFormFromProfile and fillAnswersByQid because each writer must remain self-contained; pinned by test_both_copies_of_the_commit_ladder_stay_identical."}
+     "reason": "Deliberate pinned-identical self-copy: the setNativeValue→commitValue ladder exists in both fillFormFromProfile and fillAnswersByQid so each writer stays self-contained (removing the twin is a separate decision); pinned by test_both_copies_of_the_commit_ladder_stay_identical."}
   ]
 }

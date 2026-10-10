@@ -26,7 +26,7 @@
  *   below) and `collectOpenQuestions` (plain text inputs, still content-side) —
  *   and the alternative was a copy on each side under a byte-equality pin. The
  *   copy would have been the wrong shape here: this repo's byte-identical pins
- *   (the commit ladder) exist because those functions are INJECTED and must be
+ *   (the commit ladder) exist because each writer there is kept deliberately
  *   self-contained, and `collectOpenQuestions` is not — it already reads
  *   `ns.isPolicyBlocked` and `ns.lastRuleAttempts` off the namespace at call
  *   time, so one more `ns.` read costs it nothing and buys ONE definition of a

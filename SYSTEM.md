@@ -360,7 +360,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   history/current/CTC and unqualified salary/wage/compensation mentions are also blocked without consent; explicit
   salary expectations are allowed only AFTER both lists, so an expectation phrase cannot bypass a list match.
   `test_both_copies_of_the_policy_deny_list_stay_identical` asserts exactly one declaration of EACH list; only the
-  page-INJECTED commit ladder stays deliberately duplicated (`…commit_ladder_stay_identical`).
+  commit ladder stays a deliberate, pinned-identical twin so each writer is self-contained (`…commit_ladder_stay_identical`).
 - **One label-pattern table, two readers** `{#inv-one-label-pattern-table}` (`extension/shared/profile-fields.js`). The
   eleven patterns naming a TYPED home in the autofill profile (`eligibility.*`, `work_auth.*`, `preferences.*`) are read
   by `content/autofill.js`'s rule table, which FILLS those fields, and by the panel's `saveTargetFor`, which decides
@@ -726,7 +726,7 @@ with the failure mode that bought it. Code citing "§8" lands here.
   COUNT — re-baseline it rather than chasing it**: adding code, adding tests or decomposing a monster all raise it;
   judge erosion by hotspot density per KLOC and the worst cc. Orphan LOC and duplication are honest ratchets. Scan a
   SURFACE dir, never the repo root (it orphans the whole backend); jscpd is optional. The extension's allowlisted clones are the
-  documented injected twins, but the matcher pairs FILE NAMES by substring and `allowlisted_clones` is PRINTED, not
+  documented commit-ladder twin, but the matcher pairs FILE NAMES by substring and `allowlisted_clones` is PRINTED, not
   gated: check it by eye. Graph signals read the gitignored `graphify-out/graph.json` (`graphify extract . --no-cluster
   --code-only`, PyPI `graphifyy`).
 

@@ -606,7 +606,7 @@ def test_both_copies_of_the_policy_deny_list_stay_identical():
     """The historical two-copy guard now pins one shared policy source.
 
     Both content-world writers consult the namespace function. The commit
-    ladder is deliberately different: its two injected-context copies remain
+    ladder is deliberately different: its two deliberate self-contained copies remain
     identity-pinned by test_both_copies_of_the_commit_ladder_stay_identical.
     """
     # `shared/`, not `content/`, since Task 13: the SIDE PANEL consults this

@@ -331,8 +331,8 @@ def test_every_copy_of_the_label_normaliser_stays_identical():
     `collectOpenQuestions` normalises the label it stamps onto a collected
     question with its own copy; `fillFormFromProfile` normalises the label it
     matches a rule against with a third; `fillAnswersByQid` carries a fourth
-    for the reason the commit ladder below carries two — it is injected and
-    must be self-contained.
+    for the reason the commit ladder below carries two — each writer is kept
+    self-contained, as a deliberate copy.
 
     THE CHAIN IS WHY THIS IS PINNED RATHER THAN LEFT ALONE. The pause row's
     learn walks it end to end: a label normalised by the collector, deduped
@@ -360,9 +360,10 @@ def test_every_copy_of_the_label_normaliser_stays_identical():
 
 
 def test_both_copies_of_the_commit_ladder_stay_identical():
-    """The ladder exists twice: injected functions cannot close over panel
-    scope, so fillAnswersByQid carries its own copy. Nothing but this test
-    stops a fix from being applied to one copy and not the other.
+    """The ladder exists twice, deliberately: fillAnswersByQid carries its own
+    copy so each writer stays self-contained (removing the twin is a separate
+    decision). Nothing but this test stops a fix from being applied to one copy
+    and not the other.
 
     setNativeValue is part of the guarded run: it is the block commitValue
     calls to do the actual write and fire input/change, it is duplicated the
@@ -651,8 +652,8 @@ def test_the_guided_listbox_writer_leaves_the_control(tmp_path):
 
 
 def test_the_ai_paths_select_and_radio_limbs_take_the_gesture(tmp_path):
-    """`fillAnswersByQid` carries its own copy of everything for the injection
-    reason, so its select and radio limbs are a third place the gesture has to
+    """`fillAnswersByQid` carries its own copy of everything (the deliberate
+    self-contained twin), so its select and radio limbs are a third place the gesture has to
     exist — and a third place it could be forgotten."""
     result = run_ai_fill(
         tmp_path,

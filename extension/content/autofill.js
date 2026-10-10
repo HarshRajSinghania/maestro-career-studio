@@ -764,7 +764,8 @@ async function fillFormFromProfile(
   const stillChecked = (el) => el?.isConnected === true && el.checked === true;
 
   // KEEP IN SYNC with fillAnswersByQid's copy, from here through commitValue —
-  // injected functions are self-contained, so all three blocks exist twice.
+  // a deliberate, pinned-identical twin so each writer stays self-contained;
+  // all three blocks exist twice.
   const setNativeValue = (input, value) => {
     const proto = input instanceof HTMLTextAreaElement
       ? window.HTMLTextAreaElement.prototype
