@@ -21,8 +21,10 @@ of the gates. Lowering that friction is part of the goal, not a side effect.
   rule "Next and Submit stay the user's".
 - **Which jobs:** your Queued jobs only. The queue is the consent step; the server applies Companies
   to skip, already-applied and the remaining daily cap before any tab opens. Full automation must be On.
-- **Job boards:** follow a posting's Apply out to the employer's own application site. LinkedIn Easy
-  Apply and Indeed Apply park as Needs you (their terms forbid automated use).
+- **Job boards:** the run opens the employer's own application site and never clicks anything on a
+  job board. Save job records the employer's apply link from the posting the user is viewing (Part
+  7); a job without one falls back to following the posting's Apply. LinkedIn Easy Apply and Indeed
+  Apply park as Needs you (their terms forbid automated use).
 - **Sign-in:** use the saved job-site login to sign in to an existing account. Creating an account,
   email or SMS codes and CAPTCHAs always park.
 - **Where it asks:** in the tab. The tab waits on the field, the panel lists every tab that needs you,
@@ -35,7 +37,9 @@ of the gates. Lowering that friction is part of the goal, not a side effect.
     page's open questions together.
   - Questions that can be predicted are asked once, before the run (the "Before we start" sheet).
   - An answer is asked once: saved to the profile, it never parks again.
-  - A job with no tailored PDF is quick-tailored (no model call) or falls back to the base PDF.
+  - A job with no tailored PDF is settled before the run, never during it (Part 7). The run never
+    quick-tailors a job that has an open tailoring session or a tailored draft: the custom tailoring
+    path is never overwritten.
 - **Answer the safer question:** the run gives a safe answer to anything NOT on the protected list.
 - **Protected list** (park unless a saved fact answers it): work authorization and sponsorship;
   salary and pay; EEO and demographics (unless EEO consent); criminal or background history; security
@@ -102,6 +106,12 @@ the model picks among candidates code labelled Next-like or unclear, and sees bu
 never page prose. **A Submit-like button is never clickable. When in doubt, the page is the review
 page and the run stops.**
 
+**Known buttons first.** A small table (`shared/ats-buttons.js`) names each common ATS's own
+Next and Submit markers (attributes such as automation ids, not label text), starting with Workday,
+Greenhouse, Lever, Ashby and iCIMS. On a known ATS the table decides; a marker it lists as Submit is
+Submit whatever its wording. Unknown sites use the generic sort above. This is navigation only: the
+owner's "no per-widget procedures" rule for filling stands.
+
 **Before Next:** the fill finished, the resume is attached, the page's receipt is recorded
 (`shared/receipt.js`), and no required field is open (an open one parks the page instead).
 
@@ -156,9 +166,12 @@ text. At most 15 steps per application; the same fingerprint seen twice parks.
   remaining daily cap, each with its apply link, PDF readiness and knock-out pre-scan.
 - **Before we start:** profile facts the pre-scan found missing are asked once and saved. Jobs with
   a knock-out conflict are listed unticked with "apply anyway"; an unstated requirement just runs.
+  Jobs with no PDF are listed with a per-job choice (Part 7).
 - **Opening tabs:** a dedicated normal window, 3 tabs filling at once by default (1 to 5 in the
-  panel). A job with no PDF is quick-tailored and rendered first, one at a time, while earlier tabs
-  fill. Ready-to-submit tabs stay open and do not count as filling; opening pauses at 10 waiting tabs.
+  panel). Ready-to-submit tabs stay open and do not count as filling; opening pauses at 10 waiting
+  tabs.
+- **Pacing:** a random gap of a few seconds between opening jobs, so a run never arrives as a burst
+  from one browser.
 - **Run list** at the top of the panel, one row per job: Opening, Filling page N, Needs you (N),
   Ready to submit, Applied, Stopped: reason. A row brings its tab forward and the panel shows that
   tab's Fill view. A parked tab shows today's pause rows, one per open question, "Remember this
@@ -169,6 +182,9 @@ text. At most 15 steps per application; the same fingerprint seen twice parks.
   the row offers Mark applied.
 - **Run log:** at the end the Companion posts a Recent runs entry (`agent_runs`, automation
   "Queued run") with counts: ready, needs you, applied, stopped.
+- **Time measured:** per application, value-free: run time from tab open to Ready to submit, and
+  the user's own time (answering parked questions, Ready to submit to applied). The run log carries
+  the medians, so "seconds of your time per application" is a measured number, not a claim.
 
 **Risk measured first:** Chrome throttles background tabs (no animation frames; timers slow to once
 a second, then once a minute after about five minutes hidden). The first build task is a spike:
@@ -185,6 +201,21 @@ read once while installs move over. Run tabs bind through their run record, with
 pages and into a tab Apply opens. The one-hour application-flow window gets the same per-tab
 treatment for run tabs.
 
+## Part 7: Apply link and resume readiness
+
+- **Apply link at Save.** Jobs store only `source_url` today. Save job (Companion) also records
+  the employer's apply link when the posting page the user is viewing exposes one (an external Apply
+  link, or the posting's structured data), as a new `apply_url` on the job. The page the user is on
+  is read; nothing is fetched in the background with the user's cookies. The run opens `apply_url`
+  when present, else `source_url`.
+- **Prepare when queued: optional, off by default.** A setting "Prepare queued jobs" quick-tailors
+  and renders a PDF when a job is Queued, so a run starts filling at once. It skips any job with an
+  open tailoring session or a tailored draft.
+- **At run start,** jobs without a PDF appear in Before we start with a per-job choice: Quick
+  tailor, Use base resume, or Skip. Default Quick tailor, except a job with an open custom tailoring
+  session defaults to Skip ("finish tailoring first"). Quick tailor and renders run one at a time
+  while earlier tabs fill. Nothing in a run overwrites a custom tailoring session or draft.
+
 ## Rules and docs changed on purpose
 
 - SYSTEM.md §6: `inv-policy-deny-list-single-source` ("Next/Submit stay the user's" becomes "Submit
@@ -200,6 +231,11 @@ treatment for run tabs.
 ## Testing
 
 - Unit fixtures for the classifier, one per page kind, and for button sorting.
+- Recorded test forms (saved, scrubbed page snapshots with made-up employers) for Workday,
+  Greenhouse, Lever, Ashby and iCIMS: the classifier and the known-buttons table run against each.
+  They back a coverage table in the Companion docs: deep, generic or untested per ATS.
+- Backend: Prepare queued jobs and the run-start choice never touch a job with an open tailoring
+  session or a draft.
 - Browser tests (bundled Chromium): a three-step wizard ending on review; Submit wordings never
   clicked; sign-in; CAPTCHA and email-code pages park; a validation-error retry; three tabs at once;
   per-tab memory surviving 30 minutes (clock injected) and a second tab's pick.
