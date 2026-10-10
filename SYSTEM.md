@@ -466,7 +466,8 @@ this contract. Code citing "§4" lands here; the table says which file to open.
 ## 7. Agent surfaces
 
 - **MCP server** (`backend/mcp_server/`; its clients are **connected agents** on screen, Settings › Connected agents):
-  thin REST wrappers (`@_guard` → `ToolError`) via httpx (`BACKEND_URL`, default localhost:8000; compose host 8001).
+  thin REST wrappers (`@_guard` → `ToolError`) via httpx (`BACKEND_URL`, default localhost:8000).
+  Loopback hosts bypass proxies; other hosts honor them (`mcp_server/tests/test_client_loopback.py`).
   **The docstring is the API**: it describes what a tool does, records and requires, never instructs (directory
   policy), and every tool carries `title` + four `ToolAnnotations` hints (`_read`/`_write`); both ratcheted in
   `test_server.py`. Lists page with bounded defaults; a failed `next` lookup after a landed write is `next: null`
@@ -685,11 +686,10 @@ with the failure mode that bought it. Code citing "§8" lands here.
   Windows paths, then PATH (`dockerCandidates`/`onPath`, `mcpb/tests/shim.test.js`); `setup-mcp.sh` is not
   a Windows route. The upload host root is `${PWD}` (compose falls back to its own cwd; `update.sh` pins it
   to the repo) unless `MAESTRO_CS_UPLOAD_HOST_ROOT` says otherwise; a Windows-shaped root joins with `\`.
-- **Native run (no Docker)** — `docs/native-install.md`: `backend/scripts/native/*.sh` run one loopback worker from
-  `$MAESTRO_HOME`; `GET /health/memory` reports memory. `slow` tests (backend, venv, model or the 200 MB budget)
-  skip with `MAESTRO_SKIP_SLOW` (set in CI). `integration` MCP loopback tests and `tests/sync/test_two_machines.py`
-  run in CI: real subprocesses, no downloads. With `EMBEDDINGS_OUT_OF_PROCESS` at most ONE embedding
-  helper runs per process (`embeddings._HELPER_LOCK`): two ~290 MB helpers OOM a small machine.
+- **Native run (no Docker)** — `docs/native-install.md`: scripts in `backend/scripts/native/` run one loopback worker
+  from `$MAESTRO_HOME`, exporting `BACKEND_URL=http://127.0.0.1:$MAESTRO_PORT` (pin: `tests/test_native_scripts.py`).
+  `slow` tests skip with `MAESTRO_SKIP_SLOW` (CI); `integration` MCP loopback and `tests/sync/test_two_machines.py` run in CI without downloads.
+  `GET /health/memory` reports memory; `EMBEDDINGS_OUT_OF_PROCESS` allows one helper (`embeddings._HELPER_LOCK`); two ~290 MB helpers OOM.
 - **Version identity**: the tag bakes into both images as `APP_VERSION`, served by `GET /api/version` with
   the live alembic revision; the frontend warns when its baked copy disagrees, unless either side STARTS
   WITH `dev` (local or dispatch build) = do not compare — which also keeps it off contributors.

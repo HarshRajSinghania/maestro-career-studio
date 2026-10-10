@@ -48,7 +48,7 @@ def record(kind):
              "APPLICATIONS_DIR", "SETTINGS_DIR", "BASE_RESUMES_DIR",
              "KB_DOCUMENTS_DIR", "LOGS_DIR", "EXPORTS_DIR", "MALLOC_ARENA_MAX",
              "EMBEDDINGS_OUT_OF_PROCESS", "FASTEMBED_CACHE_PATH", "ALLOWED_HOSTS",
-             "TEST_DATABASE_URL", "OPENAI_API_KEY")
+             "TEST_DATABASE_URL", "OPENAI_API_KEY", "BACKEND_URL", "MAESTRO_PORT")
     path.write_text(json.dumps({"calls": previous["calls"] + 1, "args": sys.argv[1:],
         "cwd": os.getcwd(), "pid": os.getpid(), "umask": os.umask(0o077),
         "env": {key: os.environ.get(key) for key in names}}))
@@ -410,6 +410,36 @@ def test_setup_is_private_idempotent_and_installs_editable_mcp(native_home):
     assert_private_layout(ctx)
     assert_editable_install(ctx)
     assert_migration(ctx)
+
+
+@pytest.mark.parametrize("port,expected_port", [(None, "8001"), ("8741", "8741"), ("08741", "8741")])
+def test_common_exports_backend_url_at_the_native_port(native_home, port, expected_port):
+    ctx = native_home
+    setup_home(ctx)
+    if port is None:
+        (ctx.home / "maestro.env").write_text("")
+    else:
+        ctx.env["BACKEND_URL"] = "http://inherited-backend:8000"
+        (ctx.home / "maestro.env").write_text(f"BACKEND_URL=http://backend:8000\nMAESTRO_PORT={port}\n")
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; native_load_env; "$2" -c '
+            "'from native_test_support import record; record(\"load_env\")'",
+            "probe",
+            str(NATIVE / "common.sh"),
+            sys.executable,
+        ],
+        cwd="/",
+        env=ctx.env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+    assert result.returncode == 0, result.stderr
+    assert read_record(ctx, "load_env")["env"]["BACKEND_URL"] == f"http://127.0.0.1:{expected_port}"
+    assert_safe(result, ctx)
 
 
 @pytest.mark.parametrize("dependency", ["pip", "alembic"])

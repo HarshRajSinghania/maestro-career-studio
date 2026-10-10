@@ -46,6 +46,11 @@ _PAGE_IMAGE_MAX_DIMENSION_DEFAULT = 1024
 _PAGE_IMAGE_B64_CAP = 1_000_000
 
 
+def _is_loopback(base_url: str) -> bool:
+    host = (httpx.URL(base_url).host or "").lower()
+    return host in {"localhost", "127.0.0.1", "::1"}
+
+
 def _drop_none(**kwargs: Any) -> dict[str, Any]:
     return {k: v for k, v in kwargs.items() if v is not None}
 
@@ -345,7 +350,8 @@ class BackendClient:
         """One HTTP round trip with the shared error mapping."""
         url = f"{self.base_url}{path}"
         try:
-            with new_client(timeout=self._timeout) as client:
+            proxy_options = {"trust_env": False} if _is_loopback(self.base_url) else {}
+            with new_client(timeout=self._timeout, **proxy_options) as client:
                 response = client.request(method, url, **kwargs)
         except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
             # The request never left this process (no connection / no pooled

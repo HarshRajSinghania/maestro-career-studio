@@ -1099,10 +1099,10 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 
 | Gate | Baseline (Task 0) | After |
 |---|---|---|
-| Full suite passed / skipped / wall | | Task 3: 10,232 passed / 860 skipped / 80.95 s; 23 socket/ps sandbox failures (same as Task 2). Task 4: 10,234 passed / 860 skipped / 74.57 s; same 23 socket/ps failures plus the loopback test's bind setup error |
+| Full suite passed / skipped / wall | | Task 3: 10,232 passed / 860 skipped / 80.95 s; 23 socket/ps sandbox failures (same as Task 2). Task 4: 10,234 passed / 860 skipped / 74.57 s; same 23 socket/ps failures plus the loopback test's bind setup error. Task 5: 10,244 passed / 860 skipped / 77.93 s; exactly the same 23 failures and 1 setup error as Task 4 |
 | Same in a CI-shaped venv | | Task 3: pending controller (online fresh install prohibited here) |
-| ruff / check_system_md / check_mcpb_bundle / node --test mcpb | | Task 3: pass / pass (994/1000) / pass / 4 passed, 3 Docker-dependent skipped. Task 4: ruff and check_system_md pass (994/1000); bundle/bridge untouched |
-| slop backend / frontend / extension | | Tasks 3–4: backend pass; frontend and extension untouched |
+| ruff / check_system_md / check_mcpb_bundle / node --test mcpb | | Task 3: pass / pass (994/1000) / pass / 4 passed, 3 Docker-dependent skipped. Tasks 4–5: ruff and check_system_md pass (994/1000); bundle/bridge untouched. Task 5: shellcheck unavailable locally (CI/controller pending) |
+| slop backend / frontend / extension | | Tasks 3–5: backend pass; frontend and extension untouched |
 | frontend tsc / lint / build | | |
 | G4 end to end (88 tools, list_jobs, render, get PDF) | — | |
 | G5 Claude Desktop bridge + restart mid-chat (owner) | — | |
@@ -1113,6 +1113,7 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 | G10 native path reaches /mcp | — | |
 | Backend RSS after one /mcp session (budget 200 MB) | | |
 | Task 4 loopback / disabled-offload proof | — | Both real-process runs stop at `socket.bind`: `PermissionError: [Errno 1] Operation not permitted`; controller must prove the 10 s `list_jobs` timeout and restored pass. Supplemental real-client in-process assertion check: 1 passed |
+| Task 5 loopback proxy / native BACKEND_URL | — | RED: 7 failed / 3 passed (missing trust_env=False and native URL); GREEN: all 10 new regression cases pass. Complete two-file run: 105 passed / 2 skipped / 21 existing socket/ps failures |
 
 ## Deviation log (append-only)
 
@@ -1146,3 +1147,6 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 | 3 (review) | — | MCP `serverInfo.version` reports the SDK version (1.29.1), not Maestro's | Task 12 (or a small follow-up in Task 2's module): pass the app version to the low-level `Server(...)` | — |
 | 0 (owner, 2026-10-10) | Codex app custom-server auth options | Authentication offers OAuth / **No authentication** / OAuth or no authentication; Tunnel's behaviour still unknown | Task 7's Codex-app steps say "Set Authentication to No authentication."; the Tunnel warning stays as written | One trust boundary |
 | 4 (controller) | implementer proves the red | Sol's sandbox forbids sockets | controller ran it: green 1 passed in 4.8 s; with `offload_tools` returning 0 → TimeoutError at the 10 s deadline (1 failed); http.py restored | — |
+| 5 | Four implementation/test files only | SYSTEM.md's header requires changed client and native environment conventions to be documented when they land | Update §7 and tighten §9 to keep 994/1000 lines; record gates here | No Goal Card change; documentation contract |
+| 5 | Green two-file and full-suite runs | Sandbox still blocks socket binds and `/bin/ps`; the 23 full-suite failures and loopback setup error exactly match Task 4 | Keep the tests intact; use the existing offline model cache and isolated scratch destinations, record logs in scratch, and have the controller rerun with socket/process access | Pinned behaviour never moves silently; verification constraint |
+| 5 | Commit after the task | Implementer instructions forbid git writes | Leave the verified regression fixes in the worktree for the controller to commit | No Goal Card change; execution constraint |
