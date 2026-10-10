@@ -84,20 +84,40 @@ scope. ADD tests beside pinned tests, never replace them.
 **Step 1:** `git status` clean; full suite; record passed/skipped/wall in the Gate table; run the
 three slop checks and `check_system_md.py`.
 
-**Step 2: Codex plugin `.mcp.json` with a URL.** Codex's CLI supports HTTP servers
-(`codex mcp add <name> --url <url>`, verified on codex-cli 0.159.3), but whether a *plugin's*
-`.mcp.json` accepts `{"type": "http", "url": …}` is undocumented (one third-party write-up says
-yes; a vendor-neutral spec uses `"streamable-http"`). Test it:
-1. Copy `plugins/maestro-career-studio/` to `$SP/codex-plugin-test/`, replace `.mcp.json` with
-   `{"maestro-career-studio-test": {"type": "http", "url": "http://127.0.0.1:<port>/mcp"}}`,
-   and add a scratch marketplace pointing at it (shape of `.agents/plugins/marketplace.json`).
-2. With a scratch backend from Task 3 onward running on `<port>` — so do this step's run AFTER
-   Task 3 lands; record "pending" here first — `codex plugin marketplace add <path>` +
-   `codex plugin add …`, then `codex mcp list` (and a one-shot `codex exec -s read-only "list the
-   maestro tools you can see"`): does the server appear and list tools? Try `"type":
-   "streamable-http"` if `"http"` does not.
-3. Record the outcome in the Deviation log. It decides Task 9: shared `.mcp.json` switches to the
-   URL (yes) or Codex keeps its own `docker exec` file for one release (no).
+**Step 2: Codex, before and after `/mcp` exists.** Facts already established on this machine
+(2026-10-10, codex-cli 0.159.3, read-only):
+- Codex connects to plain `http://localhost` MCP servers with no auth: `codex mcp list` shows a
+  URL server `http://localhost:<port>/mcp/codex`, bearer `-`, enabled.
+- Codex reads our plugin's current `.mcp.json` (top-level server map, no `mcpServers` wrapper);
+  its own bundled plugins use `{"mcpServers": {…}}`. Both forms load.
+- Codex plugin `.mcp.json` entries accept Codex-only keys: `default_tools_approval_mode`
+  (`"approve"`), per-tool `"tools": {"<name>": {"approval_mode": "prompt"}}`, `enabled_tools`,
+  `startup_timeout_sec` (seen in the bundled `codex-app-tools` plugin under `~/.codex/plugins/cache/`).
+- The Codex app's Add menu offers **Add a marketplace** (GitHub repo / Git URL / local folder, a
+  **Git ref** and **Sparse paths**), **Upload plugin archive**, and **Create custom MCP server**
+  (name, optional description, Connection: **Server URL** or **Tunnel**, Authentication defaulting
+  to OAuth, a risk acknowledgement, "Create as a plugin").
+
+Still to prove — AFTER Task 3 lands, against a scratch backend on `<port>` (record "pending" first):
+1. **Plugin `url` entry.** Copy `plugins/maestro-career-studio/` to `$SP/codex-plugin-test/`, give
+   it a `.codex-mcp.json` = `{"mcpServers": {"maestro-career-studio-test": {"url": "http://127.0.0.1:<port>/mcp"}}}`,
+   point its `.codex-plugin/plugin.json` `mcpServers` at that file, add a scratch marketplace
+   (shape of `.agents/plugins/marketplace.json`), install, then `codex mcp list` and a one-shot
+   `codex exec -s read-only "list the maestro tools you can see"`. If `url` alone is not taken, try
+   adding `"type": "http"`, then `"type": "streamable-http"`; record which form loads.
+2. **Per-tool approval.** In the same test file add `"default_tools_approval_mode": "approve"` and
+   `"tools": {"mark_submitted": {"approval_mode": "prompt"}}`; confirm Codex prompts before
+   `mark_submitted` and not before `list_jobs` (a short interactive `codex` run is fine).
+3. **Codex app "Create custom MCP server"** (the owner clicks; you record): does Authentication offer
+   *None*? Does a `http://localhost:<port>/mcp` Server URL connect and list tools? What does
+   **Tunnel** do — if it publishes or relays a local server to a remote party, it must never be
+   used with Maestro (unauthenticated `/mcp`; SYSTEM.md §6 inv-mcp-inside-the-app), and Task 7's
+   card says so.
+4. **Tag-pinned marketplace.** In the Codex app, Add a marketplace with source
+   `seinun-ai/maestro-career-studio`, Git ref = the current release tag, Sparse paths =
+   `plugins/` — confirm it installs the plugin from that tag (owner clicks; record).
+5. Record every outcome in the Deviation log; they decide Task 9's file shapes and Task 7's
+   "Codex app" row wording.
 
 No commit.
 
@@ -746,9 +766,9 @@ from typing import Literal
 from pydantic import BaseModel
 
 class ConnectClient(BaseModel):
-    id: Literal["claude-code", "codex", "cursor", "vscode", "claude-desktop", "other"]
+    id: Literal["claude-code", "codex", "codex-app", "cursor", "vscode", "claude-desktop", "other"]
     label: str
-    kind: Literal["command", "deeplink", "url", "download"]
+    kind: Literal["command", "deeplink", "url", "download", "steps"]
     value: str
 
 class ConnectProfile(BaseModel):
@@ -766,6 +786,8 @@ class ConnectInfo(BaseModel):
 `services/connect.py`: `build(profile: str = "full") -> ConnectInfo` composes from
 `settings.maestro_cs_public_backend_url` (strip trailing `/`), `profiles.VALID_PROFILES`, and
 `settings.mcpb_bundle_path.is_file()`; the claude-desktop row is `kind="download"`, `value="/api/setup/connect/bundle"`.
+The `codex-app` row is `kind="steps"`, `value` = the MCP URL, `label` = "Codex app"; the card renders
+its steps (Task 7). Add a test asserting the codex-app row carries the profile's URL.
 Raise `ValueError` for an unknown profile; the router maps it to 422 like the app's other enum
 errors. `routers/setup.py`: `GET /connect` (`response_model=ConnectInfo`, `profile: str = "full"`)
 and `GET /connect/bundle` → `FileResponse(path, media_type="application/zip", filename="maestro-career-studio.mcpb")`,
@@ -798,7 +820,12 @@ full suite.
   `deeplink` → a button "Add to Cursor" / "Add to VS Code" (`<a href={value}>` styled with
   `buttonVariants` — SYSTEM.md §11 item 29: not `Button render={<a>}`);
   `download` → "Download for Claude Desktop" linking to `value` (disabled with a one-line hint
-  when `bundle_available` is false: "The bundle is not on this install; see the guide.").
+  when `bundle_available` is false: "The bundle is not on this install; see the guide.");
+  `steps` (Codex app) → the URL with a `CopyButton` and three short steps: "In the Codex app, open
+  Plugins › Add › Create custom MCP server." / "Choose Server URL and paste this address." / and the
+  authentication step Task 0 established (e.g. "Set Authentication to None."). Then one warning line,
+  always shown: "Don't use the Tunnel option. It would let someone outside this computer reach
+  Maestro." — reword only if Task 0 proved Tunnel is local-only, and log it.
 - Copy rules: `docs/frontend-conventions.md` (sentence length, glossary, no jargon — "assistant",
   "connected agents"); ratchets `test_frontend_vocabulary.py` and `test_frontend_sentence_length.py` must pass.
 - Desktop-only layout (1024px+).
@@ -882,15 +909,31 @@ mcpb row gains the exact pack command and "then update server.json fileSha256". 
 - Modify: `scripts/setup-mcp.sh` (banner after flag parsing, before "1. Backend URL" ~:62; closing text ~:288-291)
 - Modify: `SYSTEM.md` §13 (new row `mcp-stdio-venv`), `.slopledger.json` (its trigger)
 
-**Step 1 — `.mcp.json` per Task 0's outcome:**
-- Codex accepts a URL entry → `{"maestro-career-studio": {"type": "http", "url": "http://localhost:8001/mcp"}}`
-  (use the `type` string Task 0 proved) for both Claude Code and Codex.
-- Codex does not → Claude Code's `.mcp.json` gets the HTTP entry; create
-  `plugins/maestro-career-studio/.codex-mcp.json` keeping today's `docker exec` entry and point
-  `.codex-plugin/plugin.json` `mcpServers` at it; log it; Codex users are told the `codex mcp add
-  --url` line from the connect card is preferred.
-- Descriptions stop saying "stdio" / "docker compose up -d" where the plugin no longer needs Docker;
-  the plugin README's "What it runs and what it sends" describes the URL connection.
+**Step 1 — two MCP files, one per client family** (decided 2026-10-10; Task 0 fixes the exact keys):
+- `plugins/maestro-career-studio/.mcp.json` (Claude Code reads it): the HTTP entry in the form
+  Claude Code documents for plugins (`{"maestro-career-studio": {"type": "http", "url": "http://localhost:8001/mcp"}}`;
+  check current Claude Code plugin docs for whether a `mcpServers` wrapper is expected, and keep
+  Codex-only keys OUT of this file).
+- `plugins/maestro-career-studio/.codex-mcp.json` (new; `.codex-plugin/plugin.json` `mcpServers`
+  points at it): `{"mcpServers": {"maestro-career-studio": {"url": "http://localhost:8001/mcp",
+  "default_tools_approval_mode": "approve", "tools": {…}}}}` in the form Task 0 proved, with
+  `"approval_mode": "prompt"` on the tools whose effect is outward or hard to undo:
+  `mark_submitted`, `record_consent`, `record_decision`, `get_job_site_login`,
+  `prepare_application_pdf_upload`, `report_failure`, `archive_base_resume`,
+  `restore_resume_version` (re-check names against `list_registered_tool_names()`; add any newer
+  tool of the same kind, and list the final set in the plugin README). This is a client-side
+  prompt IN ADDITION to Maestro's own consent gates, never a replacement.
+- If Task 0 shows Codex does not take a plugin `url` entry: `.codex-mcp.json` keeps today's
+  `docker exec` entry (plus the approval keys) for one release, logged; Codex users are pointed
+  at `codex mcp add … --url` or the Codex app row of the connect card.
+- Plugin README: install via **Add a marketplace** with source `seinun-ai/maestro-career-studio`,
+  **Git ref** = the release tag (e.g. `v0.9.0`), **Sparse paths** = `plugins/` — pinned to a
+  release instead of `main` (plus the CLI equivalent if Task 0 found one); "What it runs and what
+  it sends" describes the URL connection and the approval prompts.
+- Descriptions (`.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, root
+  `.claude-plugin/marketplace.json`) stop saying "stdio" / "docker compose up -d".
+- `scripts/check_mcpb_bundle.py` and the release checklist are unaffected; RELEASING §2's
+  version rows for both plugin.json files stay.
 
 **Step 2 — examples:** Claude Desktop example shows the bridge
 (`"command": "node", "args": ["<repo>/mcpb/server/index.js"], "env": {"MAESTRO_CS_BACKEND_URL": "http://localhost:8001", "MAESTRO_CS_MCP_PROFILE": "full"}`)
@@ -1037,7 +1080,9 @@ Run and record in the Gate table:
   against a scratch backend on 8001's stand-in (`backend_url` set in the bundle's settings), run a
   tool, restart the backend mid-chat, run another tool (the bridge replays initialize).
 - **G6:** `claude mcp add --transport http …` lists 88 tools; a Cursor deep link installs and
-  lists; `codex mcp add … --url` lists; `/mcp/hunt` lists exactly the hunt allowlist.
+  lists; `codex mcp add … --url` lists; the Codex plugin (tag-pinned marketplace) lists and prompts
+  before `mark_submitted`; the Codex app custom-server route lists (owner); `/mcp/hunt` lists exactly
+  the hunt allowlist.
 - **G7:** curl: forged `Host` → 400 and foreign `Origin` → 403 on `/mcp`.
 - **G8:** `pack_extension.py --first-upload` zip loads unpacked under a new id, is refused by CORS
   until the id is added to `MAESTRO_CS_EXTENSION_IDS`, then works.
@@ -1073,3 +1118,4 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 | Task | Planned | Found | Done instead | Goal Card line |
 |---|---|---|---|---|
 | (planning) | Task 0 Codex check before any code | the check needs a running `/mcp` | run it right after Task 3 | — |
+| (planning) | one `.mcp.json` for Claude Code and Codex | Codex plugins take Codex-only keys (per-tool `approval_mode`) and the app adds marketplace Git ref / sparse paths and a custom-URL route | separate `.codex-mcp.json` with approval prompts; tag-pinned install; Codex-app row on the connect card; Tunnel warned against | One trust boundary |
