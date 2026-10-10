@@ -610,7 +610,8 @@ def test_windows_update_stops_then_hands_off_without_running_uv(tmp_path, monkey
     assert Path(kwargs["stdout"].name) == rig.ctx.logs_dir / "update.log"
     script = (rig.ctx.logs_dir / "update.cmd").read_text(encoding="utf-8")
     assert "4242" in script and "4243" in script and WIN_UV in script
-    assert "Updating in the background. Run `maestro status` in a minute; details in `maestro logs update`." in rig.text
+    assert "Updating in the background; it takes about a minute. Don't run `maestro` until" in rig.text
+    assert "update.log ends with \"finished\", then run `maestro status`." in rig.text
 
 
 def test_windows_handoff_failure_says_maestro_is_stopped(tmp_path, monkeypatch):

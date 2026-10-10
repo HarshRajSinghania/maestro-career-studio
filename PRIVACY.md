@@ -123,11 +123,11 @@ Nothing here is your career data. Each request carries what any web request does
   `--offline`. **`maestro update`** asks `pypi.org` the same way and reads the
   changelog from `raw.githubusercontent.com`. They run only when you run them: no
   background check exists, and the Maestro servers never look for updates.
-  `maestro update` names each request on screen as it is made.
+  Both name each request on screen (`maestro status` says "checked pypi.org").
 - **The scoring model** (`BAAI/bge-small-en-v1.5`, about 100 MB) downloads from
   Hugging Face (`huggingface.co`). On a uv install `maestro start` does it once, on
-  the first start, into `fastembed_cache/` in your Maestro folder, and prints that
-  it is downloading; `maestro start --skip-model` leaves it for the first score.
+  the first start, into `fastembed_cache/` in your Maestro folder, and says it is
+  downloading from Hugging Face; `maestro start --skip-model` leaves it for the first score.
   The Docker backend downloads the same model the first time it scores, into the
   container's temporary folder, so it downloads it again after an update or any
   recreated container. The request names the model; no resume or job text is

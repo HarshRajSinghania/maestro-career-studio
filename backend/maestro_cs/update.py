@@ -386,8 +386,9 @@ class Updater:
         except OSError as exc:
             raise ControlError(f"Couldn't hand the update to a background step: "
                                f"{exc.strerror or exc}. Maestro is stopped; run `maestro start`.") from None
-        self.say("Updating in the background. Run `maestro status` in a minute; "
-                 "details in `maestro logs update`.")
+        log_path = self.ctx.home / "logs" / "update.log"
+        self.say(f"Updating in the background; it takes about a minute. Don't run `maestro` "
+                 f"until {log_path} ends with \"finished\", then run `maestro status`.")
         return 0
 
     def _run_uv(self, argv: list[str]) -> tuple[int, str]:
