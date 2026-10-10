@@ -91,11 +91,3 @@ def offers_eeo(key: str | None) -> bool:
     A US answer reused on a UK form is factually wrong, not merely imprecise.
     """
     return get(key)["eeo_module"] is not None
-
-
-def eeo_module(key: str | None) -> str | None:
-    return get(key)["eeo_module"]
-
-
-def work_auth_vocab(key: str | None) -> str:
-    return get(key)["work_auth_vocab"]

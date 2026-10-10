@@ -49,19 +49,6 @@ def active_base_resume_slugs(session: Session) -> list[str]:
     )
 
 
-def selectable_base_resume_slugs(session: Session) -> list[str]:
-    """Slugs a user or agent may CHOOSE from — active and not archived.
-
-    The counterpart to active_base_resume_slugs, which stays the RESOLUTION
-    gate; see the two filter helpers above for why the axes never merge.
-    """
-    return list(
-        session.scalars(
-            select(BaseResume.slug).where(selectable_filter()).order_by(BaseResume.slug)
-        )
-    )
-
-
 def display_name_of(session: Session, slug: str) -> str | None:
     """A base resume's own name for a payload that references it by slug.
 

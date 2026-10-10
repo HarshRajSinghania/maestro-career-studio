@@ -53,7 +53,7 @@ class BaseResume(Base):
     # Hidden from every PICK surface but fully resolvable: archiving a stale
     # career track must never break its editor, its version history, or an
     # application that already references it. See
-    # services/base_resume_data.active_ vs selectable_base_resume_slugs.
+    # services/base_resume_data.active_filter vs selectable_filter.
     archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     last_kb_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     created_at: Mapped[datetime] = mapped_column(

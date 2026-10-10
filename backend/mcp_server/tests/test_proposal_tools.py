@@ -28,7 +28,6 @@ def test_proposal_tools_registered():
 def test_propose_application_tool_calls_client(monkeypatch):
     seen = {}
     monkeypatch.delenv("MAESTRO_CS_MCP_CLIENT", raising=False)
-    monkeypatch.delenv("CAREER_STUDIO_MCP_CLIENT", raising=False)
     monkeypatch.setattr(
         srv._client,
         "propose_application",
@@ -66,7 +65,6 @@ async def test_propose_application_names_the_client_its_session_declared(monkeyp
     with no env fallback set. This is the plumbing _client_label assumes."""
     seen = {}
     monkeypatch.delenv("MAESTRO_CS_MCP_CLIENT", raising=False)
-    monkeypatch.delenv("CAREER_STUDIO_MCP_CLIENT", raising=False)
     monkeypatch.setattr(
         srv._client, "propose_application", lambda job_id, **kw: seen.update(kw) or {"id": "p1"}
     )

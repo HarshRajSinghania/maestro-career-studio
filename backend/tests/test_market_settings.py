@@ -37,13 +37,11 @@ def test_unverified_markets_offer_no_eeo_module(market):
     a default leaked through.
     """
     assert markets.offers_eeo(market) is False
-    assert markets.eeo_module(market) is None
 
 
-@pytest.mark.parametrize("market,module", [("US", "us_eeo1"), ("UK", "uk_gss")])
-def test_verified_markets_name_their_module(market, module):
+@pytest.mark.parametrize("market", ["US", "UK"])
+def test_verified_markets_offer_eeo(market):
     assert markets.offers_eeo(market) is True
-    assert markets.eeo_module(market) == module
 
 
 def test_unknown_market_falls_back_rather_than_raising():

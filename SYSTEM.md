@@ -499,10 +499,10 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   `kb_approve_points` is the ONE approval path (`approved|retired`), its gate a convention the docstring states (the
   value is the user's decision), not server enforcement (`record_consent` precedent). `kb_edit_point` has no `state`
   param; a text change forces `state="draft"`. No delete tool; document upload stays web-only. **Scoped profiles**
-  (`MAESTRO_CS_MCP_PROFILE`, default `full`): one binary, filtered tool sets — `hunt` / `apply` / `explore` /
-  `templates` / `career`; allowlists in `mcp_server/profiles.py`; enable ONE profile per chat (`full` already carries
-  the KB writes). Stdio config examples live in `mcp_server/`; ChatGPT.com cannot be a client — `mcp.run()` is stdio
-  only. **Apply executor:** headed real Chrome; `docs/entities/others.md`, "Attended executor", and the apply playbook's "Unattended (full automation)" section.
+  (`MAESTRO_CS_MCP_PROFILE`, default `full`): `hunt` / `apply` / `explore` / `templates` / `career`; allowlists in
+  `mcp_server/profiles.py`. Enable ONE per chat (`full` carries the KB writes). `MAESTRO_CS_*` variables have no
+  pre-rename fallback. Stdio examples: `mcp_server/`; ChatGPT.com cannot be a client — `mcp.run()` is stdio only.
+  **Apply executor:** headed real Chrome; `docs/entities/others.md`, "Attended executor", and the apply playbook's "Unattended (full automation)" section.
   **Directory listing** = plugin bundle `plugins/maestro-career-studio/`, not `.mcpb`; policy `PRIVACY.md`.
 - **Guided tailoring workflow** (`mcp_server/workflow.py`): wrapped tools carry a `next` envelope
   (`state`/`blocking`/`offer`/`ask_user`/`options`/`call`) that walks §5's arc — score all bases → recommend →

@@ -31,16 +31,6 @@ from app.services import llm
 
 logger = logging.getLogger(__name__)
 
-CAPABILITIES = ("text", "json", "tools")
-
-# Which capability each surface needs, for the error message when it is absent.
-SURFACE_REQUIREMENTS = {
-    "chat": "tools",
-    "tailoring": "json",
-    "extraction": "json",
-    "cover_letter": "text",
-}
-
 _PROBE_TOOL = [
     {
         "type": "function",

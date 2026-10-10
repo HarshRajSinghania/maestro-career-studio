@@ -366,7 +366,6 @@ def mount(tmp_path, monkeypatch):
     root = tmp_path / "app" / ".playwright-mcp"
     (root / "uploads").mkdir(parents=True)
     monkeypatch.setenv("MAESTRO_CS_UPLOAD_DIR", str(root / "uploads"))
-    monkeypatch.delenv("CAREER_STUDIO_UPLOAD_DIR", raising=False)
     return root
 
 
@@ -466,7 +465,6 @@ def test_a_mount_not_named_playwright_mcp_maps_nothing(tmp_path, monkeypatch):
     (parent / "uploads").mkdir(parents=True)
     (parent / "shot.png").write_bytes(_PNG)
     monkeypatch.setenv("MAESTRO_CS_UPLOAD_DIR", str(parent / "uploads"))
-    monkeypatch.delenv("CAREER_STUDIO_UPLOAD_DIR", raising=False)
     with pytest.raises(BackendError, match="not found"):
         BackendClient(BASE).attach_evidence_file("p1", 1, "x", "/Users/u/r/.playwright-mcp/shot.png")
 

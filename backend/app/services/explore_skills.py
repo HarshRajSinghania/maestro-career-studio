@@ -2,7 +2,6 @@ import math
 from typing import Any, Literal
 
 SkillBucket = Literal["core", "preferred_top", "below_threshold"]
-SkillTier = Literal["top", "below"]
 
 TOP_TIER_FRACTION = 0.30
 

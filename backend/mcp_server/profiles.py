@@ -159,15 +159,7 @@ PROFILE_ALLOWLISTS: dict[str, frozenset[str] | None] = {
 
 
 def get_profile(name: str | None = None) -> str:
-    raw = (
-        name
-        if name is not None
-        else (
-            os.environ.get("MAESTRO_CS_MCP_PROFILE")
-            or os.environ.get("CAREER_STUDIO_MCP_PROFILE")
-            or "full"
-        )
-    )
+    raw = name if name is not None else os.environ.get("MAESTRO_CS_MCP_PROFILE", "full")
     profile = (raw or "full").strip().lower()
     if profile not in VALID_PROFILES:
         raise ValueError(

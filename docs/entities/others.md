@@ -83,7 +83,7 @@
   selectable base stays and `fallback` is true; `include_other_countries` keeps all.
   `candidates`/`candidates_for_country` return `slugs`, `job_country`, `fallback` and `skipped` (the
   selectable bases the country dropped). Readers drop only `skipped`: `ats_score.score_all_bases`,
-  `latest_scores` and `best_base`, `explore_gaps._best_base_gap_rows`, `GET /api/ats-scores/candidates`
+  `latest_scores`, `explore_gaps._best_base_gap_rows`, `GET /api/ats-scores/candidates`
   and the `include_other_countries` flag on GET/POST `/api/ats-scores`. `is_eligible(job, slug)` (own
   countries pass, OR fallback, OR no row; an unknown job country passes) gates final review's
   `base_country`, and inbox readiness applies the same rule batched; both call `eligible_given`.

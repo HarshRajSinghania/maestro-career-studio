@@ -8,8 +8,8 @@ a stored code, so no caller grows its own alias table.
 
 Stored values are always upper-case ISO codes. "UK" and the other English
 variants in `_ALIASES` are accepted as INPUT; they are never a code or a label
-in the list, so `is_valid("UK")` is False. Names match without accents or
-curly apostrophes ("Cote d'Ivoire", "Côte d’Ivoire").
+in the list. Names match without accents or curly apostrophes
+("Cote d'Ivoire", "Côte d’Ivoire").
 """
 
 from __future__ import annotations
@@ -61,16 +61,6 @@ def _names() -> dict[str, str]:
 def labels() -> dict[str, str]:
     """code -> English name, in file order."""
     return dict(_load())
-
-
-def is_valid(code: str) -> bool:
-    """True only for an exact upper-case ISO code in the list."""
-    return code in _load()
-
-
-def name_for(code: str) -> str:
-    """English name for a code; KeyError for a code not in the list."""
-    return _load()[code]
 
 
 def normalize(value: str | None) -> str | None:

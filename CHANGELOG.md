@@ -28,6 +28,10 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ## [Unreleased]
 
+### Breaking changes
+
+- Pre-rename environment aliases no longer work; use the `MAESTRO_CS_*` names.
+
 ### Added
 
 - **Copy setup prompt** on Settings › Connected agents › Second copy, and a
@@ -48,6 +52,8 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ### Removed
 
+- The pre-rename `CAREER_STUDIO_*` and `RESUME_TAILOR_PDF_DIR` environment variables;
+  use the `MAESTRO_CS_*` names.
 - Four API routes with no caller outside tests: `POST /api/resume-lint/wording/reset`,
   `GET /api/kb/extra-section-presets`, `GET /api/resume-versions/{kind}/{key}/{number}/diff`,
   and `POST /api/kb/consolidate`. Word-bank reset still saves through `PUT /wording`;

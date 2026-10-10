@@ -10,8 +10,8 @@ different engine/config versions (422 → UI offers re-score). The engine
 studio auto-rescores after every save→render chain. **Transaction ownership:**
 `score_target` / `score_all_bases` commit only when they OWN the session
 (callers passing one commit themselves — the ATS router does; `tailor()` and
-`create_session` ride their own single commit). `compare` / `best_base` commit
-exactly their backfill; never call them with staged caller state.
+`create_session` ride their own single commit). `compare` commits its backfill;
+never call it with staged caller state.
 
 **"LLM-free" describes the ENGINE, not the pipeline.** `score_resume` is a
 pure function of (resume_json, extracted_json, config), but `extracted_json`
@@ -116,4 +116,3 @@ hermetically. Two drops are CORRECT and excluded: padding the skills list
 with an uncorroborated term (the L5 stuffing lint punishes that — also the
 non-vacuity control), and diluting a dated entry's embedding with unrelated
 prose.
-

@@ -23,69 +23,6 @@ def test_validate_good_template_marks_ready(db_session, tmp_path, monkeypatch):
     assert tv._preview_path("good").exists()
 
 
-def test_check_parse_fidelity_detects_present_and_missing(tmp_path):
-    pytest.importorskip("pdfplumber")
-    doc = (
-        r"\documentclass{article}\begin{document}"
-        r"Alpha One and Beta Two and Gamma Three here.\end{document}"
-    )
-    pdf = pdf_render.compile_pdf(doc, tmp_path, stem="fid")
-    ok, missing = tv.check_parse_fidelity(pdf, probes=["Alpha One"])
-    assert ok is True and missing == []
-    bad_ok, bad_missing = tv.check_parse_fidelity(
-        pdf, probes=["Totally Absent Phrase"]
-    )
-    assert bad_ok is False and "Totally Absent Phrase" in bad_missing
-
-
-def test_check_parse_fidelity_partial_survival_not_certified(tmp_path):
-    # New contract: certification requires ALL probes. A PDF where only some
-    # probes survive is NOT certified — there is no majority tolerance anymore.
-    pytest.importorskip("pdfplumber")
-    doc = (
-        r"\documentclass{article}\begin{document}"
-        r"Alpha One and Beta Two and Gamma Three here.\end{document}"
-    )
-    pdf = pdf_render.compile_pdf(doc, tmp_path, stem="fid2")
-    present3_absent3 = ["Alpha One", "Beta Two", "Gamma Three", "No A", "No B", "No C"]
-    ok, _ = tv.check_parse_fidelity(pdf, probes=present3_absent3)
-    assert ok is False  # 3/6 survive -> not all -> not certified
-    present1_absent5 = ["Alpha One", "No A", "No B", "No C", "No D", "No E"]
-    ok2, _ = tv.check_parse_fidelity(pdf, probes=present1_absent5)
-    assert ok2 is False  # 1/6 survive -> not certified
-
-
-def test_check_parse_fidelity_requires_all_probes(tmp_path):
-    pytest.importorskip("pdfplumber")
-    doc = (
-        r"\documentclass{article}\begin{document}"
-        r"Alpha One and Beta Two here.\end{document}"
-    )
-    pdf = pdf_render.compile_pdf(doc, tmp_path, stem="allprobes")
-    # 2 of 3 probes present — majority would pass; all-probes must fail
-    ok, missing = tv.check_parse_fidelity(pdf, probes=["Alpha One", "Beta Two", "Gamma Three"])
-    assert ok is False and missing == ["Gamma Three"]
-
-
-def test_check_parse_fidelity_degrades_closed(tmp_path, monkeypatch):
-    # unreadable PDF → None (not assessed), NEVER True
-    bogus = tmp_path / "not_a_pdf.pdf"
-    bogus.write_text("hello")
-    ok, missing = tv.check_parse_fidelity(bogus)
-    assert ok is None
-
-    # missing extractor → None
-    import builtins
-    real_import = builtins.__import__
-    def no_pdfplumber(name, *a, **k):
-        if name == "pdfplumber":
-            raise ImportError("gone")
-        return real_import(name, *a, **k)
-    monkeypatch.setattr(builtins, "__import__", no_pdfplumber)
-    ok, _ = tv.check_parse_fidelity(bogus)
-    assert ok is None
-
-
 def test_validate_template_stores_parse_report(db_session, tmp_path, monkeypatch):
     monkeypatch.setattr(tv.settings, "base_resumes_dir", tmp_path)
     src = (pdf_render.TEMPLATE_DIR / pdf_render.RESUME_TEMPLATE).read_text(encoding="utf-8")

@@ -232,11 +232,7 @@ def _host_visible(path: Path, upload_root: Path) -> str:
 
 
 def _upload_root() -> Path:
-    return Path(
-        os.environ.get("MAESTRO_CS_UPLOAD_DIR")
-        or os.environ.get("CAREER_STUDIO_UPLOAD_DIR")
-        or _default_upload_root()
-    )
+    return Path(os.environ.get("MAESTRO_CS_UPLOAD_DIR") or _default_upload_root())
 
 
 _PLAYWRIGHT_DIR = ".playwright-mcp"
@@ -914,9 +910,6 @@ class BackendClient:
         # resume PDF base64-encodes to a payload large enough to stall the MCP client.
         out_dir = Path(
             os.environ.get("MAESTRO_CS_PDF_DIR")
-            or os.environ.get("CAREER_STUDIO_PDF_DIR")
-            # Back-compat: pre-rename installs may still export this.
-            or os.environ.get("RESUME_TAILOR_PDF_DIR")
             or (Path(tempfile.gettempdir()) / "maestro-cs-pdfs")
         )
         out_dir.mkdir(parents=True, exist_ok=True)

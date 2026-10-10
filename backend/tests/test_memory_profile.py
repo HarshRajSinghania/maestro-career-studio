@@ -57,7 +57,7 @@ def test_build_env_isolates_all_data_and_preserves_measurement_settings(tmp_path
     env = profiler().build_env(tmp_path)
     for name in ("DATA", "APPLICATIONS", "SETTINGS", "BASE_RESUMES", "KB_DOCUMENTS", "LOGS", "EXPORTS"):
         assert env[f"{name}_DIR"] == str(tmp_path / name.lower())
-    assert env["APP_ROOT"] == env["MAESTRO_HOME"] == str(tmp_path)
+    assert env["MAESTRO_HOME"] == str(tmp_path)
     assert env["DATABASE_URL"] == f"sqlite:///{tmp_path}/data/maestro_cs.sqlite3"
     assert "TEST_DATABASE_URL" not in env
     assert env["ALLOWED_HOSTS"] == "localhost,127.0.0.1"

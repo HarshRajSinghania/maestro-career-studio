@@ -56,7 +56,7 @@ def build_env(home: Path) -> dict[str, str]:
     env.pop("TEST_DATABASE_URL", None)  # it overrides DATABASE_URL in app.db and alembic
     env.update({f"{name.upper()}_DIR": str(home / name) for name in HOME_DIRS})
     env.update(
-        MAESTRO_HOME=str(home), APP_ROOT=str(home),
+        MAESTRO_HOME=str(home),
         DATABASE_URL=f"sqlite:///{home / 'data' / 'maestro_cs.sqlite3'}",
         ALLOWED_HOSTS="localhost,127.0.0.1", LLM_LOG_CONTENT="false",
     )

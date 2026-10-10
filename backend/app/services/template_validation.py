@@ -201,23 +201,6 @@ def _extract_normalized(pdf_path: Path) -> str | None:
     return " ".join(text.split()).lower()
 
 
-def check_parse_fidelity(
-    pdf_path: Path, probes: list[str] | None = None
-) -> tuple[bool | None, list[str]]:
-    """Extract `pdf_path` and report whether EVERY probe's word boundaries survive.
-
-    Certified only when all probes survive — word-joining damage is systematic,
-    and a template that eats a third of its phrases is not certified. Degrades
-    CLOSED: (None, []) when pdfplumber is unavailable or the PDF can't be read.
-    """
-    probes = probes if probes is not None else PARSE_FIDELITY_PROBES
-    normalized = _extract_normalized(pdf_path)
-    if normalized is None:
-        return None, []
-    missing = [p for p in probes if p.lower() not in normalized]
-    return (not missing), missing
-
-
 def build_parse_report(pdf_path: Path) -> dict | None:
     """Full extraction report for a compiled template preview, or None when the
     extractor couldn't run (not assessed)."""

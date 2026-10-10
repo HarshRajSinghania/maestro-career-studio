@@ -34,7 +34,6 @@ def test_normalize_common_english_variants(text, code):
 
 def test_variants_stay_out_of_the_list_and_never_collide():
     for variant in ("USA", "UK", "Holland", "Ivory Coast", "UAE", "u.s."):
-        assert not countries.is_valid(variant)
         assert variant not in countries.labels().values()
     # An alias must not shadow a different code's own name.
     for alias, code in countries._ALIASES.items():
@@ -47,14 +46,6 @@ def test_list_is_iso_shaped():
     codes = list(countries.labels())
     assert len(codes) == len(set(codes)) >= 240
     assert all(len(c) == 2 and c.isupper() for c in codes)
-    assert countries.name_for("IN") == "India"
-
-
-def test_is_valid_and_name_for():
-    assert countries.is_valid("KR")
-    assert not countries.is_valid("UK")  # alias for input only, never a stored code
-    assert not countries.is_valid("kr")
-    assert countries.name_for("KR") == "South Korea"
 
 
 def test_names_are_unambiguous():

@@ -229,11 +229,7 @@ def _client_label(ctx: Context | None) -> str | None:
     name = str(getattr(info, "name", "") or "").strip()
     if name:
         return name
-    return (
-        os.environ.get("MAESTRO_CS_MCP_CLIENT")
-        or os.environ.get("CAREER_STUDIO_MCP_CLIENT")
-        or ""
-    ).strip() or None
+    return (os.environ.get("MAESTRO_CS_MCP_CLIENT") or "").strip() or None
 
 
 # ---------- next-step hints (mcp_server/workflow.py) ----------

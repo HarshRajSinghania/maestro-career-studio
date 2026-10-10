@@ -192,40 +192,6 @@ def _skipped_for_job(
     )
 
 
-def best_base(job_id: UUID, session: Session | None = None) -> str:
-    """Slug of the base resume with the highest base-phase ATS composite.
-
-    Reads persisted base rows (one per slug — base phase upserts); if none
-    exist yet, scores every candidate base first (pure engine, no LLM). Rows of
-    bases the country rule skips for this job are ignored.
-    """
-    owns_session = session is None
-    session = session or SessionLocal()
-    try:
-        rows = list(session.scalars(
-            select(AtsScore).where(
-                AtsScore.job_id == job_id,
-                AtsScore.target_type == "base_resume",
-                AtsScore.phase == "base",
-            )
-        ))
-        skipped = _skipped_for_job(session, job_id)
-        rows = [r for r in rows if r.target_id not in skipped]
-        if not rows:
-            # Same read-that-writes contract as compare: an on-demand scoring
-            # pass is committed here so it persists on a caller's session too.
-            rows = score_all_bases(job_id, session)
-            if rows:
-                session.commit()
-        if not rows:
-            raise ValueError("None of your base resumes could be scored against this job.")
-        # alphabetical slug tie-break keeps the pick deterministic
-        return max(rows, key=lambda r: (float(r.composite), r.target_id)).target_id
-    finally:
-        if owns_session:
-            session.close()
-
-
 def latest_scores(
     job_id: UUID, session: Session, *, include_other_countries: bool = False
 ) -> list[AtsScore]:

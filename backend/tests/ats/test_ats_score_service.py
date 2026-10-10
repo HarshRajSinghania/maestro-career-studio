@@ -262,50 +262,6 @@ def test_latest_scores_omits_archived_and_deleted_bases(db_session):
     assert [r.target_id for r in rows] == ["kept", str(app_row.id)]
 
 
-def test_best_base_uses_existing_base_rows(db_session):
-    job = _seed_job(db_session)
-    app_row = Application(job_id=job.id, base_resume="data_scientist", status="draft")
-    db_session.add(app_row)
-    db_session.flush()
-    t0 = datetime(2026, 7, 1, tzinfo=timezone.utc)
-    db_session.add_all([
-        _row(job.id, target_type="base_resume", target_id="data_scientist",
-             phase="base", composite=48.0, created_at=t0),
-        _row(job.id, target_type="base_resume", target_id="data_engineer",
-             phase="base", composite=72.0, created_at=t0),
-        # A higher tailored row must NOT win: best_base ranks base-phase rows only.
-        _row(job.id, target_type="application", target_id=str(app_row.id), phase="tailored",
-             composite=99.0, created_at=t0 + timedelta(minutes=1), application_id=app_row.id),
-    ])
-    db_session.commit()
-
-    assert ats_score.best_base(job.id, db_session) == "data_engineer"
-
-
-def test_best_base_scores_all_bases_when_no_rows(db_session, tmp_path, monkeypatch):
-    """With no persisted rows, best_base scores every base first (pure engine, no LLM)."""
-    job = _seed_job(db_session)
-    _seed_base(db_session, tmp_path, monkeypatch, "strong")
-    weak_resume = copy.deepcopy(SAMPLE_RESUME)
-    weak_resume["skills"] = [{"category": "Tools", "items": ["Git"]}]
-    weak_resume["experience"][0]["bullets"] = ["Shipped forecasting models reducing costs 20%."]
-    (tmp_path / "weak.json").write_text(json.dumps(weak_resume))
-    db_session.add(BaseResume(slug="weak", data_json=weak_resume))
-    db_session.flush()
-
-    assert ats_score.best_base(job.id, db_session) == "strong"
-    # the scoring pass persisted base rows for both slugs
-    slugs = {r.target_id for r in db_session.query(AtsScore).filter_by(phase="base").all()}
-    assert slugs == {"strong", "weak"}
-
-
-def test_best_base_raises_when_nothing_scoreable(db_session, tmp_path, monkeypatch):
-    job = _seed_job(db_session)
-    monkeypatch.setattr(settings, "base_resumes_dir", tmp_path)  # empty dir, no active slugs
-    with pytest.raises(ValueError, match="None of your base resumes could be scored"):
-        ats_score.best_base(job.id, db_session)
-
-
 def _seed_country_bases(db_session, tmp_path, monkeypatch, **countries_by_slug):
     """Bases with files on disk and the given `countries` anchors."""
     for slug, countries in countries_by_slug.items():
@@ -355,26 +311,3 @@ def test_latest_scores_hides_a_base_marked_for_another_country_after_scoring(
 def test_latest_scores_for_a_job_with_no_row_does_no_country_filtering(db_session):
     from uuid import uuid4
     assert ats_score.latest_scores(uuid4(), db_session) == []
-
-
-def test_best_base_ignores_other_country_bases(db_session):
-    job = _seed_job(db_session)
-    job.country = "US"
-    db_session.add_all([
-        BaseResume(slug="india", data_json={}, countries=["IN"]),
-        BaseResume(slug="us", data_json={}, countries=["US"]),
-    ])
-    db_session.flush()
-    t0 = datetime(2026, 7, 1, tzinfo=timezone.utc)
-    db_session.add_all([
-        _row(job.id, target_type="base_resume", target_id="india",
-             phase="base", composite=90.0, created_at=t0),
-        _row(job.id, target_type="base_resume", target_id="us",
-             phase="base", composite=40.0, created_at=t0),
-    ])
-    db_session.commit()
-
-    assert ats_score.best_base(job.id, db_session) == "us"
-    job.country = None
-    db_session.commit()
-    assert ats_score.best_base(job.id, db_session) == "india"

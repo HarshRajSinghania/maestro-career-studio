@@ -42,7 +42,7 @@ native_prepare_home() {
 }
 
 native_export_env() {
-    export MAESTRO_HOME APP_ROOT="$MAESTRO_HOME"
+    export MAESTRO_HOME
     export DATA_DIR="$MAESTRO_HOME/data" APPLICATIONS_DIR="$MAESTRO_HOME/applications"
     export SETTINGS_DIR="$MAESTRO_HOME/settings" BASE_RESUMES_DIR="$MAESTRO_HOME/base_resumes"
     export KB_DOCUMENTS_DIR="$MAESTRO_HOME/kb_documents" LOGS_DIR="$MAESTRO_HOME/logs"

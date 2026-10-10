@@ -44,7 +44,7 @@ from pathlib import Path
 def record(kind):
     path = Path(os.environ["NATIVE_TEST_RECORDS"]) / (kind + ".json")
     previous = json.loads(path.read_text()) if path.exists() else {"calls": 0}
-    names = ("MAESTRO_HOME", "APP_ROOT", "DATA_DIR", "DATABASE_URL",
+    names = ("MAESTRO_HOME", "DATA_DIR", "DATABASE_URL",
              "APPLICATIONS_DIR", "SETTINGS_DIR", "BASE_RESUMES_DIR",
              "KB_DOCUMENTS_DIR", "LOGS_DIR", "EXPORTS_DIR", "MALLOC_ARENA_MAX",
              "EMBEDDINGS_OUT_OF_PROCESS", "FASTEMBED_CACHE_PATH", "ALLOWED_HOSTS",
@@ -331,7 +331,6 @@ def assert_worker(ctx, backend):
 def assert_runtime_paths(env, home):
     expected = {f"{name.upper()}_DIR": str(home / name) for name in HOME_DIRS[:-1]}
     expected.update(
-        APP_ROOT=str(home),
         DATABASE_URL=f"sqlite:///{home}/data/maestro_cs.sqlite3",
         TEST_DATABASE_URL=None,
     )

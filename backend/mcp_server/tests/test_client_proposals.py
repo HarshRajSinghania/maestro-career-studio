@@ -64,7 +64,6 @@ async def test_any_client_name_can_file_a_proposal(monkeypatch, declared, filed_
     UnicodeEncodeError. The name travels percent-encoded, without control
     characters, bounded, and the backend decodes it back to the real name."""
     monkeypatch.delenv("MAESTRO_CS_MCP_CLIENT", raising=False)
-    monkeypatch.delenv("CAREER_STUDIO_MCP_CLIENT", raising=False)
     with respx.mock(assert_all_called=False) as mock:
         route = mock.post(url__regex=r".*/api/proposals$").mock(
             return_value=httpx.Response(201, json={"id": "p1"})

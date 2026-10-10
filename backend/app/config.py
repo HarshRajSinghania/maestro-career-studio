@@ -117,8 +117,7 @@ class Settings(BaseSettings):
     def _derive_database_url(self) -> "Settings":
         # resolve() the directory itself, not just the URL: a relative DATA_DIR
         # must not mean three different files for uvicorn, alembic and a script
-        # started from different directories, and settings.data_dir (the
-        # import marker lives under it) must never disagree with the URL.
+        # started from different directories; data_dir must agree with the URL.
         self.data_dir = self.data_dir.resolve()
         if not self.database_url:
             self.database_url = f"sqlite:///{self.data_dir / DB_FILENAME}"
@@ -197,7 +196,6 @@ class Settings(BaseSettings):
     # this is only for seeing what was SAID. Files are 0600 either way.
     llm_log_content: bool = False
 
-    app_root: Path = Path("/app")
     # Everything relational lives in ONE file under here (SYSTEM.md §3):
     # maestro_cs.sqlite3 plus its -wal/-shm sidecars. Bind-mounted from ./data
     # in compose; override with DATA_DIR when running the backend yourself.
@@ -275,28 +273,8 @@ def scrub_empty_env() -> list[str]:
     return removed
 
 
-# Pre-rename env aliases (one release). Prefer MAESTRO_CS_*; fall back to
-# CAREER_STUDIO_* when the new name is unset.
-_ENV_ALIASES = (
-    ("MAESTRO_CS_EXTENSION_IDS", "CAREER_STUDIO_EXTENSION_IDS"),
-    ("MAESTRO_CS_MCP_PROFILE", "CAREER_STUDIO_MCP_PROFILE"),
-    ("MAESTRO_CS_MCP_CLIENT", "CAREER_STUDIO_MCP_CLIENT"),
-    ("MAESTRO_CS_PDF_DIR", "CAREER_STUDIO_PDF_DIR"),
-    ("MAESTRO_CS_UPLOAD_DIR", "CAREER_STUDIO_UPLOAD_DIR"),
-)
-
-
-def apply_legacy_env_aliases() -> None:
-    for new, old in _ENV_ALIASES:
-        if not (os.environ.get(new) or "").strip():
-            legacy = (os.environ.get(old) or "").strip()
-            if legacy:
-                os.environ[new] = legacy
-
-
 # Runs at import, and `app.config` is the first app module imported — so no SDK
 # has read os.environ yet. Do not move this below `settings`.
 SCRUBBED_ENV = scrub_empty_env()
-apply_legacy_env_aliases()
 
 settings = Settings()
