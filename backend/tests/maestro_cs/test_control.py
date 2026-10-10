@@ -128,6 +128,20 @@ def test_start_survives_a_browser_that_cannot_open(rig, monkeypatch):
     assert rig.ctl.start(skip_model=True) == 0
 
 
+@pytest.mark.parametrize("failure", ["returns False", "raises"])
+def test_start_says_when_no_browser_could_be_opened(rig, monkeypatch, failure):
+    monkeypatch.setattr(runtime, "web_dir_ok", lambda environ=None: True)
+
+    def no_browser(url):
+        if failure == "raises":
+            raise OSError("no display")
+        return False
+
+    rig.ctl.open_url = no_browser
+    assert rig.ctl.start(skip_model=True) == 0
+    assert "Couldn't open a browser. Open http://localhost:13000 yourself." in rig.text
+
+
 def test_start_detaches_through_the_console_python(rig, monkeypatch):
     # The pythonw/python.exe rule lives in runtime.venv_python; start must ask for the console one.
     seen = []
@@ -217,7 +231,7 @@ def test_model_downloads_when_the_cache_is_empty(rig, monkeypatch):
     monkeypatch.setattr(runtime, "web_dir_ok", lambda environ=None: True)
     rig.ctl.start(no_browser=True)
     assert len(rig.prefetched) == 1
-    assert "Downloading the scoring model (about 100 MB, once)…" in rig.text
+    assert "Downloading the scoring model from Hugging Face (about 100 MB, once)…" in rig.text
 
 
 def test_model_download_is_skipped_by_flag_and_by_a_filled_cache(rig, monkeypatch):
@@ -429,6 +443,7 @@ def test_status_running_reports_everything_in_json(tmp_path, monkeypatch):
         assert data["urls"]["web"] == "http://localhost:13000"
         assert data["autostart"] is True
         assert data["latest"] == "10.0.0" and data["update_available"] is True
+        assert data["checked"] == "pypi.org"
         assert data["data_dir"] == str(rig.ctx.home)
     finally:
         for p in (sup, backend):
@@ -440,20 +455,20 @@ def test_status_text_says_when_a_newer_release_exists(tmp_path, monkeypatch):
     rig = Rig(tmp_path)
     monkeypatch.setattr(control, "latest_version", lambda timeout=3.0: "10.0.0")
     rig.ctl.status()
-    assert "Latest release: 10.0.0 (run `maestro update`)" in rig.text
+    assert "Latest release: 10.0.0 (checked pypi.org). Run `maestro update`." in rig.text
 
 
 def test_status_says_when_it_could_not_check(rig, monkeypatch):
     monkeypatch.setattr(control, "latest_version", lambda timeout=3.0: None)
     rig.ctl.status()
-    assert "Latest release: couldn't check" in rig.text
+    assert "Latest release: couldn't check pypi.org" in rig.text
 
 
 def test_a_newer_local_build_is_not_told_to_update(tmp_path, monkeypatch):
     rig = Rig(tmp_path)  # installed 9.9.9
     monkeypatch.setattr(control, "latest_version", lambda timeout=3.0: "0.9.0")
     rig.ctl.status()
-    assert "you are up to date" in rig.text and "maestro update" not in rig.text
+    assert "you are up to date (checked pypi.org)" in rig.text and "maestro update" not in rig.text
     rig.printed.clear()
     rig.ctl.status(as_json=True)
     data = json.loads(rig.text)
@@ -468,7 +483,9 @@ def test_offline_never_calls_the_release_check(tmp_path, monkeypatch):
 
     monkeypatch.setattr(control, "latest_version", boom)
     rig.ctl.status(offline=True)
+    rig.printed.clear()
     rig.ctl.status(as_json=True, offline=True)
+    assert json.loads(rig.text)["checked"] is None  # no request was made, so none is named
 
 
 # --- logs, open, run -----------------------------------------------------------------------

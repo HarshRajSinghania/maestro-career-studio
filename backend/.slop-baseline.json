@@ -1,29 +1,29 @@
 {
   "structure": {
     "root": "backend",
-    "modules": 687,
-    "total_loc": 211092,
-    "src_loc": 58775,
-    "test_loc": 152317,
+    "modules": 736,
+    "total_loc": 219202,
+    "src_loc": 62064,
+    "test_loc": 157138,
     "orphan_modules": [],
     "test_only_reachable": [],
     "orphan_loc": 0,
     "complexity_hotspots": [
       {
+        "file": "tests/browser/test_fill_end_to_end.py",
+        "line": 262,
+        "name": "test_the_engine_fills_every_fixture_on_one_page",
+        "complexity": 42,
+        "params": 1,
+        "lines": 54
+      },
+      {
         "file": "mcp_server/tests/test_server.py",
-        "line": 550,
+        "line": 596,
         "name": "test_audit_one_sentence_docstring_fixes",
         "complexity": 42,
         "params": 0,
         "lines": 51
-      },
-      {
-        "file": "tests/browser/test_fill_end_to_end.py",
-        "line": 262,
-        "name": "test_the_engine_fills_every_fixture_on_one_page",
-        "complexity": 40,
-        "params": 1,
-        "lines": 53
       },
       {
         "file": "app/services/explore_build_areas.py",
@@ -107,11 +107,11 @@
       },
       {
         "file": "tests/test_explore_router.py",
-        "line": 246,
+        "line": 218,
         "name": "test_overview_aggregates",
         "complexity": 29,
-        "params": 1,
-        "lines": 51
+        "params": 2,
+        "lines": 46
       },
       {
         "file": "scripts/health_golden.py",
@@ -162,6 +162,14 @@
         "lines": 43
       },
       {
+        "file": "tests/test_extra_sections_e2e.py",
+        "line": 81,
+        "name": "test_extra_sections_e2e_create_render_frombase_edit_diff",
+        "complexity": 27,
+        "params": 4,
+        "lines": 86
+      },
+      {
         "file": "app/services/career_kb.py",
         "line": 135,
         "name": "compose_context",
@@ -179,19 +187,11 @@
       },
       {
         "file": "tests/test_extension_eeo_autofill.py",
-        "line": 150,
+        "line": 148,
         "name": "test_eeo_fill_requires_opt_in_and_visible_control",
         "complexity": 25,
         "params": 1,
         "lines": 42
-      },
-      {
-        "file": "tests/test_extra_sections_e2e.py",
-        "line": 90,
-        "name": "test_extra_sections_e2e_create_render_frombase_edit_diff",
-        "complexity": 25,
-        "params": 3,
-        "lines": 89
       },
       {
         "file": "tests/test_frontend_visual_surfaces.py",
@@ -235,11 +235,19 @@
       },
       {
         "file": "tests/test_extension_panel.py",
-        "line": 691,
+        "line": 685,
         "name": "test_the_panel_document_is_self_contained_and_joins_the_namespace",
         "complexity": 24,
         "params": 0,
         "lines": 73
+      },
+      {
+        "file": "tests/test_setup_connect.py",
+        "line": 20,
+        "name": "test_connect_composes_every_client_for_the_full_profile",
+        "complexity": 24,
+        "params": 2,
+        "lines": 37
       },
       {
         "file": "tests/test_frontend_visual_surfaces.py",
@@ -386,35 +394,27 @@
         "lines": 125
       },
       {
-        "file": "tests/test_frontend_settings_cards.py",
-        "line": 294,
-        "name": "test_languages_are_edited_like_education_and_saved_in_the_same_body",
-        "complexity": 22,
-        "params": 0,
-        "lines": 45
-      },
-      {
-        "file": "app/services/career_kb.py",
-        "line": 735,
-        "name": "_build_entry",
+        "file": "maestro_cs/update.py",
+        "line": 448,
+        "name": "run",
         "complexity": 22,
         "params": 3,
-        "lines": 46
+        "lines": 51
       },
       {
-        "file": "tests/test_kb_consolidation_deterministic.py",
-        "line": 38,
-        "name": "test_identity_merge_experience_and_projects_across_sources",
-        "complexity": 21,
-        "params": 2,
-        "lines": 31
+        "file": "tests/test_workflows.py",
+        "line": 181,
+        "name": "test_pypi_publish_is_tag_only_trusted_and_token_free",
+        "complexity": 22,
+        "params": 0,
+        "lines": 24
       }
     ],
-    "hotspot_count": 689,
+    "hotspot_count": 735,
     "error_masking": [
       {
         "file": "tests/test_tracing.py",
-        "line": 56,
+        "line": 109,
         "kind": "swallowed_exception"
       },
       {
@@ -425,6 +425,51 @@
       {
         "file": "scripts/db_copy.py",
         "line": 35,
+        "kind": "swallowed_exception"
+      },
+      {
+        "file": "app/routers/templates.py",
+        "line": 152,
+        "kind": "swallowed_exception"
+      },
+      {
+        "file": "app/services/application_artifacts.py",
+        "line": 107,
+        "kind": "swallowed_exception"
+      },
+      {
+        "file": "app/services/application_artifacts.py",
+        "line": 101,
+        "kind": "swallowed_exception"
+      },
+      {
+        "file": "app/services/tracing.py",
+        "line": 113,
+        "kind": "swallowed_exception"
+      },
+      {
+        "file": "app/services/attachment_extract.py",
+        "line": 163,
+        "kind": "swallowed_exception"
+      },
+      {
+        "file": "app/services/proposal_evidence.py",
+        "line": 89,
+        "kind": "swallowed_exception"
+      },
+      {
+        "file": "app/services/artifacts.py",
+        "line": 26,
+        "kind": "swallowed_exception"
+      },
+      {
+        "file": "app/services/artifacts.py",
+        "line": 33,
+        "kind": "swallowed_exception"
+      },
+      {
+        "file": "app/services/sync/seal.py",
+        "line": 249,
         "kind": "swallowed_exception"
       },
       {
@@ -446,59 +491,17 @@
         "file": "tests/sync/conftest.py",
         "line": 108,
         "kind": "swallowed_exception"
-      },
-      {
-        "file": "app/routers/templates.py",
-        "line": 152,
-        "kind": "swallowed_exception"
-      },
-      {
-        "file": "app/services/seeding.py",
-        "line": 84,
-        "kind": "swallowed_exception"
-      },
-      {
-        "file": "app/services/application_artifacts.py",
-        "line": 107,
-        "kind": "swallowed_exception"
-      },
-      {
-        "file": "app/services/application_artifacts.py",
-        "line": 101,
-        "kind": "swallowed_exception"
-      },
-      {
-        "file": "app/services/tracing.py",
-        "line": 102,
-        "kind": "swallowed_exception"
-      },
-      {
-        "file": "app/services/proposal_evidence.py",
-        "line": 89,
-        "kind": "swallowed_exception"
-      },
-      {
-        "file": "app/services/artifacts.py",
-        "line": 22,
-        "kind": "swallowed_exception"
-      },
-      {
-        "file": "app/services/artifacts.py",
-        "line": 27,
-        "kind": "swallowed_exception"
-      },
-      {
-        "file": "app/services/sync/seal.py",
-        "line": 249,
-        "kind": "swallowed_exception"
       }
     ],
     "error_masking_count": 16,
-    "internal_import_edges": 3148,
-    "imports_per_module": 4.58,
+    "internal_import_edges": 3234,
+    "imports_per_module": 4.39,
     "entry_points_used": [
       "app.main",
       "app.tools.backup_db",
+      "maestro_cs.__main__",
+      "maestro_cs.cli",
+      "maestro_cs.prefetch",
       "mcp_server.server",
       "scripts.apply_template_sources",
       "scripts.ats_calibration",
@@ -518,7 +521,7 @@
       "min_tokens": 50,
       "mode": "weak"
     },
-    "percentage": 0.53,
+    "percentage": 0.51,
     "duplicated_lines": 381,
     "clones": 43,
     "allowlisted_clones": 0,
@@ -597,6 +600,9 @@
     "entry_points": [
       "app.main",
       "mcp_server.server",
+      "maestro_cs.cli",
+      "maestro_cs.__main__",
+      "maestro_cs.prefetch",
       "scripts.apply_template_sources",
       "scripts.ats_calibration",
       "scripts.ats_snapshot",
@@ -630,7 +636,7 @@
     {
       "rank": "P2",
       "signal": "complexity_concentration",
-      "detail": "689 function(s) over threshold. worst: mcp_server/tests/test_server.py:550 cc=42",
+      "detail": "735 function(s) over threshold. worst: tests/browser/test_fill_end_to_end.py:262 cc=42",
       "why": "Complexity mass concentrating in few functions is the erosion signature.",
       "action": "Decompose the top 3. Do not touch the tail."
     },
@@ -643,16 +649,16 @@
     }
   ],
   "metrics": {
-    "total_loc": 211092,
-    "src_loc": 58775,
-    "test_loc": 152317,
-    "modules": 687,
+    "total_loc": 219202,
+    "src_loc": 62064,
+    "test_loc": 157138,
+    "modules": 736,
     "orphan_loc": 0,
-    "duplication_pct": 0.53,
+    "duplication_pct": 0.51,
     "duplicated_lines": 381,
     "clone_count": 43,
-    "complexity_hotspots": 689,
+    "complexity_hotspots": 735,
     "error_masking": 16,
-    "imports_per_module": 4.58
+    "imports_per_module": 4.39
   }
 }

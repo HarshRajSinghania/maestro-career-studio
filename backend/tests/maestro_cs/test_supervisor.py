@@ -3,6 +3,7 @@
 `signal.signal` only works on the main thread, so `Supervisor.run()` runs on the pytest main
 thread here; a helper thread creates `run/stop.request`. Signals are tested through a subprocess.
 """
+import contextlib
 import io
 import os
 import socket
@@ -104,10 +105,8 @@ def fleet(tmp_path):
         def pids(self):
             found = []
             for pidfile in pidfiles:
-                try:
+                with contextlib.suppress(OSError, ValueError):  # not written yet, or half written
                     found.append(int(pidfile.read_text()))
-                except (OSError, ValueError):
-                    pass
             return found
 
         def supervisor(self, specs, **kwargs):
@@ -120,10 +119,8 @@ def fleet(tmp_path):
     (run_dir / "stop.request").write_text("", encoding="utf-8")
     leftovers = [pid for pid in helper.pids() if pid_alive(pid)]
     for pid in leftovers:
-        try:
+        with contextlib.suppress(psutil.Error):  # it exited between the check and the kill
             procs.kill_tree(psutil.Process(pid), grace=1.0)
-        except psutil.Error:
-            pass
     assert not leftovers, f"a test leaked child processes: {leftovers}"
 
 

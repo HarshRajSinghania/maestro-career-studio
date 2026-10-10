@@ -7,6 +7,7 @@ nothing here writes to `sys.stdout` directly.
 """
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
 import os
@@ -283,7 +284,7 @@ class Controller:
         self._seed_demo()
         cache = ctx.home / "fastembed_cache"
         if not skip_model and not any(cache.iterdir()):
-            self.say("Downloading the scoring model (about 100 MB, once)…")
+            self.say("Downloading the scoring model from Hugging Face (about 100 MB, once)…")
             if not self.run_prefetch(ctx):
                 self.say("The scoring model didn't download; the first score will try again.")
         proc = self._detach()
@@ -301,9 +302,11 @@ class Controller:
         self.say(f"MCP: {ctx.mcp_url}")
         if not no_browser:
             try:
-                self.open_url(ctx.web_url)
+                opened = self.open_url(ctx.web_url)
             except Exception:  # noqa: BLE001  (a missing browser must not fail a start)
-                pass
+                opened = False
+            if opened is False:  # webbrowser.open reports "no browser" by returning False
+                self.say(f"Couldn't open a browser. Open {ctx.web_url} yourself.")
         return 0
 
     def _preflight(self) -> None:
@@ -384,10 +387,8 @@ class Controller:
     @staticmethod
     def _send_term(proc: psutil.Process) -> None:
         if POSIX:  # Windows has no graceful signal for a detached process; the file does it
-            try:
+            with contextlib.suppress(psutil.Error):  # it already exited
                 proc.send_signal(signal.SIGTERM)
-            except psutil.Error:
-                pass
 
     def _reap_recorded(self) -> list[str]:
         """Stop servers a dead supervisor left behind. Only processes the records still match."""
@@ -464,6 +465,7 @@ class Controller:
             "latest": latest,
             "update_available": None if latest is None else newer,
             "offline": offline,
+            "checked": None if offline else "pypi.org",
         }
         if as_json:
             self.say(json.dumps(report, indent=2))
@@ -483,11 +485,11 @@ class Controller:
         if offline:
             self.say("  Latest release: not checked (--offline)")
         elif latest is None:
-            self.say("  Latest release: couldn't check")
+            self.say("  Latest release: couldn't check pypi.org")
         elif newer:
-            self.say(f"  Latest release: {latest} (run `maestro update`)")
+            self.say(f"  Latest release: {latest} (checked pypi.org). Run `maestro update`.")
         else:
-            self.say("  Latest release: you are up to date")
+            self.say("  Latest release: you are up to date (checked pypi.org)")
         return 0 if running else 3
 
     # --- logs and open ------------------------------------------------------------------

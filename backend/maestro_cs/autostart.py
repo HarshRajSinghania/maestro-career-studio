@@ -17,6 +17,7 @@ on battery and caps the run time.
 """
 from __future__ import annotations
 
+import contextlib
 import getpass
 import os
 import plistlib
@@ -164,13 +165,11 @@ def _write(path: Path, data: bytes, mode: int) -> None:
 
 
 def _restore(path: Path, prior: bytes | None, mode: int) -> None:
-    try:
+    with contextlib.suppress(OSError):  # best effort: the caller is already reporting the failure
         if prior is None:
             path.unlink(missing_ok=True)
         else:
             _write(path, prior, mode)
-    except OSError:
-        pass
 
 
 class Autostart:

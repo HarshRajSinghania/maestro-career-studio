@@ -2,6 +2,9 @@
   "entry_points": [
     "app.main",
     "mcp_server.server",
+    "maestro_cs.cli",
+    "maestro_cs.__main__",
+    "maestro_cs.prefetch",
     "scripts.apply_template_sources",
     "scripts.ats_calibration",
     "scripts.ats_snapshot",

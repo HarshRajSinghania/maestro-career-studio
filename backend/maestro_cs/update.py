@@ -15,6 +15,7 @@ upgrade is handed to a detached `cmd` script that waits for this process to exit
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shutil
@@ -347,11 +348,9 @@ class Updater:
         return lines[-1]
 
     def _log(self, text: str) -> None:
-        try:
+        with contextlib.suppress(OSError):  # the log is a courtesy; the screen already said it
             with open(self.ctx.logs_dir / "update.log", "a", encoding="utf-8") as log:
                 log.write(f"[{datetime.now().isoformat(timespec='seconds')}] {text.rstrip()}\n")
-        except OSError:
-            pass
 
     @staticmethod
     def _own_pids(get_process: Callable[[], Any] = psutil.Process) -> list[int]:
@@ -362,15 +361,13 @@ class Updater:
         name isn't `python*`/`maestro*` (a shell, Explorer) ends the walk.
         """
         pids = [os.getpid()]
-        try:
+        with contextlib.suppress(psutil.Error):  # a vanished ancestor just ends the walk
             node = get_process()
             for _ in range(2):
                 node = node.parent()
                 if node is None or not node.name().lower().startswith(("python", "maestro")):
                     break
                 pids.append(node.pid)
-        except psutil.Error:
-            pass
         return pids
 
     def _windows_handoff(self, uv_argv: list[str], shim: Path, restart: bool,

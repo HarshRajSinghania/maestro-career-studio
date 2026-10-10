@@ -22,6 +22,7 @@ CLI, also runs on every one of these systems and must never match):
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shlex
@@ -129,13 +130,11 @@ def is_desktop_process(platform: str, name: str | None, exe: str | None,
 
 def desktop_running(platform: str = sys.platform,
                     process_iter: Callable[..., Iterable[Any]] = psutil.process_iter) -> bool:
-    try:
+    with contextlib.suppress(psutil.Error, OSError):  # an unreadable process table means "not running"
         for proc in process_iter(["name", "exe", "cmdline"]):
             info = getattr(proc, "info", None) or {}
             if is_desktop_process(platform, info.get("name"), info.get("exe"), info.get("cmdline")):
                 return True
-    except (psutil.Error, OSError):
-        pass
     return False
 
 
@@ -185,10 +184,8 @@ def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
     tmp = path.with_name(f"{path.name}.tmp-{os.getpid()}")
     try:
         tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        try:
+        with contextlib.suppress(OSError):  # a new file keeps the default mode
             shutil.copymode(path, tmp)
-        except OSError:
-            pass  # a new file keeps the default mode
         os.replace(tmp, path)
     except OSError:
         tmp.unlink(missing_ok=True)
@@ -461,10 +458,8 @@ class Connector:
                 self.waiter_record.unlink(missing_ok=True)
 
     def _claim_waiter_record(self) -> None:
-        try:
+        with contextlib.suppress(OSError, psutil.Error):  # without a record only the one-waiter guarantee is lost
             procs.write_record(self.waiter_record, self.pid())
-        except (OSError, psutil.Error):
-            pass  # without a record only the one-waiter guarantee is lost
 
     def _owns_waiter_record(self) -> bool:
         record = procs.read_json(self.waiter_record)

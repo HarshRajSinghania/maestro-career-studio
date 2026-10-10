@@ -6,6 +6,7 @@ every OS without a shutdown endpoint on a zero-auth API.
 """
 from __future__ import annotations
 
+import contextlib
 import http.client
 import os
 import signal
@@ -102,10 +103,8 @@ class Supervisor:
     def _restore_signals(self) -> None:
         # The caller (or a test runner) gets its own Ctrl-C behaviour back once we are done.
         for number, previous in self._previous_handlers.items():
-            try:
+            with contextlib.suppress(OSError, ValueError, TypeError):  # not the main thread, or already gone
                 signal.signal(number, previous)
-            except (OSError, ValueError, TypeError):
-                pass
         self._previous_handlers.clear()
 
     def _rotate_logs(self) -> None:
@@ -132,10 +131,8 @@ class Supervisor:
                      f"({exc.strerror or exc}).")
             return None
         self.children[spec.name] = proc
-        try:
+        with contextlib.suppress(psutil.Error):  # it already exited; _start reports the exit code
             procs.write_record(self.run_dir / f"{spec.name}.json", proc.pid)
-        except psutil.Error:
-            pass  # it already exited; _start reports the exit code
         self.say(f"Started {spec.name} (pid {proc.pid}).")
         return proc
 
@@ -187,28 +184,20 @@ class Supervisor:
             helpers = psutil.Process(proc.pid).children(recursive=True)
         except psutil.Error:
             helpers = []
-        try:
+        with contextlib.suppress(OSError, subprocess.TimeoutExpired):  # the tree kill below finishes the job
             if WINDOWS:
                 proc.send_signal(signal.CTRL_BREAK_EVENT)  # uvicorn and node exit cleanly on it
             else:
                 os.killpg(proc.pid, signal.SIGTERM)
             proc.wait(timeout=self.grace)
-        except (OSError, subprocess.TimeoutExpired):
-            pass
         if proc.poll() is None:
-            try:
+            with contextlib.suppress(psutil.Error):  # it exited while we looked
                 procs.kill_tree(psutil.Process(proc.pid), grace=2.0)
-            except psutil.Error:
-                pass
         for helper in helpers:  # whatever outlived its parent
-            try:
+            with contextlib.suppress(psutil.Error):  # already gone
                 helper.kill()
-            except psutil.Error:
-                pass
-        try:
-            proc.wait(timeout=2.0)  # reap it so no zombie is left behind
-        except subprocess.TimeoutExpired:
-            pass
+        with contextlib.suppress(subprocess.TimeoutExpired):  # reap it so no zombie is left behind
+            proc.wait(timeout=2.0)
 
     def _stop_all(self) -> None:
         for spec in reversed(self.specs):  # the UI first, then the API it proxies to

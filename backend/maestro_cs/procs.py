@@ -1,6 +1,7 @@
 """Process records that survive reboots honestly: a pid alone can name someone else's process."""
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -32,14 +33,12 @@ def write_record(path: Path, pid: int, **extra: Any) -> None:
 def live_process(record: dict[str, Any] | None) -> psutil.Process | None:
     if not record:
         return None
-    try:
+    with contextlib.suppress(psutil.Error, KeyError, TypeError, ValueError):  # gone, or a record from another era
         proc = psutil.Process(int(record["pid"]))
         # Linux derives create_time from the boot time, which moves when the wall clock is stepped.
         same = abs(proc.create_time() - float(record["create_time"])) < 2.0
         if same and proc.status() != psutil.STATUS_ZOMBIE:
             return proc
-    except (psutil.Error, KeyError, TypeError, ValueError):
-        pass
     return None
 
 
@@ -49,13 +48,9 @@ def kill_tree(proc: psutil.Process, grace: float = 5.0) -> None:
     except psutil.Error:
         return
     for member in family:
-        try:
+        with contextlib.suppress(psutil.Error):  # already gone
             member.terminate()
-        except psutil.Error:
-            pass
     _, alive = psutil.wait_procs(family, timeout=grace)
     for member in alive:
-        try:
+        with contextlib.suppress(psutil.Error):  # already gone
             member.kill()
-        except psutil.Error:
-            pass

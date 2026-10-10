@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import subprocess
@@ -18,10 +19,8 @@ def started():
     children: list[subprocess.Popen] = []
     yield children
     for child in children:
-        try:
+        with contextlib.suppress(psutil.Error):  # the test already ended it
             procs.kill_tree(psutil.Process(child.pid), grace=1.0)
-        except psutil.Error:
-            pass
         child.wait(timeout=5)
 
 
