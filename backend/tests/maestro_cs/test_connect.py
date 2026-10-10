@@ -707,3 +707,160 @@ def test_the_card_strings_come_from_build_not_a_second_copy():
     assert "cursor-deeplink" not in source and "vscode:mcp" not in source
     assert "services.connect" in source
     assert control.ControlError is ControlError
+
+
+# --- review follow-ups --------------------------------------------------------------------
+
+def test_a_symlinked_config_stays_a_symlink_and_its_target_gets_the_entry(tmp_path):
+    conn, rec = make_connector(tmp_path)
+    target = tmp_path / "dotfiles" / "claude_desktop_config.json"
+    target.parent.mkdir()
+    target.write_text(json.dumps({"mcpServers": {"kb": {"command": "k"}}}), encoding="utf-8")
+    link = desktop_config(conn)
+    link.parent.mkdir(parents=True)
+    link.symlink_to(target)
+    assert conn.connect("claude-desktop") == 0
+    assert link.is_symlink() and Path(os.path.realpath(link)) == target.resolve()
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert data["mcpServers"]["maestro-career-studio"] == ENTRY
+    assert data["mcpServers"]["kb"] == {"command": "k"}
+    # backup and temp file sit beside the target, not the link
+    assert len(list(target.parent.glob("claude_desktop_config.json.bak-*"))) == 1
+    assert not list(link.parent.glob("*.bak-*")) and not list(target.parent.glob("*.tmp*"))
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+def test_a_private_config_stays_private(tmp_path):
+    conn, _ = make_connector(tmp_path)
+    path = write_config(conn, {"mcpServers": {}})
+    path.chmod(0o600)
+    conn.connect("claude-desktop")
+    assert path.stat().st_mode & 0o777 == 0o600
+    backup = next(path.parent.glob("*.bak-*"))
+    assert backup.stat().st_mode & 0o777 == 0o600
+
+
+def test_a_backup_name_collision_gets_a_suffix_and_never_overwrites(tmp_path):
+    conn, rec = make_connector(tmp_path)
+    path = write_config(conn, {"mcpServers": {"kb": {"command": "k"}}})
+    older = path.with_name("claude_desktop_config.json.bak-20261010T123005Z")
+    older.write_text("older backup", encoding="utf-8")
+    before = path.read_bytes()
+    conn.connect("claude-desktop")
+    assert older.read_text(encoding="utf-8") == "older backup"
+    newer = path.with_name("claude_desktop_config.json.bak-20261010T123005Z-1")
+    assert newer.read_bytes() == before
+    assert "bak-20261010T123005Z-1" in rec.text
+
+
+def test_msix_config_is_used_only_when_exactly_one_package_folder_has_it(tmp_path):
+    local, roaming = tmp_path / "Local", tmp_path / "Roaming"
+    environ = {"LOCALAPPDATA": str(local), "APPDATA": str(roaming)}
+    plain = roaming / "Claude" / "claude_desktop_config.json"
+    assert connect.desktop_config_path("win32", environ, tmp_path) == plain
+    (local / "Packages" / "Claude_pzs8sxrjxfjjc").mkdir(parents=True)  # no LocalCache yet
+    assert connect.desktop_config_path("win32", environ, tmp_path) == plain
+    store = local / "Packages" / "Claude_pzs8sxrjxfjjc" / "LocalCache" / "Roaming" / "Claude"
+    store.mkdir(parents=True)
+    assert connect.desktop_config_path("win32", environ, tmp_path) == store / "claude_desktop_config.json"
+    other = local / "Packages" / "Claude_other" / "LocalCache" / "Roaming" / "Claude"
+    other.mkdir(parents=True)  # ambiguous: fall back to %APPDATA%
+    assert connect.desktop_config_path("win32", environ, tmp_path) == plain
+    assert connect.desktop_config_path("darwin", environ, tmp_path).parts[-3:-1] == (
+        "Application Support", "Claude")
+
+
+def test_the_waiter_keeps_waiting_when_desktop_relaunches_during_the_pause(tmp_path):
+    rec = Recorder()
+    conn, _ = make_connector(tmp_path, rec)
+    conn.settle = 1.0
+    path = write_config(conn, {"mcpServers": {}})
+    answers = iter([True, False, True, False, False])  # quit, relaunched in the pause, quit again
+    conn.running = lambda: next(answers)
+    ticks = iter(range(10_000))
+    conn.clock = lambda: float(next(ticks))
+    assert conn.wait_and_write("full", timeout=600.0, poll=1.0) == 0
+    assert "came back" in rec.text
+    assert json.loads(path.read_text())["mcpServers"]["maestro-career-studio"] == ENTRY
+
+
+def test_a_relaunched_desktop_still_honours_the_original_deadline(tmp_path):
+    rec = Recorder()
+    conn, _ = make_connector(tmp_path, rec)
+    conn.settle = 1.0
+    path = write_config(conn, {"mcpServers": {}})
+    before = path.read_bytes()
+    answers = iter([False, True] + [True] * 50)
+    conn.running = lambda: next(answers)
+    ticks = iter(range(0, 10_000, 100))
+    conn.clock = lambda: float(next(ticks))
+    assert conn.wait_and_write("full", timeout=600.0, poll=1.0) == 1
+    assert path.read_bytes() == before and "still running" in rec.text
+
+
+def _sleeper():
+    return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+
+
+def test_a_new_deferral_stops_a_live_earlier_waiter(tmp_path):
+    from maestro_cs import procs
+
+    conn, rec = make_connector(tmp_path, Recorder(running=True))
+    write_config(conn, {"mcpServers": {}})
+    old = _sleeper()
+    try:
+        procs.write_record(conn.waiter_record, old.pid)
+        conn.connect("claude-desktop")
+        assert old.wait(timeout=10) is not None  # terminated
+        assert len(rec.detached) == 1
+    finally:
+        if old.poll() is None:
+            old.kill()
+            old.wait()
+
+
+def test_a_stale_waiter_record_is_ignored(tmp_path):
+    from maestro_cs import procs
+
+    conn, rec = make_connector(tmp_path, Recorder(running=True))
+    write_config(conn, {"mcpServers": {}})
+    old = _sleeper()
+    try:
+        procs.write_json(conn.waiter_record, {"pid": old.pid, "create_time": 1.0})  # wrong start time
+        conn.connect("claude-desktop")
+        assert old.poll() is None  # a recycled pid is not ours to kill
+    finally:
+        old.kill()
+        old.wait()
+
+
+def test_a_waiter_that_lost_its_record_stops_without_writing(tmp_path):
+    from maestro_cs import procs
+
+    rec = Recorder(running=True)
+    conn, _ = make_connector(tmp_path, rec)
+    path = write_config(conn, {"mcpServers": {}})
+    before = path.read_bytes()
+    calls = {"n": 0}
+
+    def sleeper(seconds):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            procs.write_json(conn.waiter_record, {"pid": 999_999, "create_time": 1.0})
+        if calls["n"] == 2:
+            rec.running = False
+
+    conn.sleep = sleeper
+    ticks = iter(range(10_000))
+    conn.clock = lambda: float(next(ticks))
+    assert conn.wait_and_write("full", timeout=600.0, poll=1.0) == 0
+    assert path.read_bytes() == before
+    assert "took over" in rec.text
+    assert json.loads(conn.waiter_record.read_text())["pid"] == 999_999  # not ours to remove
+
+
+def test_the_waiter_removes_its_record_when_it_finishes(tmp_path):
+    conn, _ = make_connector(tmp_path, Recorder(running=False))
+    write_config(conn, {"mcpServers": {}})
+    assert conn.wait_and_write("full", timeout=10.0, poll=1.0) == 0
+    assert not conn.waiter_record.exists()

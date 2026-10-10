@@ -40,7 +40,7 @@ import psutil
 
 from maestro_cs import detach as detach_mod
 from maestro_cs import home as home_mod
-from maestro_cs import runtime
+from maestro_cs import procs, runtime
 from maestro_cs.control import Context, ControlError
 
 SERVER_NAME = "maestro-career-studio"
@@ -62,13 +62,26 @@ def _say(*args: Any, **kwargs: Any) -> None:
 
 # --- where each app keeps its config --------------------------------------------------------
 
+def _msix_claude_dir(environ: Mapping[str, str], user_home: Path) -> Path | None:
+    """The Microsoft Store build keeps Claude's files in its package folder (virtualised
+    %APPDATA%). Used only when exactly one such folder exists. UNVERIFIED: no Windows machine."""
+    local = Path(environ.get("LOCALAPPDATA") or user_home / "AppData" / "Local")
+    try:
+        found = [p for p in (local / "Packages").glob("Claude_*")
+                 if (p / "LocalCache" / "Roaming" / "Claude").is_dir()]
+    except OSError:
+        return None
+    return found[0] / "LocalCache" / "Roaming" / "Claude" if len(found) == 1 else None
+
+
 def desktop_config_path(platform: str = sys.platform, environ: Mapping[str, str] = os.environ,
                         user_home: Path | None = None) -> Path:
     user_home = user_home or Path.home()
     if platform == "darwin":
         base = user_home / "Library" / "Application Support" / "Claude"
     elif platform == "win32":
-        base = Path(environ.get("APPDATA") or user_home / "AppData" / "Roaming") / "Claude"
+        base = _msix_claude_dir(environ, user_home) or (
+            Path(environ.get("APPDATA") or user_home / "AppData" / "Roaming") / "Claude")
     else:
         base = user_home / ".config" / "Claude"
     return base / "claude_desktop_config.json"
@@ -217,6 +230,7 @@ class Connector:
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
         settle: float = SETTLE_SECONDS,
+        pid: Callable[[], int] = os.getpid,
     ) -> None:
         self.ctx, self.platform = ctx, platform
         self.user_home = user_home or Path.home()
@@ -226,6 +240,7 @@ class Connector:
         self._apply, self._build = apply, build
         self.now, self.say, self.shim = now, say, shim
         self.sleep, self.clock, self.settle = sleep, clock, settle
+        self.pid = pid
 
     @property
     def desktop_config(self) -> Path:
@@ -234,6 +249,10 @@ class Connector:
     @property
     def log_file(self) -> Path:
         return self.ctx.logs_dir / "connect.log"
+
+    @property
+    def waiter_record(self) -> Path:
+        return self.ctx.run_dir / "connect-waiter.json"
 
     def _detach(self, args: list[str], log: Path) -> Any:
         return detach_mod.spawn_detached(args, log=log, home=self.ctx.home, env=self.ctx.environ)
@@ -344,7 +363,14 @@ class Connector:
             self._old_bundle_hint()
         return code
 
+    def _stop_previous_waiter(self) -> None:
+        """One waiter at a time: a new deferral replaces a live earlier one."""
+        old = procs.live_process(procs.read_json(self.waiter_record))
+        if old is not None and old.pid != self.pid():
+            procs.kill_tree(old, grace=2.0)
+
     def _defer(self, profile: str) -> int:
+        self._stop_previous_waiter()
         try:
             self.detach([WAITER_VERB, "--profile", profile], self.log_file)
         except detach_mod.DetachError as exc:
@@ -369,7 +395,8 @@ class Connector:
 
     def _write_desktop(self, profile: str) -> int:
         """Back up, merge, write, read back. 0 on success, 1 when the entry did not stick."""
-        path = self.desktop_config
+        # A dotfiles user may symlink the config: act on the real file so the link survives.
+        path = Path(os.path.realpath(self.desktop_config))
         config = read_desktop_config(path)
         servers = _servers(config, path)
         entry = desktop_entry(profile, self.shim())
@@ -403,22 +430,45 @@ class Connector:
             self.say(f"{self.now().strftime('%Y-%m-%d %H:%M:%SZ')} {message}")
 
         deadline = self.clock() + timeout
-        log(f"Waiting for Claude Desktop to quit (up to {timeout / 60:g} minutes).")
-        while self.running():
-            if self.clock() >= deadline:
-                log(f"Claude Desktop was still running after {timeout / 60:g} minutes, so nothing "
-                    "was written. Quit it fully, then run `maestro connect claude-desktop`.")
-                return 1
-            self.sleep(poll)
-        if self.settle > 0:
-            self.sleep(self.settle)
-        log("Claude Desktop has quit.")
+        self._claim_waiter_record()
         try:
-            code = self._write_desktop(profile)
-        except ControlError as exc:
-            log(str(exc))
-            return 1
-        return code
+            log(f"Waiting for Claude Desktop to quit (up to {timeout / 60:g} minutes).")
+            while True:
+                while self.running():
+                    if self.clock() >= deadline:
+                        log(f"Claude Desktop was still running after {timeout / 60:g} minutes, so "
+                            "nothing was written. Quit it fully, then run "
+                            "`maestro connect claude-desktop`.")
+                        return 1
+                    self.sleep(poll)
+                if self.settle <= 0:
+                    break
+                self.sleep(self.settle)
+                if not self.running():  # it can relaunch within the pause
+                    break
+                log("Claude Desktop came back; still waiting.")
+            if not self._owns_waiter_record():
+                log("A newer `maestro connect claude-desktop` took over; this waiter stops.")
+                return 0
+            log("Claude Desktop has quit.")
+            try:
+                return self._write_desktop(profile)
+            except ControlError as exc:
+                log(str(exc))
+                return 1
+        finally:
+            if self._owns_waiter_record():
+                self.waiter_record.unlink(missing_ok=True)
+
+    def _claim_waiter_record(self) -> None:
+        try:
+            procs.write_record(self.waiter_record, self.pid())
+        except (OSError, psutil.Error):
+            pass  # without a record only the one-waiter guarantee is lost
+
+    def _owns_waiter_record(self) -> bool:
+        record = procs.read_json(self.waiter_record)
+        return record is None or record.get("pid") == self.pid()  # no record: nobody replaced us
 
     # --- the listing --------------------------------------------------------------------
 
