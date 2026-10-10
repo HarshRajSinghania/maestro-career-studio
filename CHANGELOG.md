@@ -52,7 +52,9 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ### Changed
 
-- Langfuse tracing is an optional extra; the Docker image still includes it.
+- Langfuse tracing is an optional `tracing` extra. Docker and native installs still
+  include it; a source/dev install gets it with `pip install -e ".[tracing]"` from
+  `backend/`.
 - Backend image copies files with the app user's ownership and excludes tests
   and every backend script except `scripts/sync_key.py`, the Docker sync-key
   tool; dev tools (pytest, ruff) are no longer installed in it. mako moves off

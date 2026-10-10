@@ -277,7 +277,7 @@ with `NEXT_PUBLIC_API_DIRECT=true`, which skips the proxy.
 
 Every LLM call can be traced to a Langfuse instance you run. Install the
 backend's optional `tracing` extra (`cd backend && pip install -e '.[tracing]'`)
-first. The Docker image includes the SDK; the desktop build leaves it out. Set
+first. The Docker image and native installs include the SDK; the planned desktop build will omit it. Set
 `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_HOST` on a backend
 you run yourself, outside compose. Compose deliberately does not forward them:
 traces contain your prompts, which means your resume text. Tracing stays off

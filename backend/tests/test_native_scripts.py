@@ -297,7 +297,7 @@ def assert_private_layout(ctx):
 def assert_editable_install(ctx):
     assert read_record(ctx, "venv")["calls"] == 1
     pip = read_record(ctx, "pip")
-    assert pip["args"] == ["install", "-e", f"{BACKEND}[mcp]"]
+    assert pip["args"] == ["install", "-e", f"{BACKEND}[mcp,tracing]"]
     assert pip["umask"] == 0o077
 
 

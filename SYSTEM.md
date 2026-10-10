@@ -704,7 +704,7 @@ with the failure mode that bought it. Code citing "§8" lands here.
   Regenerate that lock with **`mcp` + `tracing` only, on Linux/Python 3.12** (command in `backend/Dockerfile`;
   macOS/3.13 gives wrong pins). CI's `dependency-audit` (`pip-audit` on the lock) failing on a new advisory is intended.
 - **No Langfuse stack ships here** (the bundled compose file had fixed default secrets).
-  The SDK is the `tracing` extra (included in Docker, omitted from desktop); `services/tracing.py` requires
+  The SDK is the `tracing` extra (included in Docker and native; the planned desktop build omits it); `services/tracing.py` requires
   all three `LANGFUSE_*` settings. Tracing points at the user's host; `langfuse_host` defaults to empty.
 - Alembic revision ids are hand-written fake-hex and COLLIDE easily — generate with `uuid.uuid4().hex[:12]`.
 - **SYSTEM.md gate**: `python3 scripts/check_system_md.py` (CI `docs-gate` job) enforces this file's header
