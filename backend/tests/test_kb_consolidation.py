@@ -441,6 +441,3 @@ def test_parse_resume_text_llm_failure_raises_runtime_error(db_session, monkeypa
     monkeypatch.setattr("app.services.llm.call_openai", fail)
     with pytest.raises(RuntimeError, match="resume parse LLM call failed"):
         parse_resume_text(db_session, "text")
-    # Invalid resume data has a distinct ValueError contract.
-    with pytest.raises(RuntimeError):
-        parse_resume_text(db_session, "text")
