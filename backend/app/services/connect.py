@@ -60,6 +60,6 @@ def build(profile: str = "full") -> ConnectInfo:
                 id="claude-desktop", label="Claude Desktop", kind="download",
                 value="/api/setup/connect/bundle",
             ),
-            ConnectClient(id="other", label="Other MCP client", kind="url", value=mcp_url),
+            ConnectClient(id="other", label="Any MCP agent", kind="url", value=mcp_url),
         ],
     )

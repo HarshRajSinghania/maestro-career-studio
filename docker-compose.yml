@@ -33,7 +33,7 @@ services:
       # the empty string as unset (same pattern as OPENAI_BASE_URL below), so
       # without this line a value set in .env never reaches the container.
       SQLITE_JOURNAL_MODE: ${SQLITE_JOURNAL_MODE:-}
-      MAESTRO_CS_PUBLIC_BACKEND_URL: http://localhost:${BACKEND_HOST_PORT:-8001}
+      MAESTRO_CS_PUBLIC_BACKEND_URL: ${MAESTRO_CS_PUBLIC_BACKEND_URL:-http://localhost:${BACKEND_HOST_PORT:-8001}}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # Empty = the OpenAI API. Set to an OpenAI-compatible endpoint (Ollama,

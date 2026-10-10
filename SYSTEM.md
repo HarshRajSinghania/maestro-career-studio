@@ -502,7 +502,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   Enable ONE profile per chat (`full` carries KB writes); `MAESTRO_CS_*` has no legacy fallback. **Apply executor:** headed Chrome (`docs/entities/others.md`, "Attended executor"; apply playbook, "Unattended (full automation)").
   **Directory listing:** `plugins/maestro-career-studio/` (not `.mcpb`); policy `PRIVACY.md`.
   Settings › Connected agents' **Connect your assistant** (`connect-assistant`) selects a profile and copies commands/URLs, opens install links or downloads the Claude Desktop bundle.
-  `GET /api/setup/connect?profile=full` composes values from `MAESTRO_CS_PUBLIC_BACKEND_URL` (default localhost:8000; compose host port); `/api/setup/connect/bundle` serves `MCPB_BUNDLE_PATH` (read-only mount; `tests/test_setup_connect.py`).
+  `GET /api/setup/connect?profile=full` composes values from `MAESTRO_CS_PUBLIC_BACKEND_URL` (default localhost:8000; compose host port unless overridden); `/api/setup/connect/bundle` serves `MCPB_BUNDLE_PATH` (compose read-only mount; `tests/test_setup_connect.py`).
 - **Guided tailoring workflow** (`mcp_server/workflow.py`): wrapped tools carry a `next` envelope
   (`state`/`blocking`/`offer`/`ask_user`/`options`/`call`) that walks §5's arc — score all bases → recommend →
   quick|custom → tailor → render → apply readiness — unnarrated. `workflow.py` is PURE (no httpx/DB/LLM), a
@@ -686,7 +686,7 @@ with the failure mode that bought it. Code citing "§8" lands here.
   Windows paths, then PATH (`dockerCandidates`/`onPath`, `mcpb/tests/shim.test.js`); `setup-mcp.sh` is not
   a Windows route. The upload host root is `${PWD}` (compose falls back to its own cwd; `update.sh` pins it
   to the repo) unless `MAESTRO_CS_UPLOAD_HOST_ROOT` says otherwise; a Windows-shaped root joins with `\`.
-- **Native run (no Docker)** — `docs/native-install.md`: scripts in `backend/scripts/native/` run one loopback worker from `$MAESTRO_HOME`, exporting `BACKEND_URL=http://127.0.0.1:$MAESTRO_PORT` (pin: `tests/test_native_scripts.py`).
+- **Native run (no Docker)** — `docs/native-install.md`: `backend/scripts/native/` runs one loopback worker under `$MAESTRO_HOME`; `BACKEND_URL` and `MAESTRO_CS_PUBLIC_BACKEND_URL` use `http://127.0.0.1:$MAESTRO_PORT`, `MCPB_BUNDLE_PATH` uses the checkout's `mcpb/maestro-career-studio.mcpb` (`tests/test_native_scripts.py`).
   `slow` tests skip with `MAESTRO_SKIP_SLOW` (CI); `integration` MCP loopback and `tests/sync/test_two_machines.py`
   run in CI ON PURPOSE, never `slow`: no downloads. With `EMBEDDINGS_OUT_OF_PROCESS` at most ONE embedding
   helper runs per process (`embeddings._HELPER_LOCK`); two ~290 MB helpers OOM. `GET /health/memory` reports memory.

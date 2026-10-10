@@ -45,6 +45,7 @@ def test_connect_composes_every_client_for_the_full_profile(client, monkeypatch)
         "name": "maestro-career-studio", "type": "http", "url": url,
     }
     assert by_id["other"]["value"] == url
+    assert by_id["other"]["label"] == "Any MCP agent"
     assert by_id["claude-desktop"]["kind"] == "download"
     assert by_id["claude-desktop"]["value"] == "/api/setup/connect/bundle"
     assert {p["name"] for p in body["profiles"]} == {

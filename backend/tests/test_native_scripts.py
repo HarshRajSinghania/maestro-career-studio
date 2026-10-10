@@ -48,7 +48,8 @@ def record(kind):
              "APPLICATIONS_DIR", "SETTINGS_DIR", "BASE_RESUMES_DIR",
              "KB_DOCUMENTS_DIR", "LOGS_DIR", "EXPORTS_DIR", "MALLOC_ARENA_MAX",
              "EMBEDDINGS_OUT_OF_PROCESS", "FASTEMBED_CACHE_PATH", "ALLOWED_HOSTS",
-             "TEST_DATABASE_URL", "OPENAI_API_KEY", "BACKEND_URL", "MAESTRO_PORT")
+             "TEST_DATABASE_URL", "OPENAI_API_KEY", "BACKEND_URL", "MAESTRO_PORT",
+             "MAESTRO_CS_PUBLIC_BACKEND_URL", "MCPB_BUNDLE_PATH")
     path.write_text(json.dumps({"calls": previous["calls"] + 1, "args": sys.argv[1:],
         "cwd": os.getcwd(), "pid": os.getpid(), "umask": os.umask(0o077),
         "env": {key: os.environ.get(key) for key in names}}))
@@ -439,6 +440,38 @@ def test_common_exports_backend_url_at_the_native_port(native_home, port, expect
     )
     assert result.returncode == 0, result.stderr
     assert read_record(ctx, "load_env")["env"]["BACKEND_URL"] == f"http://127.0.0.1:{expected_port}"
+    assert_safe(result, ctx)
+
+
+@pytest.mark.parametrize("port,expected_port", [(None, "8001"), ("8741", "8741"), ("08741", "8741")])
+@pytest.mark.parametrize("setting", ["MAESTRO_CS_PUBLIC_BACKEND_URL", "MCPB_BUNDLE_PATH"])
+def test_common_exports_native_connect_settings(native_home, port, expected_port, setting):
+    ctx = native_home
+    setup_home(ctx)
+    ctx.env["MAESTRO_CS_PUBLIC_BACKEND_URL"] = "http://inherited-backend:8000"
+    ctx.env["MCPB_BUNDLE_PATH"] = "/app/mcpb/inherited.mcpb"
+    assignments = (
+        "MAESTRO_CS_PUBLIC_BACKEND_URL=http://backend:8000\n"
+        "MCPB_BUNDLE_PATH=/app/mcpb/from-env.mcpb\n"
+    )
+    if port is not None:
+        assignments += f"MAESTRO_PORT={port}\n"
+    (ctx.home / "maestro.env").write_text(assignments)
+    result = subprocess.run(
+        [
+            "bash", "-c",
+            'source "$1"; native_load_env; "$2" -c '
+            "'from native_test_support import record; record(\"load_env\")'",
+            "probe", str(NATIVE / "common.sh"), sys.executable,
+        ],
+        cwd="/", env=ctx.env, capture_output=True, text=True, timeout=45,
+    )
+    assert result.returncode == 0, result.stderr
+    expected = {
+        "MAESTRO_CS_PUBLIC_BACKEND_URL": f"http://127.0.0.1:{expected_port}",
+        "MCPB_BUNDLE_PATH": str(BACKEND.parent / "mcpb/maestro-career-studio.mcpb"),
+    }
+    assert read_record(ctx, "load_env")["env"][setting] == expected[setting]
     assert_safe(result, ctx)
 
 
