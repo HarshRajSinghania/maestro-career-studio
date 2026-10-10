@@ -815,16 +815,16 @@ at the end run the full suite and the extension slop check.
 
 | Gate | Baseline (Task 0) | After |
 |---|---|---|
-| Full suite: passed / skipped / wall | 11,087 / 6 / ~244 s | |
-| Slowest test | 31.9 s (`test_write_paths[sync-off-case2]`) | |
-| ruff | clean | |
-| check_system_md | OK 996/1000 | |
-| ledger_check --strict | 0 disagreeing | |
-| slop backend / frontend / extension | | |
-| frontend tsc / lint / build | | |
-| `public/monaco` size | ~25 MB | |
-| Docker backend image (scratch tag) | 1.88 GB | |
-| Production LOC removed (git diff --stat, non-test) | — | |
+| Full suite: passed / skipped / wall | 11,087 / 6 / ~244 s | 11,071 / 5 / 234 s (16 tests and 1 skip went with the deleted things) |
+| Slowest test | 31.9 s (`test_write_paths[sync-off-case2]`) | 40.1 s (`test_evaluation.py::test_cold_then_warm_over_one_recipe_book[e2e+keyboard-only]`, a Chrome test under `-n auto` load) |
+| ruff | clean | clean |
+| check_system_md | OK 996/1000 | OK 995/1000 |
+| ledger_check --strict | 0 disagreeing | 0 disagreeing (8 rows) |
+| slop backend / frontend / extension | | OK / OK / OK (no re-baseline needed) |
+| frontend tsc / lint / build | | clean / 0 errors, 2 warnings that predate the branch / builds |
+| `public/monaco` size | ~25 MB | 11 MB |
+| Docker backend image (scratch tag) | 1.88 GB | 1.72 GB |
+| Production LOC removed (git diff --stat, non-test) | — | 66 files, +257 / -1,249 (net -992). Tests: 94 files, +4,733 / -7,178 (net -2,445) |
 
 ## Deviation log (append-only)
 
@@ -861,3 +861,5 @@ at the end run the full suite and the extension slop check.
 | 9 (controller) | drop the `chown -R` layer | with no bind mounts `/app` was root-owned and startup failed creating `/app/data` | non-recursive `chown` of the empty `/app` before WORKDIR; boot verified without mounts | Nothing a user relies on changes |
 | 9 | exclude only unused scripts and log it | `scripts.sync_key` is the one documented in-container command | `.dockerignore` keeps `scripts/__init__.py` + `scripts/sync_key.py`, excludes the rest | Evidence over assumption |
 | 13 | denylist incl. `/^(ts|css|html)\.worker-/` | those top-level files are ~200-byte stubs `editor/editor.main.js` lists as AMD deps; dropping them stops every editor loading | stubs kept; real workers in `assets/` and `language/{typescript,css,html}` still dropped; 25 → 11 MB (not ~9) | Nothing a user relies on changes |
+| 15 | E9 drop `tabs` after a manual check | Playwright Chromium probe: without `tabs`, a same-tab move to a chrome:// page delivers no url, and panel.js's onUpdated only rebinds on a url, so the stale job stays | `tabs` kept, reason in extension/INTERNALS.md | Nothing a user relies on changes |
+| 16 | §12 gotcha, explore-redirect ledger deletion and CHANGELOG entries still to write | They had landed with Tasks 1, 12 and 15; SYSTEM.md has no "legacy import" text left | Only the `autofill-education-shape` row (both clients still coerce; the server returns stored JSON), the two `.slopledger.json` hand-checks, the Monaco changelog line and this table were still missing | A cut is done only when every reader is gone |

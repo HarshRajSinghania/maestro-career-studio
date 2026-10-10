@@ -57,6 +57,8 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
   and every backend script except `scripts/sync_key.py`, the Docker sync-key
   tool; dev tools (pytest, ruff) are no longer installed in it. mako moves off
   the yanked 1.4.0 to 1.4.3, and the image shrinks from about 1.88 GB to 1.72 GB.
+- The web build ships only the Monaco editor files the JSON and LaTeX editors
+  load, cutting `frontend/public/monaco` from about 25 MB to 11 MB.
 
 ### Fixed
 

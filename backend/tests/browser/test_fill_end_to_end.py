@@ -283,7 +283,7 @@ def test_the_engine_fills_every_fixture_on_one_page(e2e_page):
     assert oracle(page, "skills") == ["SQL", "Python", "Tableau"]
     assert [page.input_value(f"#{i}") for i in ("heard", "school", "skills")] == ["", "", ""]
     # A popup that needs its own search: open → search → click.
-    assert page.inner_text("#fos") == "Information Systems"
+    assert page.inner_text("#fos") == "Information Systems" and oracle(page, "fos") == "Information Systems"
     assert oracle(page, "country") == ""   # react-select: no fact, never written
     fos = [p["body"] for p in out["posts"] if p["path"] == "/api/autofill/step"
            and p["body"]["question"] == "Field of study"]

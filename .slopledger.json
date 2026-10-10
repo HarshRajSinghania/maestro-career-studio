@@ -4,7 +4,7 @@
     {
       "id": "typst-default-flip",
       "status": "both-live",
-      "hand_check": "PARKED pending owner re-review (2026-08-02); both header defects fixed same day: Typst underline hugging/evading descenders (ulink() in xcharter_serif.typ) and LaTeX's comment-eaten separator space (xcharter_serif.tex.j2). DB rows re-synced. Corpus evidence CLEAN 8/8 (2026-07-29); pdftotext word-joining check still pending."
+      "hand_check": "HELD by owner 2026-08-09: LaTeX stays, both engines remain first-class; nothing waits on this row. Header defects fixed (Typst ulink(); LaTeX separator space), DB rows re-synced. The CLEAN 8/8 corpus predates the 2026-08-08 extractor swap (PyMuPDF to pypdfium2): re-run it before acting on those numbers."
     },
     {
       "id": "latex-render-path",
@@ -31,7 +31,7 @@
           ]
         }
       ],
-      "hand_check": "Also requires XCharter vendored (font comes FROM texlive today; dropping the layer silently changes Typst's font)."
+      "hand_check": "XCharter is already vendored at backend/app/assets/fonts/xcharter/ (settings.typst_font_paths defaults there), so dropping the layer no longer changes Typst's font. Blocked on latex-render-path."
     },
     {
       "id": "chat-selection-kind",
@@ -40,7 +40,7 @@
     },
     {
       "id": "autofill-education-shape",
-      "status": "new-is-default",
+      "status": "both-live",
       "hand_check": "API-shape condition: GET /api/settings/autofill returns education absent-or-array for a pre-normalization profile."
     },
     {
