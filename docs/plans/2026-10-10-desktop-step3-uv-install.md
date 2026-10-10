@@ -1222,7 +1222,7 @@ Pure render functions (tested by snapshot-style asserts) + an injected `runner` 
   `systemctl --user daemon-reload`, `systemctl --user enable maestro-career-studio.service`, then
   `loginctl enable-linger <user>` (warn, don't fail, if refused: "Maestro will start when you log
   in, not at boot."). off: disable, delete, daemon-reload. No `systemctl` → one sentence.
-- **Windows:** `schtasks /Create /TN "Maestro Career Studio" /SC ONLOGON /RL LIMITED /F /TR "<pythonw.exe> -m maestro_cs start --no-browser"`
+- **Windows (amended after review of 94342c7a):** create the task from XML — `schtasks /Create /TN "Maestro Career Studio" /XML <file> /F` — with a `<LogonTrigger><UserId>` for the current user only (`/SC ONLOGON` means *any* user and likely needs elevation), `DisallowStartIfOnBatteries`/`StopIfGoingOnBatteries` false (the schtasks default skips laptops on battery), `ExecutionTimeLimit` `PT0S`, `RunLevel` LeastPrivilege, action `<pythonw.exe> -m maestro_cs start --no-browser`; XML also removes the `/TR` length limit. Original form, superseded: `schtasks /Create /TN "Maestro Career Studio" /SC ONLOGON /RL LIMITED /F /TR "<pythonw.exe> -m maestro_cs start --no-browser"`
   (`venv_python(windowless=True)` so no console window appears at logon; it runs **`start`, not
   `run`**: `start` detaches the supervisor under console `python.exe` with a hidden console — see
   Task 6 step 5 — so stops stay graceful and no child window appears). No restart-on-crash at this
@@ -1470,7 +1470,7 @@ Run each, record in the Gate table (with numbers), fix or log anything red.
 | G3 smoke | `smoke_uv_install.py` green on macOS (local) and on the CI macOS/Ubuntu/Windows jobs | |
 | G4 upgrade | dev1 → dev2 via `maestro update --source` on Ubuntu and Windows CI: version moves, data kept, snapshot present | |
 | G5 owner Mac | Owner: `uv tool install` the built wheel, `maestro start`, UI works in Chrome, the Companion connects, `maestro connect claude-desktop` (with Desktop running: the deferred write lands after quitting) → Claude Desktop lists Maestro's tools, `maestro stop`/`start` round-trip; start from a terminal, close that terminal, Maestro keeps running | |
-| G6 autostart | macOS: `autostart on` → log out/in (or `launchctl kickstart`) starts it; `off` removes it. Linux CI: unit renders and `systemd-analyze --user verify` passes where available. Windows CI: task created and deleted | |
+| G6 autostart | macOS: `autostart on` → log out/in (or `launchctl kickstart`) starts it; `off` removes it. Linux CI: unit renders and `systemd-analyze --user verify` passes where available. Windows: task created/deleted in CI (admin runner) AND, by the owner or a tester, as a **standard (non-admin) user on battery** — the XML task must create without elevation and start at logon |
 | G7 Docker | Frontend image builds and serves `/` + `/api/version` with `node server.js` (CI images job or local when the daemon is up) pending: Docker daemon down at Task 3; run `docker build frontend/` + the same checks when it is up (local proof with the wheel's Node 24.19.0 passed, see Deviation log) |
 | G8 boundary | During the smoke: both listeners on 127.0.0.1 only; forged Host → 400 on :8001 and :3000; foreign Origin → 403 on :8001 | |
 | G9 memory | RSS of backend and web after the smoke (spike: ~211 MB + ~125 MB on macOS) | |
