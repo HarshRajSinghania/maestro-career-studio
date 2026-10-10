@@ -51,7 +51,18 @@ def _repack_fixture(name, replacements, renames=None):
     return output.getvalue()
 
 
-@pytest.mark.parametrize("target", ["word/document2.xml", "/word/document2.xml"])
+@pytest.mark.parametrize(
+    "target",
+    [
+        "word/document2.xml",
+        "/word/document2.xml",
+        "./word/document2.xml",
+        "../word/document2.xml",
+        "/word/../word/document2.xml",
+        "word/./document2.xml",
+        "word//document2.xml",
+    ],
+)
 def test_docx_text_follows_the_main_part_relationship(target):
     with zipfile.ZipFile(FIXTURES / "paragraphs.docx") as source:
         rels = ElementTree.fromstring(source.read("_rels/.rels"))

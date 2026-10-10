@@ -142,6 +142,7 @@ def _w_text(node) -> str:
 
 
 def _docx_text(data: bytes) -> str:
+    import posixpath
     import zipfile
     from xml.etree import ElementTree
 
@@ -154,7 +155,9 @@ def _docx_text(data: bytes) -> str:
         else:
             for relationship in rels:
                 if relationship.get("Type", "").endswith("/officeDocument"):
-                    part = relationship.get("Target", part).lstrip("/")
+                    part = posixpath.normpath(
+                        posixpath.join("/", relationship.get("Target", part))
+                    ).lstrip("/")
                     break
         if archive.getinfo(part).file_size > 50 * 1024 * 1024:
             raise UnreadableFile("This Word file is too large to read.")
