@@ -71,7 +71,7 @@ at phone widths; §8's reference file says what stays best-effort below that).
 ```
 backend/
   app/
-    main.py            FastAPI app; routers mounted under /api/*
+    main.py            FastAPI app; REST under /api/*, MCP at /mcp and /mcp/{profile}
     config.py          settings; data-dir paths (container-absolute by default —
                        override BASE_RESUMES_DIR/APPLICATIONS_DIR/SETTINGS_DIR/LOGS_DIR locally)
     db.py              SQLAlchemy; sessions use autoflush=False (see §12)
@@ -115,7 +115,7 @@ scripts/               setup-mcp.sh (MCP registration), update.sh (user update p
 
 ```
  paste JD ─┐                          ┌─ web UI (Next 16, react-query)
- extension ─┼→ jobs router → Job row  ├─ MCP server (88 tools, thin REST wrappers)
+ extension ─┼→ jobs router → Job row  ├─ MCP /mcp inside FastAPI (88 REST wrappers)
  MCP ingest┘        │                 └─ chat agent (chat_tools.py — separate toolset)
                     ▼ ATS engine (deterministic, LLM-free)  →  AtsScore rows (base upsert / tailored append)
                     ▼ TailoringSession (frozen gaps → resolutions → LLM tailor ops)
@@ -238,24 +238,20 @@ this contract. Code citing "§4" lands here; the table says which file to open.
 ## 6. Cross-cutting invariants (do not break these)
 
 - **The browser is the attacker; six controls are the whole boundary.** `{#inv-browser-boundary}` The API has no
-  authentication, so binding to `127.0.0.1` proves nothing on its own — the user's own browser is already inside the
-  boundary and can be aimed at it.
+  authentication; the user's browser is inside the boundary and can be aimed at `127.0.0.1`.
   1. **Host allowlist, on BOTH listening servers.** `TrustedHostMiddleware` rejects any Host not in
      `settings.allowed_hosts` (`conftest` adds `testserver`; production does not); without it DNS rebinding makes an
      attacker page SAME-ORIGIN and CORS is never consulted. The backend check alone guards nothing users touch: the
-     browser hits Next on :3000, whose `/api` catch-all rebuilds the request and drops the inbound Host.
-     `frontend/proxy.ts` checks first — the NAME is load-bearing, since Next 16 renamed `middleware` and a
-     `middleware.ts` is ignored in silence — and the `/api` route repeats it, because this must not rest on one
-     filename. ONE definition: `lib/allowed-hosts.mjs`, plain ESM so `node` runs it in tests.
-  2. **Origin gate** (`app/origin_guard.py`). CORS governs what may be READ, this what may RUN: a form/multipart POST
-     needs no preflight, so the side effect lands and only the reply is withheld. Present-but-unlisted `Origin` →
-     refused before routing; ABSENT → allowed (httpx MCP and the healthcheck send none, and are not browsers). Raw ASGI,
-     never `BaseHTTPMiddleware`, which wraps the SSE chat body. **Host → Origin → CORS** falls out of `add_middleware`
-     PREPENDING, so `main.py` reads in reverse (pinned by test); `ALLOWED_ORIGINS` is ONE list, read by CORS and gate.
+     browser hits Next on :3000, whose `/api` catch-all drops the inbound Host. `frontend/proxy.ts` checks first
+     (Next 16 ignores `middleware.ts`), and the `/api` route repeats it. ONE definition: `lib/allowed-hosts.mjs`,
+     plain ESM so `node` runs it in tests.
+  2. **Origin gate** (`app/origin_guard.py`). CORS governs READS, the gate what may RUN: form/multipart POSTs need no
+     preflight. Present-but-unlisted `Origin` → refused before routing; ABSENT → allowed (httpx MCP and healthchecks).
+     Raw ASGI preserves chat SSE; `BaseHTTPMiddleware` wraps it. **Host → Origin → CORS** follows `add_middleware`
+     PREPENDING, so `main.py` reads in reverse (pinned by test); CORS and the gate read ONE `ALLOWED_ORIGINS` list.
   3. **Extension origins are exact ids**, never a pattern: `settings.maestro_cs_extension_ids` →
-     `chrome-extension://<id>` entries in `allow_origins` (a regex trusts EVERY installed extension). Unset = no
-     extension may call the API, logged at startup. Extension-side half of §11 item 19's "CORS must never admit
-     untrusted origins".
+     `chrome-extension://<id>` entries in `allow_origins` (a regex trusts EVERY installed extension). Empty = no
+     extension may call the API, logged at startup; this enforces §11 item 19's refusal of untrusted origins.
   4. **Template source is data, not code.** `pdf_render._environment()` is a `SandboxedEnvironment` — `Template.source`
      comes from the web editor, chat and MCP, and a plain `Environment` turns any of those into arbitrary Python (`(((
      x.__init__.__globals__ )))`). The `(((`/`((*` delimiters are ergonomics, not a control.
@@ -303,7 +299,10 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   hand-mirrors its targets shape. Extra targets require `section="extra"`, a stable `section_key`, and either an enabled
   entry's original index or, for a flat bullets section, the same stable key as `index_or_category`.
 - **MCP control invariants** `{#inv-mcp-controls}`: no MCP tool name contains "delete"; no set-default-template tool.
-  Registration is pinned by a subset assert in `mcp_server/tests/test_server.py` — add new tools there.
+  Registration is pinned in `mcp_server/tests/test_server.py` — add new tools there.
+- **MCP lives inside the app.** `{#inv-mcp-inside-the-app}` `/mcp` and `/mcp/{profile}` use plain Routes behind
+  REST's Host → Origin → CORS stack; SDK DNS-rebinding protection is OFF. Never a second port or `/api/sync` route.
+  Pins: `tests/test_mcp_http_boundary.py` (Host/Origin, sync host, placement), `mcp_server/tests/test_http.py` (SDK protection).
 - **`tailor_application` vs `edit_application`** `{#inv-tailor-vs-edit}` (MCP): the former REPLACES `customized_json`
   wholesale from the BASE resume; the latter applies ops to the CURRENT draft — docstrings lead with this; keep them
   unmistakable. Edit indices are **0-based into the full JSON section array**, including `enabled: false` rows (PDF
@@ -467,13 +466,12 @@ this contract. Code citing "§4" lands here; the table says which file to open.
 ## 7. Agent surfaces
 
 - **MCP server** (`backend/mcp_server/`; its clients are **connected agents** on screen, Settings › Connected agents):
-  thin wrappers (`@_guard` → `ToolError`) over REST via httpx (`BACKEND_URL`, default localhost:8000; compose maps host
-  8001). **The docstring is the API**: it describes what a tool does, records and requires, never instructs (directory
+  thin REST wrappers (`@_guard` → `ToolError`) via httpx (`BACKEND_URL`, default localhost:8000; compose host 8001).
+  **The docstring is the API**: it describes what a tool does, records and requires, never instructs (directory
   policy), and every tool carries `title` + four `ToolAnnotations` hints (`_read`/`_write`); both ratcheted in
   `test_server.py`. Lists page with bounded defaults; a failed `next` lookup after a landed write is `next: null`
-  (`_best_effort_hint`). A fact an agent needs must survive ~2048-dedented-char client truncation or live in a param
-  `Field(description=…)` (`_EDIT_OPS_FIELD` precedent); ratchet
-  `test_registered_tool_docstrings_fit_client_truncation_budget`. Coverage: jobs (ingest/list/get/export;
+  (`_best_effort_hint`). Facts must survive ~2048-dedented-char truncation or live in a param `Field(description=…)`
+  (`_EDIT_OPS_FIELD`; ratchet `test_registered_tool_docstrings_fit_client_truncation_budget`). Coverage: jobs (ingest/list/get/export;
   `get_job_search_brief` with verbatim work-auth, typed `job_preferences` and the `auto_apply` guardrail block;
   `find_job_by_url` posting-equality lookup; `store_extracted_jd` takes `source="agent"`; playbook in
   docs/agentic-job-search.md, capture-and-score only), the proposal-ledger family (consent-gated
@@ -498,11 +496,12 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   `kb_approve_points` is the ONE approval path (`approved|retired`), its gate a convention the docstring states (the
   value is the user's decision), not server enforcement (`record_consent` precedent). `kb_edit_point` has no `state`
   param; a text change forces `state="draft"`. No delete tool; document upload stays web-only. **Scoped profiles**:
-  `profiles.py` owns `full` / `hunt` / `apply` / `explore` / `templates` / `career`; imports keep 88 tools. Stdio `main()` filters
-  `MAESTRO_CS_MCP_PROFILE` (default `full`); `http.py` builds per-profile ASGI servers with stateful JSON sessions and a separate
-  eight-worker limiter; module functions stay sync. Hints use request `CURRENT_PROFILE`, else env (pins: `mcp_server/tests/test_profiles.py`, `test_server.py`, `test_http.py`).
-  Enable ONE per chat; `MAESTRO_CS_*` has no legacy fallback. **Apply executor:** headed real Chrome; `docs/entities/others.md`, "Attended executor", and the apply playbook's "Unattended (full automation)" section.
-  **Directory listing** = plugin bundle `plugins/maestro-career-studio/`, not `.mcpb`; policy `PRIVACY.md`.
+  `profiles.py` owns `full` / `hunt` / `apply` / `explore` / `templates` / `career`; imports keep 88 tools. `/mcp` = `full`,
+  `/mcp/{profile}` = the named allowlist. Each FastAPI lifespan runs fresh stateful JSON sessions; `http.py` offloads to
+  its own eight-worker limiter, keeping module functions sync. Stdio filters `MAESTRO_CS_MCP_PROFILE` (default `full`; §13 `mcp-stdio-venv`).
+  Hints use request `CURRENT_PROFILE`, else env (pins: `mcp_server/tests/test_profiles.py`, `test_server.py`, `test_http.py`).
+  Enable ONE per chat; `MAESTRO_CS_*` has no legacy fallback. **Apply executor:** headed Chrome; reference: `docs/entities/others.md`, "Attended executor", and the apply playbook's "Unattended (full automation)".
+  **Directory listing** uses `plugins/maestro-career-studio/` (not `.mcpb`); policy `PRIVACY.md`.
 - **Guided tailoring workflow** (`mcp_server/workflow.py`): wrapped tools carry a `next` envelope
   (`state`/`blocking`/`offer`/`ask_user`/`options`/`call`) that walks §5's arc — score all bases → recommend →
   quick|custom → tailor → render → apply readiness — unnarrated. `workflow.py` is PURE (no httpx/DB/LLM), a
@@ -943,11 +942,10 @@ citation. Priority lives in the item text, not in the ordinal.
   set those properties, so `transition-[…transform]` jumps → register a class that takes a variant; name those properties.
 ## 13. Active migrations & deprecation ledger
 
-**The rule.** A row is born the moment work lands that SUPERSEDES something without deleting it; it dies
-when the old path is removed. Every row names a **removal trigger** — the observable condition under
-which the old path gets deleted; without one it is two ways of doing the same thing, a design bug, not a
-row. §11 = work NOT YET BUILT; §13 = work built TWICE, where one copy must die. When a row lands, CUT the
-superseded prose from its home section and leave a one-line pointer ("migration state: §13 `<id>`").
+**The rule.** A row is born when work SUPERSEDES something without deleting it; it dies when the old path
+is removed. Every row names a **removal trigger**, an observable condition for deletion; without one it is
+two ways of doing the same thing, a design bug. §11 = work NOT YET BUILT; §13 = work built TWICE.
+When a row lands, CUT superseded prose from its home section; leave "migration state: §13 `<id>`".
 
 **Machine-checked.** Rows with executable triggers are mirrored (TRIGGERS only, same ids) in
 `.slopledger.json`; the maintainer runs `python3 ~/.claude/skills/ai-slop-detector/scripts/ledger_check.py
@@ -961,6 +959,7 @@ survives as fallback/backup) · `blocked` (trigger cannot be evaluated until a n
 
 | id | old → new | status | removal trigger | effort |
 |---|---|---|---|---|
+| `mcp-stdio-venv` | host stdio venv (`setup-mcp.sh`, `maestro-career-studio-mcp`) → backend `/mcp` | both-live | The release after `/mcp` ships (v0.10.0): delete `setup-mcp.sh`, host-venv setup prose and `docker exec … mcp_server.server` examples. Keep the console script until B′ provides the `maestro mcp` fallback. | small |
 | `typst-default-flip` | seed `default` (LaTeX Classic) → seed `typst-classic` | both-live | **HELD by owner 2026-08-09: LaTeX stays, both engines remain first-class.** This is a longer park than 2026-08-02's, not a cancellation — the row survives because the trigger is still reachable, but nothing is waiting on it and `latex-render-path`/`texlive-layer` stay blocked behind it indefinitely. Header defects fixed (Typst `ulink()`; LaTeX separator space), DB rows re-synced. **The CLEAN 8/8 parity corpus predates 2026-08-08's extractor swap** (PyMuPDF→pypdfium2, forced by the Apache relicence), so those numbers were taken with a different measuring tape — re-run the corpus before acting on them. Then repoint `_bootstrap_default` (template_registry.py:131); a runtime `set-default` is NOT enough, seeding re-mints the LaTeX default on every fresh install. | medium |
 | `latex-render-path` | `pdf_render` latex branch + `*.tex.j2` → typst branch + `typst_classic.typ` | blocked | `select count(*) from templates where engine='latex'` = 0 **and still 0 after `GET /api/templates`** (which re-runs `ensure_seed_templates`); `cover_letter.tex.j2` has no caller, i.e. `render_cover_letter(engine="latex")` is unreachable — `compile_cover_letter_pdf` itself survives as the engine-dispatching entry point for both; no surface (web, chat, MCP, STARTER_SOURCE) can mint a latex row. Blocked on `typst-default-flip`. | large |
 | `texlive-layer` | minimal TeX Live layer (`backend/Dockerfile`) → `typst==0.15.0` in-process | blocked | Layer is already slim (install-tl `scheme-basic` + 18 tlmgr packages) and XCharter is vendored at `backend/app/assets/fonts/xcharter/` (keep the Bitstream Charter notice alongside; `settings.typst_font_paths` defaults there, so typst no longer reaches into texlive). The remaining FULL cut requires only: `grep -rn pdflatex backend/app` returns only comments. Blocked on `latex-render-path`. | medium |

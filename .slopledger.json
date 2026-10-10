@@ -2,6 +2,11 @@
   "_readme": "Machine-checkable removal triggers for SYSTEM.md \u00a713 (Active migrations & deprecation ledger). SYSTEM.md remains the source of truth for WHY each row exists and its traps; this file only encodes the triggers that can be evaluated mechanically. Run: python3 ~/.claude/skills/ai-slop-detector/scripts/ledger_check.py .  (add --strict for a non-zero exit on drift). Rows without triggers are prose/DB/build conditions \u2014 verify those by hand per SYSTEM.md. Keep row ids identical to \u00a713.",
   "rows": [
     {
+      "id": "mcp-stdio-venv",
+      "status": "both-live",
+      "hand_check": "The release after /mcp ships (v0.10.0): delete scripts/setup-mcp.sh, host-venv setup prose and docker exec mcp_server.server examples. Keep maestro-career-studio-mcp until B′ provides the maestro mcp fallback. Task 9 switches client defaults to HTTP and adds the source predicate."
+    },
+    {
       "id": "typst-default-flip",
       "status": "both-live",
       "hand_check": "HELD by owner 2026-08-09: LaTeX stays, both engines remain first-class; nothing waits on this row. Header defects fixed (Typst ulink(); LaTeX separator space), DB rows re-synced. The CLEAN 8/8 corpus predates the 2026-08-08 extractor swap (PyMuPDF to pypdfium2): re-run it before acting on those numbers."

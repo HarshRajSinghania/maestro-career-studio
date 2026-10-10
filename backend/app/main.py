@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import Response
+from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import settings as app_settings
@@ -45,8 +46,10 @@ from app.services import automations as automation_prompts
 from app.services import http_client, memory, seeding, tracing
 from app.services.llm import LLMProviderError
 from app.services.sync.hooks import NotOwnedHere
+from mcp_server.http import McpEndpoint
 
 logger = logging.getLogger(__name__)
+mcp_endpoint = McpEndpoint()
 
 
 def _ensure_app_log_handler(
@@ -128,7 +131,8 @@ async def lifespan(app: FastAPI):
     status.ensure_machine_id()
     _log_llm_config()
     automation_prompts.load_cards()  # a malformed skill file fails startup, not a page
-    yield
+    async with mcp_endpoint.run():  # fresh session managers on every lifespan
+        yield
     tracing.shutdown()
 
 
@@ -422,6 +426,12 @@ app.include_router(filled_answers.router)
 app.include_router(agent_runs.router)
 app.include_router(sync.router)
 app.include_router(sync.setup_router)
+
+# MCP over Streamable HTTP (mcp_server/http.py). Plain Routes, not a Mount: a
+# Mount 307-redirects a bare POST /mcp and keeps the full path. Inside the same
+# middleware stack as REST — SYSTEM.md §6 inv-mcp-inside-the-app.
+app.router.routes.append(Route("/mcp", endpoint=mcp_endpoint))
+app.router.routes.append(Route("/mcp/{profile}", endpoint=mcp_endpoint))
 
 
 @app.get("/health")

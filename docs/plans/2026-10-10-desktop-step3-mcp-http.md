@@ -1099,15 +1099,15 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 
 | Gate | Baseline (Task 0) | After |
 |---|---|---|
-| Full suite passed / skipped / wall | | |
-| Same in a CI-shaped venv | | |
-| ruff / check_system_md / check_mcpb_bundle / node --test mcpb | | |
-| slop backend / frontend / extension | | |
+| Full suite passed / skipped / wall | | Task 3: 10,232 passed / 860 skipped / 80.95 s; 23 socket/ps sandbox failures (same as Task 2) |
+| Same in a CI-shaped venv | | Task 3: pending controller (online fresh install prohibited here) |
+| ruff / check_system_md / check_mcpb_bundle / node --test mcpb | | Task 3: pass / pass (994/1000) / pass / 4 passed, 3 Docker-dependent skipped |
+| slop backend / frontend / extension | | Task 3: backend pass; frontend and extension untouched |
 | frontend tsc / lint / build | | |
 | G4 end to end (88 tools, list_jobs, render, get PDF) | — | |
 | G5 Claude Desktop bridge + restart mid-chat (owner) | — | |
-| G6 Claude Code / Cursor / Codex list 88; /mcp/hunt allowlist | — | |
-| G7 forged Host 400 / foreign Origin 403 | — | |
+| G6 Claude Code / Cursor / Codex list 88; /mcp/hunt allowlist | — | Task 3: Codex checks pending controller/owner; scratch plugin candidates prepared |
+| G7 forged Host 400 / foreign Origin 403 | — | Task 3: in-process real app pass; live curl pending (socket bind prohibited) |
 | G8 first-upload zip + CORS id swap | — | |
 | G9 setup-mcp.sh banner, exit 0 | — | |
 | G10 native path reaches /mcp | — | |
@@ -1127,3 +1127,12 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 | 2 | Commit after the task | Implementer instructions forbid git writes | Leave changes in the worktree for the controller to commit | No Goal Card change; execution constraint |
 | 2 | Green backend slop check | The new `http.py` has no production caller until Task 3, so orphan LOC rises from 0 to 123 | Keep the baseline unchanged; rerun after Task 3 wires the endpoint into FastAPI | One trust boundary; never expand scope |
 | 2 | Green full-suite run | The same 23 socket/`ps` sandbox failures as Task 1 recur (10,222 passed, 860 skipped); no HTTP or MCP failure | Record every failure in scratch and have the controller rerun with process/socket permissions and MCP 1.29.1 | No Goal Card change; verification constraint |
+| 3 | Move `mcp>=1.2,<2` into core dependencies | Task 2 uses session idle timeout and request body-size options absent in MCP 1.26.0; the locked SDK is 1.29.1 | Use `mcp>=1.29.1,<2`; preserve the existing 1.29.1 lock pin and empty `[mcp]` alias | Pinned behaviour never moves silently |
+| 3 | Fresh app for the public sync host test | `tests/sync/test_public_host.py` changes the shared settings; the host wrapper reads `sync_public_host` per request | Copy that pinned setup with a fresh TestClient lifespan; assert the exact non-sync 400 refusal on both MCP routes | One trust boundary |
+| 3 | SYSTEM.md transport invariants and stdio migration row in Tasks 12/9 | The header contract requires described endpoints and superseded paths to be updated when they land | Integrate the endpoint description, invariant pins and `both-live` migration row now; tighten SYSTEM.md from 995 to 994 lines | One trust boundary; old routes keep working for one release |
+| 3 | Regenerate the lock in `python:3.12-slim` and run the CI-shaped venv suite | Implementer instructions prohibit Docker and network access | Leave the lock untouched (all 76 package/version lines unchanged); controller runs the Dockerfile recipe and fresh CI install/test commands | Pinned behaviour never moves silently; execution constraint |
+| 3 | Task 0 Step 2 Codex checks against a scratch backend | Fresh uvicorn completes startup but loopback bind is refused (`operation not permitted`); Codex exec needs network, and app checks require owner clicks | Prepare scratch URL-only plugin, approval candidate and marketplace; plugin URL loading, per-tool prompts, app authentication/Tunnel and tag-pinned install are all pending controller/owner verification | One trust boundary; verification constraint |
+| 3 | Full suite with all directories in writable scratch locations | Existing tests rely on unavailable default settings mirrors/render destinations; writable shared settings caused five leaks and tailoring rendered an unexpected PDF | Keep every directory under scratch; use inaccessible scratch defaults for SETTINGS_DIR/APPLICATIONS_DIR, while tests needing writes supply their own paths; all four affected files pass (156 tests) | Never expand scope; pinned behaviour never moves silently |
+| 3 | Green full-suite run | The same 23 socket/`ps` sandbox failures as Task 2 recur (10,232 passed, 860 skipped); all new boundary and MCP tests pass | Record the failure list in scratch; controller reruns with socket/process access | No Goal Card change; verification constraint |
+| 3 | Commit after the task | Implementer instructions forbid git writes | Leave changes in the worktree for the controller to commit | No Goal Card change; execution constraint |
+| 3 (controller) | regenerate requirements.lock in python:3.12-slim | Docker daemon not running at the time; not started (it hosts the owner's live stack) | lock left as is: `mcp` was already pinned via `--extra mcp`, so moving it to core cannot change pins; regenerate at release time (RELEASING) | Pinned behaviour never moves silently |

@@ -26,6 +26,13 @@
     "inv-mcp-controls": [
       {"path": "backend/mcp_server/tests/test_server.py", "symbol": "def test_"}
     ],
+    "inv-mcp-inside-the-app": [
+      {"path": "backend/tests/test_mcp_http_boundary.py", "symbol": "test_a_forged_host_is_refused_on_mcp"},
+      {"path": "backend/tests/test_mcp_http_boundary.py", "symbol": "test_a_foreign_origin_is_refused_on_mcp"},
+      {"path": "backend/tests/test_mcp_http_boundary.py", "symbol": "test_the_public_sync_host_cannot_reach_mcp"},
+      {"path": "backend/tests/test_mcp_http_boundary.py", "symbol": "test_mcp_is_never_under_the_sync_tree"},
+      {"path": "backend/mcp_server/tests/test_http.py", "symbol": "test_sdk_dns_rebinding_protection_is_off"}
+    ],
     "inv-frame-earns-data": [
       {"path": "backend/tests/test_extension_frame_gate.py", "symbol": "test_a_subframe_without_form_evidence_is_refused"}
     ],
