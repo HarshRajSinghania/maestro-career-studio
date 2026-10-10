@@ -314,17 +314,21 @@ The command keeps everything in one per-user folder (macOS
 `%APPDATA%\Maestro Career Studio`, Linux
 `$XDG_DATA_HOME/maestro-career-studio`), and the rules above hold unchanged.
 
-- **Both servers bind `127.0.0.1`,** and the Host, Origin and CORS checks of §3 run
-  on both. The two ports are fixed at 8001 and 3000 for the Companion; changing
+- **Both servers bind `127.0.0.1`,** and the Host check of §3 runs on both. The
+  Origin gate and CORS run on the backend only (the web server has no Origin gate).
+  The two ports are fixed at 8001 and 3000 for the Companion; changing
   them (`MAESTRO_PORT`, `MAESTRO_WEB_PORT` in `maestro.env`) is for side-by-side
   copies, and never makes either server listen beyond this computer.
-- **`maestro.env` is the only file that holds secrets** (API keys). It is created
+- **`maestro.env` is the only settings file for secrets** (API keys). It is created
   mode 0600 inside a 0700 folder on macOS and Linux; Maestro refuses to use a
   folder or file that is a symlink. Values you export in your shell for the
-  `maestro` command are read too, but the file is the supported place.
+  `maestro` command are read too, but the file is the supported place. Other
+  secrets are not in that file: keys you save in Settings › AI & models live in
+  the database (§5), and the job-site login and the sync key are files in the
+  Maestro folder (`settings/secrets/job-site-login.json`, `sync-key`).
 - **The web server process gets no API keys.** It is started with your
   environment minus every secret setting the backend reads (the AI keys, tracing
-  keys, sync settings and key file), and no value from `maestro.env` reaches it
+  keys, sync settings and key file), and none of the secrets above reaches it; no value from `maestro.env` reaches it
   except `FRONTEND_ALLOWED_HOSTS`. A test
   walks the backend's settings and fails when a new secret-bearing field is not
   on that list. The backend gets `maestro.env`, your environment, and its own

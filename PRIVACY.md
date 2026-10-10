@@ -125,12 +125,13 @@ Nothing here is your career data. Each request carries what any web request does
   background check exists, and the Maestro servers never look for updates.
   `maestro update` names each request on screen as it is made.
 - **The scoring model** (`BAAI/bge-small-en-v1.5`, about 100 MB) downloads from
-  Hugging Face (`huggingface.co`) once. On a uv install `maestro start` does it
-  on the first start, into `fastembed_cache/` in your Maestro folder, and prints
-  that it is downloading;
-  `maestro start --skip-model` leaves it for the first score. The Docker backend
-  downloads the same model the first time it scores. The request names the model;
-  no resume or job text is sent, and the scoring itself runs on your computer.
+  Hugging Face (`huggingface.co`). On a uv install `maestro start` does it once, on
+  the first start, into `fastembed_cache/` in your Maestro folder, and prints that
+  it is downloading; `maestro start --skip-model` leaves it for the first score.
+  The Docker backend downloads the same model the first time it scores, into the
+  container's temporary folder, so it downloads it again after an update or any
+  recreated container. The request names the model; no resume or job text is
+  sent, and the scoring itself runs on your computer.
 
 ### Optional Langfuse tracing
 

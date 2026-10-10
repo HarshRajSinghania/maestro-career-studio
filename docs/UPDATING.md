@@ -50,8 +50,9 @@ the rollback line below.
 
 **On Windows**, a running `maestro.exe` can't be replaced, so after the snapshot
 and the stop, `maestro update` hands the upgrade to a background step and returns.
-It finishes in a minute or so; run `maestro status`, or `maestro logs update` to
-read what happened.
+It finishes in about a minute. Don't run `maestro` commands meanwhile: files are
+still being replaced. Watch `logs\update.log` in your Maestro folder (path in the
+README) until its last line says `finished`, then run `maestro status`.
 
 `maestro update --source PATH/TO/file.whl` installs a wheel file you already have
 instead of the newest release. It makes no network request.
@@ -74,7 +75,7 @@ rm -f data/maestro_cs.sqlite3-wal data/maestro_cs.sqlite3-shm
 maestro start
 ```
 
-The first line of that recipe is the one `maestro update` prints when something
+The `uv tool install` line is the one `maestro update` prints when something
 goes wrong, with your version filled in. On Windows there is no `gunzip`; unpack
 the snapshot with 7-Zip, or run
 `uv run --python 3.12 python -c "import gzip, shutil; shutil.copyfileobj(gzip.open(r'backups\db-<timestamp>.sqlite3.gz'), open(r'data\maestro_cs.sqlite3', 'wb'))"`

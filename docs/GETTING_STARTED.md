@@ -280,8 +280,9 @@ folder to your `C:` drive from the Ubuntu window and load the copy instead:
 doesn't update itself, so repeat that command after every update.
 
 On a uv install there is no project folder, because the package does not carry the
-extension: download the repository (**Code › Download ZIP** on GitHub, or
-`git clone`) and load its `extension` folder. The Companion then works unchanged
+extension: run `maestro --version`, then on GitHub open Releases › that version
+(`vX.Y.Z`) › **Source code** and download it. Unpack it and load its `extension`
+folder, so the Companion matches the Maestro you run. It then works unchanged
 against Maestro on the default ports.
 
 There is nothing to set up if you kept the default ports. If you changed the
@@ -456,8 +457,8 @@ To keep that work going while your laptop is off, see
 **Installed with uv?** Run `maestro update`. It checks PyPI, shows any breaking
 changes from the changelog, saves a snapshot of your data to `backups/` in your
 Maestro folder, and only then stops Maestro, updates it and starts it again
-(on Windows the update finishes in the background; `maestro logs update` shows
-how it went). The reload-the-extension and restart-your-assistant steps below
+(on Windows the update finishes in the background in about a minute: watch
+`logs\update.log` in your Maestro folder for `finished`, then run `maestro status`). The reload-the-extension and restart-your-assistant steps below
 apply here too. [UPDATING.md](UPDATING.md#updating-a-uv-install) has the detail.
 
 **On Docker**, from the project folder:

@@ -106,7 +106,7 @@
         },
         {
           "kind": "command",
-          "cmd": "! grep -q 'nodejs-wheel-binaries' backend/requirements.lock"
+          "cmd": "! grep -q '^nodejs-wheel-binaries' backend/requirements.lock"
         },
         {
           "kind": "command",
