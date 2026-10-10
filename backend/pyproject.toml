@@ -22,7 +22,6 @@ dependencies = [
     "typst==0.15.0",
     "pyyaml>=6.0",
     "fastembed>=0.4",
-    "langfuse>=4",
     # PDF: pdfplumber (MIT) reads text, pypdfium2 (BSD-3-Clause/Apache-2.0)
     # rasterizes, pillow (MIT-CMU) handles standalone images. PyMuPDF is
     # deliberately absent — we stay on the pdfplumber/pypdfium2 stack (see
@@ -36,6 +35,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+tracing = ["langfuse>=4"]
 dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=0.24",

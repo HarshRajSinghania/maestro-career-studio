@@ -157,7 +157,8 @@ rather than left buried in a table.
 | typst (Python binding) | Apache-2.0 |
 | python-multipart | Apache-2.0 |
 | Jinja2 | BSD-3-Clause |
-| PyYAML, pdfplumber, langfuse | MIT |
+| PyYAML, pdfplumber | MIT |
+| langfuse (optional `tracing` extra; included in Docker) | MIT |
 | pypdfium2 | BSD-3-Clause / Apache-2.0 |
 | Pillow | MIT-CMU (HPND) |
 | pytest, pytest-asyncio, ruff, respx (dev) | MIT |

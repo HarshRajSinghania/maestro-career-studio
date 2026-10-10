@@ -43,7 +43,14 @@ def _get_client() -> Any | None:
         return None
     try:
         from langfuse import Langfuse
-
+    except ImportError:
+        logger.warning(
+            "Langfuse tracing is configured but the package is not installed; "
+            "install the backend's 'tracing' extra (pip install '.[tracing]')"
+        )
+        _disabled = True
+        return None
+    try:
         _client = Langfuse(
             public_key=settings.langfuse_public_key,
             secret_key=settings.langfuse_secret_key,

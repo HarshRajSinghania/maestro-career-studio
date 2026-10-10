@@ -50,6 +50,10 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
   when a round is still running after its wait; check later with
   `sync.sh --now`.
 
+### Changed
+
+- Langfuse tracing is an optional extra; the Docker image still includes it.
+
 ### Fixed
 
 - Failed startup base-resume renders and artifact file deletions log warnings

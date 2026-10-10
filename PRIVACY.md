@@ -104,8 +104,9 @@ this one does not cover. The author has no access to it.
 
 ### Optional Langfuse tracing
 
-Off by default. It turns on only if you set `LANGFUSE_PUBLIC_KEY`,
-`LANGFUSE_SECRET_KEY`, and `LANGFUSE_HOST` yourself. When on, each traced AI
+Off by default. It requires the optional `tracing` SDK extra (included in the
+Docker image, omitted from the desktop build) and all three settings set by you:
+`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and `LANGFUSE_HOST`. Each traced AI
 call sends its full prompt and response, which include your resume and job
 text, to the host you named.
 
