@@ -39,12 +39,18 @@ def key_path() -> Path:
     return settings.sync_key_file or settings.settings_dir / "secrets" / "sync-key"
 
 
+def _read_flags() -> int:
+    """Read-only, never following a symlink, never blocking on a FIFO. Windows' ``os`` has neither
+    flag (the ``S_ISREG`` check still refuses non-regular files) and wants ``O_BINARY``."""
+    return os.O_RDONLY | sum(getattr(os, f"O_{name}", 0) for name in ("NOFOLLOW", "NONBLOCK", "BINARY"))
+
+
 def read_key() -> str | None:
     """The shared key, or None when sync isn't set up. Never logged."""
     path = key_path()
     fd = None
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = os.open(path, _read_flags())
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             return None
         with os.fdopen(fd, "r", encoding="utf-8") as handle:
