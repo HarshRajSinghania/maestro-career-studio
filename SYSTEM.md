@@ -466,7 +466,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
 ## 7. Agent surfaces
 
 - **MCP server** (`backend/mcp_server/`; on screen **connected agents**, Settings › Connected agents): thin REST wrappers
-  (`@_guard` → `ToolError`) via httpx (`BACKEND_URL`, default localhost:8000). Loopback bypasses proxies; other hosts honor them (`mcp_server/tests/test_client_loopback.py`).
+  (`@_guard` → `ToolError`) via httpx (`BACKEND_URL`, default localhost:8000; compose host 8001). Loopback bypasses proxies; other hosts honor them (`mcp_server/tests/test_client_loopback.py`).
   **The docstring is the API**: behavior, records and requirements, never instructions (directory policy).
   `test_server.py` ratchets `title`, four `ToolAnnotations` (`_read`/`_write`) and ~2048-dedented-char docstrings;
   overflow facts live in param `Field(description=…)` (`_EDIT_OPS_FIELD`). Lists page with bounded defaults;
