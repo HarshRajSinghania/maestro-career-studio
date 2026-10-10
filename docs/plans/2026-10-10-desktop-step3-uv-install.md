@@ -941,7 +941,7 @@ server holds no data. Log what the Windows CI job observes.)
      `--no-browser` (`webbrowser.open`).
 - `maestro stop`: no live supervisor → clean stale records, also stop any live **recorded**
   `backend`/`web` child (an earlier hard-killed supervisor) → "Maestro is not running." exit 0.
-  Live → create `run/stop.request`, POSIX also SIGTERM; wait ≤ 25 s; still alive → `kill_tree`.
+  Live → create `run/stop.request`, POSIX also SIGTERM; wait ≤ 30 s (two children that ignore SIGTERM cost 2 × (grace 10 s + 2 s) in the supervisor — review of Task 5); still alive → `kill_tree`.
   Print "Maestro stopped." Never signal a process whose record does not match (`live_process`).
 - `maestro restart` = stop then start (`--no-browser` default for restart).
 - `maestro status [--json] [--offline]`: running or stopped (exit 0 / 3); installed version;
