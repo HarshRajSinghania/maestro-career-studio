@@ -81,8 +81,12 @@ rules):
    that provider has a key.
 3. Otherwise → `openai` (custom server if set, else api.openai.com).
 
-Known behavior change: with a custom server AND a Gemini key set, a `gemini-*`
-chat model now goes to Google (today chat sends it to the custom server).
+Known behavior changes: (a) a seeded `gemini-*` id used for chat on a custom
+server goes to Google (with no Gemini key it says so) — today chat sent it to the
+custom server; (b) with a custom server AND a Gemini key, any `gemini-*` chat
+model goes to Google; (c) an unregistered `gemini-*` id with no Gemini key goes
+to the OpenAI-compatible client on the one-shot path. A locally served model
+keeps working under a non-catalog id (e.g. `gemini-local`).
 
 **Claude client** is always constructed with an explicit `api_key`. A
 zero-argument client would resolve `ANTHROPIC_AUTH_TOKEN` or an `ant auth`
@@ -133,8 +137,8 @@ plain sentence naming the reason.
   sentence. Server-side `fallbacks: "default"` (beta
   `server-side-fallback-2026-07-01`) is on, so a classifier false positive
   (e.g. a resume describing security work) reroutes; billed at the fallback
-  model's rates. `fallback` content blocks are ignored for display and kept in
-  the transcript where they appeared.
+  model's rates. `fallback` content blocks are audit markers and are dropped;
+  non-text blocks before the last one are dropped too (Anthropic's echo rule).
 - Images: base64 image blocks (attachment OCR path).
 - Errors: auth → "Claude refused your API key"; 429/529 → "too many requests";
   Anthropic error strings added to `llm_capabilities._UNREACHABLE_SIGNS`.

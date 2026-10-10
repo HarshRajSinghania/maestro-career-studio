@@ -69,15 +69,27 @@ plan says the pinned behavior changes, and say so in the commit.
    cause ordering/signature 400s, so the Anthropic adapter keeps all `anthropic` meta. Gemini:
    a signature from a different Gemini model is replaced by Google's documented dummy value.
    Design §5 said "provider and model"; this is the corrected rule.
-3. **The ephemeral context block moves from a mid-conversation system message to a text part
-   at the start of the latest user message.** Works on all three wire formats, keeps the system
-   prompt byte-stable (prompt caching), and stops user-controlled strings (attachment
-   filenames) riding in the system role.
+3. **The context block becomes a persisted text part at the start of the user message.**
+   Today it is an ephemeral system message rebuilt every turn and never stored. On Claude that
+   is a history edit: on accounts created on/after 2026-08-31 (Fable 5.1, Opus 5.5, Sonnet 5.5,
+   Haiku 5.5) editing an earlier turn invalidates every later thinking block and the request
+   400s ("bound to a different conversation"; claude-api `model-migration.md` breaking change
+   3, `prompt-caching.md` "per-turn reminders"). So it is written once into that user row's
+   `parts` (`content` keeps the raw user text the UI shows) and replayed unchanged forever.
+   Works on all three wire formats, keeps the system prompt byte-stable, and stops
+   user-controlled strings (attachment filenames) riding in the system role. Corollary for
+   every later change: **replayed history is append-only** — never rewrite an earlier message
+   between requests (id normalization and meta filtering are deterministic, so they are safe).
 4. **No `image` part in the persisted transcript.** Chat has no image input (attachments are
    read via the `read_attachment` tool). `ImagePart` exists in memory for one-shot calls only.
-5. **Anthropic signature 400 → one retry without reasoning.** Sonnet 5.5 / Haiku 5.5 thinking
-   only validates in the producing account; after a key change, a 400 naming the signature or
-   thinking is retried once with reasoning parts removed.
+5. **Anthropic signature 400 → one retry without reasoning, paid once.** Thinking from another
+   account (a key change) or an unexpected history edit can 400 on a signature. Such a 400 is
+   retried once with reasoning parts removed, and the result carries `reasoning_dropped=True`.
+   `run_turn` then removes `reasoning` parts from the session's earlier persisted assistant
+   rows (one rewrite), so the next turn does not pay the same 400 again. If the Task 14 live
+   check shows the retry firing in normal use, stop and send a deviation note: the alternative
+   is `thinking.block_binding.prefix_mismatch_behavior: "drop_block"` (beta
+   `thinking-binding-controls-2026-08-01`).
 6. **Repair before replay.** A tool call with no persisted result (a turn that errored after the
    assistant row) gets a synthetic error result; a result with no call is dropped. OpenAI and
    Claude both 400 on such history today.
@@ -355,6 +367,7 @@ class Response:
     usage: Usage | None
     stop_reason: str
     model: str  # the model that actually answered (a Claude fallback can differ)
+    reasoning_dropped: bool = False  # planning decision 5
 
     @property
     def text(self) -> str:
@@ -372,6 +385,7 @@ class Finish:
     usage: Usage | None
     stop_reason: str
     model: str
+    reasoning_dropped: bool = False  # planning decision 5
 
 
 StreamEvent = Union[TextDelta, Finish]
@@ -462,11 +476,15 @@ def register(provider: Provider) -> None:
 
 
 def get(name: str) -> Provider:
+    if name not in _adapters:
+        _load_builtins()
     try:
         return _adapters[name]
     except KeyError:
-        _load_builtins()
-        return _adapters[name]
+        # A catalog entry can name a provider whose adapter lands in a later task (or build):
+        # a user sentence and a 502, never a 500.
+        from app.services.llm_providers.errors import LLMProviderError
+        raise LLMProviderError(f"{name} models are not available in this version.") from None
 
 
 def _load_builtins() -> None:
@@ -663,8 +681,9 @@ class OpenAICompatProvider:
             raise _no_answer(_openai_reason(exc), f"OpenAI API request failed: {exc}",
                              provider=self._label()) from exc
         text = response.choices[0].message.content or ""
+        answered_by = getattr(response, "model", None)  # a MagicMock under patched-client tests
         return Response(Message("assistant", [TextPart(text)]), _usage(response), "stop",
-                        getattr(response, "model", None) or req.model.model)
+                        answered_by if isinstance(answered_by, str) else req.model.model)
 
     def stream(self, req: Request):  # Task 8
         raise NotImplementedError
@@ -720,7 +739,10 @@ Full suite: counts unchanged.
 - Modify: `registry._load_builtins`, `_call_model` (drop the Gemini branch: registry dispatch)
 - Modify tests that patch `llm.urlopen` / `llm._call_gemini` / `llm_module._call_gemini`
   (`tests/test_llm.py`, find others with `grep -rn "urlopen\|_call_gemini" backend/tests`):
-  patch target → `app.services.llm_providers.gemini.urlopen`. Only the patch target changes.
+  patch target → `app.services.llm_providers.gemini.urlopen`. Only the patch target changes,
+  EXCEPT `tests/test_llm_images.py:70`, which calls `llm_module._call_gemini(...)` directly:
+  that call site becomes `registry.get("gemini").generate(Request(...))` with the same
+  assertions on the payload.
 
 **Step 1:** Move `_gemini_model_name`, `_is_gemini_model` (keep a copy-free re-export in llm if
 any test imports it), `_gemini_thinking_level`, `_gemini_generation_config`, the request/usage/
@@ -898,9 +920,17 @@ def resolve(model: str) -> ModelRef:
     return ModelRef("openai", model)
 ```
 
-Known change (design §2): a `gemini-*` id that is neither seeded nor added, with no Gemini key,
-now goes to the OpenAI-compatible client instead of raising "No Gemini API key". Seeded Gemini
-ids are unchanged. Write it in the commit message.
+Known changes (state all three in the commit message; design §2 is updated to match):
+- a `gemini-*` id that is neither seeded nor added, with no Gemini key, goes to the
+  OpenAI-compatible client instead of raising "No Gemini API key" (one-shot path);
+- a SEEDED `gemini-*` id used for CHAT on a custom server now goes to Google (catalog tag
+  wins): with a Gemini key it runs there, without one it says "No Gemini API key" — today
+  `get_chat_client` sent it to the custom server (`llm.py:201`);
+- with a custom server AND a Gemini key, any `gemini-*` chat model goes to Google.
+`tests/test_llm_capabilities.py:198 test_tools_probe_custom_endpoint_does_not_hijack_gemini_id`
+pins the old chat behaviour with the seeded id `gemini-3.5-flash-lite`. Task 7 keeps its intent
+(a locally served Gemini-named model is not hijacked) with a NON-catalog id, `gemini-local`,
+which rule 3 still sends to the custom server; say so in that commit.
 
 **Step 6: Settings API.** In `routers/settings.py`:
 - `OpenAIInfo` gains `anthropic_api_key_configured: bool`, `openrouter_api_key_configured: bool`,
@@ -932,12 +962,25 @@ def _key_state(db: Session, provider: str, env_value: str) -> tuple[bool, str]:
   `Literal["openai", "gemini", "anthropic", "openrouter"]` (sync dispatch arrives in Task 7;
   until then `anthropic`/`openrouter` sync returns 400 "Not available yet" — Task 7 removes it).
 
-**Step 7: Setup status, startup log, env.**
-- `setup_status.py`: `key_configured = model_settings.using_custom_endpoint(db) or any(
-  model_settings.get_api_key(p, db) for p in API_KEY_SETTINGS) or any(getattr(app_settings,
-  f"{p}_api_key") for p in API_KEY_SETTINGS)`. (A custom server needs no key — today's
-  `_get_client` rule.) Add a test: custom endpoint alone marks the step done.
-- `main.py`: log each provider's key source in one line.
+**Step 7: One "can the app call a model" predicate; setup status, KB seeding, startup log, env.**
+- `llm.py`:
+
+```python
+def any_model_key_configured() -> bool:
+    """Some provider can be called: any of the four keys, or a custom server (which needs none,
+    see `_get_client`). The ONE definition for setup status, KB seeding and the startup log."""
+    return bool(get_base_url() or get_openai_key() or get_gemini_key()
+                or get_anthropic_key() or get_openrouter_key())
+```
+
+- `setup_status.py:179-182`: `key_configured = llm.any_model_key_configured()`. Test: a custom
+  endpoint alone marks the step done; a Claude key alone marks it done.
+- `seeding.py:156`: `if not llm.any_model_key_configured():` (today it checks only OpenAI and
+  Gemini, so a Claude-only install would never seed the Career KB). Extend
+  `tests/test_kb_seed.py:129-130`'s monkeypatches with `get_anthropic_key`,
+  `get_openrouter_key` and `get_base_url`, and add a case: Claude key only → seeds.
+- `main.py:95-98`: log each provider's key source in one line, and use the predicate for the
+  "no model key" warning.
 - `docker-compose.yml`: `ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}` and
   `OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}` (empty = unset; `config.scrub_empty_env`).
 - `.env.example`: both keys, commented, one line each on where to get them.
@@ -964,6 +1007,12 @@ use `set_api_keys`). Run the routing tests (PASS) and the full suite.
 - Modify: `backend/app/services/llm_capabilities.py:134-152` — Anthropic unreachable signs
 - Modify: `registry._load_builtins`
 - Test: `backend/tests/test_llm_anthropic.py`
+
+**Step 0: Dev environment.** The anaconda interpreter ships `anthropic` 0.77.x, whose
+`beta.messages.stream` lacks `fallbacks`/`cache_control`. Install the pinned 1.x into the dev
+interpreter (`python -m pip install "anthropic>=1.12,<2"`) BEFORE writing code, and confirm
+`python -c "import anthropic; print(anthropic.__version__)"` prints 1.x. Otherwise the
+`extra_body` escape hatch below would fire silently on a stale SDK.
 
 **Step 1: Client factory in `llm.py`.**
 
@@ -1263,24 +1312,22 @@ class AnthropicProvider:
             client = client.with_options(timeout=req.timeout, max_retries=0)
         return client
 
-    def _call(self, req: Request, on_text=None) -> Any:
+    def _call(self, req: Request) -> tuple[Any, bool]:
+        """(final message, reasoning_dropped)."""
         import anthropic
 
         def once(r: Request) -> Any:
-            with self._client(r).beta.messages.stream(**build_kwargs(r, stream=on_text is not None)) as s:
-                for event in s:
-                    if on_text is not None and event.type == "text":
-                        on_text(event.text)
+            with self._client(r).beta.messages.stream(**build_kwargs(r, stream=False)) as s:
                 return s.get_final_message()
 
         try:
             try:
-                return once(req)
+                return once(req), False
             except anthropic.BadRequestError as exc:
                 # Planning decision 5: a thinking signature from another account/key.
                 text = str(exc).lower()
                 if "signature" in text or "thinking" in text:
-                    return once(_strip_reasoning(req))
+                    return once(_strip_reasoning(req)), True
                 raise
         except anthropic.APIStatusError as exc:
             raise _no_answer(_status_reason(exc.status_code), f"Anthropic API request failed: {exc}",
@@ -1291,10 +1338,10 @@ class AnthropicProvider:
             raise _no_answer("no connection", f"Anthropic API connection failed: {exc}", provider="Claude") from exc
 
     def generate(self, req: Request) -> Response:
-        msg = self._call(req)
+        msg, dropped = self._call(req)
         raise_for_refusal(msg)
         return Response(Message("assistant", parts_from_message(msg)), _usage(msg),
-                        msg.stop_reason or "end_turn", msg.model)
+                        msg.stop_reason or "end_turn", msg.model, reasoning_dropped=dropped)
 
     def stream(self, req: Request) -> Iterator[Any]:  # Task 9
         raise NotImplementedError
@@ -1415,7 +1462,9 @@ sentence. Record which in the Deviation log.
 
 **Step 3:** Tests: sync each provider with a stub adapter registered via `monkeypatch.setitem(
 registry._adapters, ...)`; `add_extra_model(..., "anthropic")` accepted; the tools probe passes
-with a `FakeProvider` script that returns a `ToolCallPart` and fails with text only.
+with a `FakeProvider` script that returns a `ToolCallPart` and fails with text only. Rewrite
+`test_tools_probe_custom_endpoint_does_not_hijack_gemini_id` with the non-catalog id
+`gemini-local` (Task 4 "Known changes"); keep its assertion that the custom client is used.
 
 **Step 4:** Full suite. **Commit** — `feat(llm): model discovery and tools probe for every provider`.
 
@@ -1434,6 +1483,9 @@ with a `FakeProvider` script that returns a `ToolCallPart` and fails with text o
   (`arguments` = `json.dumps(args or {})`); tool → `{"role": "tool", "tool_call_id", "content"}`;
   tools → `{"type": "function", "function": {name, description, parameters}}`;
   `stream=True`; `completion_extras` merged (gpt-5.6 → `reasoning_effort: "none"`).
+  Change `llm.completion_extras` to test the id after any vendor prefix
+  (`model.rsplit("/", 1)[-1].startswith("gpt-5.6")`) so OpenRouter's `openai/gpt-5.6-…` ids
+  get the same rule; add that case to the test.
 - accumulate: text deltas → `TextDelta`s; tool-call deltas across chunks join into one
   `ToolCallPart` with parsed arguments; unparseable arguments → `arguments=None`.
 - OpenRouter: chunks whose delta carries `reasoning_details` (read via
@@ -1463,7 +1515,7 @@ stream is synchronous, so iterate inline rather than via callback:
     def stream(self, req: Request) -> Iterator[Any]:
         import anthropic
 
-        def run(r: Request):
+        def run(r: Request, dropped: bool):
             with self._client(r).beta.messages.stream(**build_kwargs(r, stream=True)) as s:
                 for event in s:
                     if event.type == "text":
@@ -1471,16 +1523,16 @@ stream is synchronous, so iterate inline rather than via callback:
                 msg = s.get_final_message()
             raise_for_refusal(msg)
             yield Finish(Message("assistant", parts_from_message(msg)), _usage(msg),
-                         msg.stop_reason or "end_turn", msg.model)
+                         msg.stop_reason or "end_turn", msg.model, reasoning_dropped=dropped)
 
         try:
             try:
-                yield from run(req)
+                yield from run(req, False)
             except anthropic.BadRequestError as exc:
                 text = str(exc).lower()
                 if "signature" not in text and "thinking" not in text:
                     raise
-                yield from run(_strip_reasoning(req))
+                yield from run(_strip_reasoning(req), True)
         except anthropic.APIStatusError as exc:
             ...same mapping as _call...
 ```
@@ -1493,7 +1545,8 @@ retry never duplicates deltas — assert that in a test with a fake client whose
 **Step 2: Tests** with a fake client whose `beta.messages.stream(**kw)` returns a context
 manager yielding `SimpleNamespace(type="text", text=...)` events and a final message: deltas in
 order; `Finish.message` parts ordered thinking → text → tool_use; refusal raises after deltas;
-the signature retry sends a request with no thinking blocks.
+the signature retry sends a request with no thinking blocks and its `Finish` has
+`reasoning_dropped=True` (and `generate` returns `Response.reasoning_dropped=True`).
 
 **Step 3:** Full suite. **Commit** — `feat(llm): streaming chat for Claude`.
 
@@ -1524,8 +1577,12 @@ with `x-goog-api-key`.
   Earlier turns: no dummy.
 - parse_sse: `data: {...}` lines; text parts (skip parts with `"thought": true`) →
   `TextDelta`; `functionCall` parts → `ToolCallPart(id=fc.get("id") or f"call_{n}", name,
-  args, meta=ProviderMeta("gemini", model, {"thoughtSignature": sig}) if sig)`; last
-  `usageMetadata` → `Usage`; `finishReason` → stop reason.
+  args, meta=ProviderMeta("gemini", model, {"thoughtSignature": sig, "id_minted": <True when
+  Gemini sent no id>}))` (meta omitted when there is neither a signature nor a minted id);
+  last `usageMetadata` → `Usage`; `finishReason` → stop reason.
+- Ids on replay: a call whose gemini meta says `id_minted` is sent WITHOUT `functionCall.id`,
+  and its `functionResponse` without `id` (Google matches responses to calls by order and
+  name; an id it never issued must not appear). The live check (Task 14) confirms.
 
 **Step 2:** Implement `stream` with `urlopen` reading the response line by line; HTTP errors
 map through `_gemini_reason` exactly as `generate`.
@@ -1542,7 +1599,9 @@ map through `_gemini_reason` exactly as `generate`.
 - Modify: `backend/app/models/chat.py:58-63` — `parts: Mapped[dict | None] = mapped_column(JSONDoc)`,
   `provider: Mapped[str | None] = mapped_column(Text)`, `model: Mapped[str | None] = mapped_column(Text)`
 - Create: `backend/app/services/transcript.py` — `from_legacy(role, content, tool_calls,
-  tool_call_id) -> list[Part]` and `history(session_row) -> list[Message]`
+  tool_call_id) -> list[Part]`, `history(session_row) -> list[Message]`, and
+  `drop_reasoning(db, session_row) -> None` (rewrites each assistant row's `parts` without
+  `reasoning` entries and flushes; planning decision 5; the caller commits)
 - Test: `backend/tests/test_transcript.py`; `tests/test_migration_model_parity.py` must pass
 
 **Step 1: Failing tests** for `from_legacy`:
@@ -1662,6 +1721,7 @@ UNANSWERED = '{"error": "This tool was not run."}'
 
 
 def _norm(raw: str, n: int, seen: dict[str, str]) -> str:
+    """`n` is a running count of tool calls in this replay (unique, deterministic)."""
     if not raw:
         # Never cached: two id-less calls must not share an id. Their results cannot be
         # matched either, so each call gets a synthetic error result (close_open).
@@ -1684,16 +1744,18 @@ def for_provider(messages: list[Message], target: ModelRef) -> list[Message]:
                                         for cid in open_calls]))
             open_calls.clear()
 
-    for n, msg in enumerate(messages):
+    call_count = 0
+    for msg in messages:
         parts = []
-        for k, p in enumerate(msg.parts):
+        for p in msg.parts:
             if isinstance(p, ReasoningPart):
                 if p.meta is None or p.meta.provider != target.provider:
                     continue
                 parts.append(p)
             elif isinstance(p, ToolCallPart):
                 meta = p.meta if p.meta and p.meta.provider == target.provider else None
-                parts.append(replace(p, id=_norm(p.id, n * 100 + k, ids), meta=meta))
+                parts.append(replace(p, id=_norm(p.id, call_count, ids), meta=meta))
+                call_count += 1
             elif isinstance(p, ToolResultPart):
                 parts.append(replace(p, tool_call_id=ids.get(p.tool_call_id, "\0orphan")))
             else:
@@ -1728,7 +1790,11 @@ def run_turn(db, session_row, user_content, context=None, *, provider=None, mode
     ref = registry.resolve(model)
     provider = provider or registry.get(ref.provider)
 
-    user_parts = [TextPart(user_content)]
+    # Planning decision 3: the context block is PERSISTED as the first part of this user row
+    # and replayed unchanged on every later turn (replayed history is append-only; editing an
+    # earlier turn invalidates Claude thinking). `content` stays the raw text the UI shows.
+    context_block = _context_block(db, context)
+    user_parts = ([TextPart(context_block + "\n\n")] if context_block else []) + [TextPart(user_content)]
     user_msg = _persist(db, session_row, role="user", content=user_content,
                         meta_json=context or None, parts=dump_parts(user_parts))
     if not session_row.title:
@@ -1737,11 +1803,6 @@ def run_turn(db, session_row, user_content, context=None, *, provider=None, mode
     yield {"type": "message", "id": str(user_msg.id), "role": "user"}
 
     history = transcript.history(session_row)
-    context_block = _context_block(db, context)
-    if context_block:
-        # Ephemeral (planning decision 3): rides on THIS turn's user message, never persisted.
-        last = history[-1]
-        history[-1] = Message(last.role, [TextPart(context_block + "\n\n"), *last.parts])
 
     system = _system_prompt(db)
     tools = [ToolSpec(s["name"], s["description"], s["parameters"]) for s in TOOL_SPECS]
@@ -1762,6 +1823,12 @@ def run_turn(db, session_row, user_content, context=None, *, provider=None, mode
                         finish = event
                 record(finish.message.text if finish else "",
                        finish.usage.as_langfuse() if finish and finish.usage else None)
+            if finish.reasoning_dropped:
+                # Planning decision 5: pay the signature 400 once. Strip reasoning from this
+                # session's earlier assistant rows and from `history`, then carry on.
+                transcript.drop_reasoning(db, session_row)
+                history = [Message(m.role, [p for p in m.parts if not isinstance(p, ReasoningPart)])
+                           for m in history]
             reply = finish.message
             calls = reply.tool_calls
             assistant = _persist(db, session_row, role="assistant",
@@ -1810,8 +1877,11 @@ about events, persisted roles/content, change cards, proposals and the step budg
 `[[ToolCallPart("call_1", "edit_resume", {...})]]`). Delete the `completion_extras` and
 `get_chat_client` factory tests here; their replacements live in `test_llm_openai_compat.py`
 (Task 8) and `test_llm_routing.py` (Task 4). Add:
-- the context block arrives as the first text part of the last user message in
-  `FakeProvider.requests[0].messages`, and the system prompt is identical across two turns;
+- the context block is persisted as the first text part of the user row (`content` is the raw
+  text), and on the SECOND turn the first user message replays byte-identical to what turn one
+  sent (append-only history); the system prompt is identical across the two turns;
+- a `Finish(reasoning_dropped=True)` from the provider removes `reasoning` parts from earlier
+  persisted assistant rows, and the next turn's request carries none;
 - `parts`, `provider`, `model` are persisted on assistant rows;
 - a second turn after a turn that errored mid-tools replays with a synthetic error result.
 
