@@ -1377,6 +1377,10 @@ in the Gate table (G2, G3-macOS).
   filters today — don't invent them). Note in the CHANGELOG/Deviation log that the backend,
   mcp-cold-install and dependency-audit installs now also download `nodejs-wheel-binaries`
   (~60 MB wheel, ~200 MB installed) each run; accepted.
+- Windows checks the smoke must cover (review of Task 6): `maestro restart` right after a stop does
+  not report the port "in use" (`SO_EXCLUSIVEADDRUSE` bind vs. server-side TIME_WAIT — if it does,
+  rely on the connect probe alone there); the supervisor's `CTRL_BREAK_EVENT` stops uvicorn
+  gracefully and whether node needs the tree kill (record both).
 - Match the repo's action pinning style (SHA pins if the existing jobs use them).
 
 **pypi.yml:**

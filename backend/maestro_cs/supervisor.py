@@ -6,6 +6,7 @@ every OS without a shutdown endpoint on a zero-auth API.
 """
 from __future__ import annotations
 
+import http.client
 import os
 import signal
 import subprocess
@@ -40,7 +41,7 @@ def http_ok(url: str, timeout: float = 2.0) -> bool:
     try:
         with opener.open(url, timeout=timeout) as response:
             return response.status == 200
-    except (OSError, ValueError):
+    except (OSError, ValueError, http.client.HTTPException):  # a non-HTTP listener is not healthy
         return False
 
 

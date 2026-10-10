@@ -645,3 +645,140 @@ def _logs(home):
         if path.is_file():
             parts.append(f"--- {name}.log\n" + path.read_text(encoding="utf-8", errors="replace")[-2000:])
     return "\n".join(parts)
+
+
+# --- review follow-ups -----------------------------------------------------------------------
+
+def _banner_server():
+    """A listener that is not HTTP: writes an SSH banner and hangs up."""
+    import socket
+    import threading
+
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen()
+
+    def serve():
+        while True:
+            try:
+                conn, _ = server.accept()
+            except OSError:
+                return
+            conn.sendall(b"SSH-2.0-test\r\n")
+            conn.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    return server, server.getsockname()[1]
+
+
+def test_a_non_http_listener_is_not_a_traceback_in_start(tmp_path, monkeypatch):
+    monkeypatch.setattr(runtime, "web_dir_ok", lambda environ=None: True)
+    server, port = _banner_server()
+    try:
+        assert control.http_get_json(f"http://127.0.0.1:{port}/api/version") is None
+        ctx = make_ctx(tmp_path, ports=Ports(port, _spare_port()))
+        ctl = Controller(ctx, say=lambda *a, **k: None)
+        with pytest.raises(ControlError) as err:
+            ctl.start()
+        assert str(err.value).startswith(f"Port {port} is in use by another program.")
+    finally:
+        server.close()
+
+
+def test_a_non_http_listener_is_not_healthy(tmp_path):
+    from maestro_cs import supervisor
+
+    server, port = _banner_server()
+    try:
+        assert supervisor.http_ok(f"http://127.0.0.1:{port}/health") is False
+    finally:
+        server.close()
+
+
+def test_the_cli_prints_a_sentence_for_a_non_http_listener(tmp_path, monkeypatch, capsys):
+    from maestro_cs import cli
+
+    monkeypatch.setattr(runtime, "web_dir_ok", lambda environ=None: True)
+    server, port = _banner_server()
+    try:
+        monkeypatch.setenv("MAESTRO_HOME", str(tmp_path / "h"))
+        monkeypatch.setenv("MAESTRO_PORT", str(port))
+        monkeypatch.setenv("MAESTRO_WEB_PORT", str(_spare_port()))
+        assert cli.main(["start", "--no-browser", "--skip-model"]) == 1
+        err = capsys.readouterr().err
+        assert f"Port {port} is in use by another program." in err and "Traceback" not in err
+    finally:
+        server.close()
+
+
+def test_logs_follow_survives_rotation_without_replaying_the_old_log(rig):
+    log = rig.ctx.logs_dir / "backend.log"
+    log.write_text("old1\nold2\n", encoding="utf-8")
+    step = []
+
+    def sleep(seconds):
+        step.append(1)
+        if len(step) == 1:  # the supervisor rotates and starts a longer new log
+            os.replace(log, log.with_name("backend.log.1"))
+            log.write_text("new1\nnew2\nnew3\nnew4\n", encoding="utf-8")
+        elif len(step) == 3:  # and the new file keeps growing
+            with open(log, "a", encoding="utf-8") as handle:
+                handle.write("new5\n")
+        elif len(step) == 4:
+            raise KeyboardInterrupt
+
+    rig.ctl.sleep = sleep
+    assert rig.ctl.logs("backend", 5, follow=True) == 0
+    assert rig.printed == ["old1", "old2", "new1", "new2", "new3", "new4", "new5"]
+
+
+def test_logs_follow_survives_truncation(rig):
+    log = rig.ctx.logs_dir / "backend.log"
+    log.write_text("a long first line of the old log\n", encoding="utf-8")
+    step = []
+
+    def sleep(seconds):
+        step.append(1)
+        if len(step) == 1:
+            log.write_text("new\n", encoding="utf-8")  # same file, shorter
+        else:
+            raise KeyboardInterrupt
+
+    rig.ctl.sleep = sleep
+    rig.ctl.logs("backend", 5, follow=True)
+    assert rig.printed == ["a long first line of the old log", "new"]
+
+
+def test_logs_follow_waits_while_the_log_is_missing_between_rotation_steps(rig):
+    log = rig.ctx.logs_dir / "backend.log"
+    log.write_text("x\n", encoding="utf-8")
+    step = []
+
+    def sleep(seconds):
+        step.append(1)
+        if len(step) == 1:
+            os.replace(log, log.with_name("backend.log.1"))  # new file not created yet
+        elif len(step) == 2:
+            log.write_text("y\n", encoding="utf-8")
+        else:
+            raise KeyboardInterrupt
+
+    rig.ctl.sleep = sleep
+    rig.ctl.logs("backend", 5, follow=True)
+    assert rig.printed == ["x", "y"]
+
+
+def test_port_free_sees_an_ipv6_only_listener():
+    import socket
+
+    if not socket.has_ipv6:
+        pytest.skip("no IPv6")
+    try:
+        holder = socket.socket(socket.AF_INET6)
+        holder.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        holder.bind(("::1", 0))
+    except OSError:
+        pytest.skip("no IPv6 loopback")
+    with holder:
+        holder.listen()
+        assert control.port_free(holder.getsockname()[1]) is False

@@ -7,6 +7,7 @@ nothing here writes to `sys.stdout` directly.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import shutil
@@ -91,18 +92,28 @@ def load_context(environ: Mapping[str, str] | None = None) -> Context:
 
 # --- small system probes (swapped for fakes in tests) ---------------------------------------
 
+def _listening(host: str, port: int, family: int) -> bool:
+    try:
+        with socket.socket(family, socket.SOCK_STREAM) as probe:
+            probe.settimeout(0.5)
+            probe.connect((host, port))
+        return True
+    except OSError:
+        return False
+
+
 def port_free(port: int, host: str = "127.0.0.1") -> bool:
     """True when nothing listens on the port.
 
     POSIX binds with SO_REUSEADDR so a port in TIME_WAIT passes (the native lesson); Windows
-    uses SO_EXCLUSIVEADDRUSE. A connect probe catches a listener the bind alone would allow
-    (BSD lets a specific address bind next to a wildcard listener).
+    uses SO_EXCLUSIVEADDRUSE. Connect probes catch a listener the bind alone would allow: BSD
+    lets a specific address bind next to a wildcard listener, and Node on `localhost` can hold
+    only ::1, which `http://localhost:<port>` in a browser may reach.
     """
-    try:
-        with socket.create_connection((host, port), timeout=0.5):
-            return False
-    except OSError:
-        pass
+    if _listening(host, port, socket.AF_INET):
+        return False
+    if socket.has_ipv6 and _listening("::1", port, socket.AF_INET6):
+        return False
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         if POSIX:
             probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -120,7 +131,7 @@ def http_get_json(url: str, timeout: float = 2.0) -> dict[str, Any] | None:
     try:
         with opener.open(url, timeout=timeout) as response:
             data = json.loads(response.read(1_000_000))
-    except (OSError, ValueError):
+    except (OSError, ValueError, http.client.HTTPException):  # e.g. an SSH banner (BadStatusLine)
         return None
     return data if isinstance(data, dict) else None
 
@@ -210,6 +221,17 @@ def _tail(path: Path, lines: int) -> list[str]:
             return [line.rstrip("\n") for line in deque(handle, maxlen=lines)]
     except OSError:
         return []
+
+
+def _replaced(path: Path, handle: Any) -> bool:
+    """True when `path` is no longer the file `handle` reads, or has been cut shorter."""
+    try:
+        now, mine = os.stat(path), os.fstat(handle.fileno())
+    except OSError:  # the supervisor is between moving the old log and creating the new one
+        return False
+    if now.st_ino and mine.st_ino and (now.st_dev, now.st_ino) != (mine.st_dev, mine.st_ino):
+        return True  # st_ino is 0 on some Windows file systems; then only the size can tell
+    return now.st_size < handle.tell()
 
 
 def _rss_mb(proc: psutil.Process | None) -> float | None:
@@ -471,21 +493,30 @@ class Controller:
             self.say(line)
         if not follow:
             return 0
+        handle = open(path, encoding="utf-8", errors="replace")  # noqa: SIM115
         try:
-            with open(path, encoding="utf-8", errors="replace") as handle:
-                handle.seek(0, os.SEEK_END)
-                while True:
-                    chunk = handle.readline()
-                    if chunk:
-                        self.say(chunk.rstrip("\n"), flush=True)
+            handle.seek(0, os.SEEK_END)
+            while True:
+                chunk = handle.readline()
+                if chunk:
+                    self.say(chunk.rstrip("\n"), flush=True)
+                    continue
+                if _replaced(path, handle):  # rotated or truncated: read the new file from the top
+                    try:
+                        fresh = open(path, encoding="utf-8", errors="replace")  # noqa: SIM115
+                    except OSError:
+                        fresh = None
+                    if fresh is not None:
+                        handle.close()
+                        handle = fresh
                         continue
-                    if path.stat().st_size < handle.tell():  # rotated or truncated
-                        handle.seek(0)
-                    self.sleep(0.5)
+                self.sleep(0.5)
         except KeyboardInterrupt:
             return 0
         except OSError:
             return 0
+        finally:
+            handle.close()
 
     def open(self) -> int:
         if not running_supervisor(self.ctx):
