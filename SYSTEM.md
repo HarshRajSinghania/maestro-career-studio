@@ -500,7 +500,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   `/mcp/{profile}` = the named allowlist. Each FastAPI lifespan runs fresh stateful JSON sessions; `http.py` offloads to
   its own eight-worker limiter, keeping module functions sync. Stdio filters `MAESTRO_CS_MCP_PROFILE` (default `full`; §13 `mcp-stdio-venv`).
   Hints use request `CURRENT_PROFILE`, else env (pins: `mcp_server/tests/test_profiles.py`, `test_server.py`, `test_http.py`).
-  Enable ONE per chat; `MAESTRO_CS_*` has no legacy fallback. **Apply executor:** headed Chrome; reference: `docs/entities/others.md`, "Attended executor", and the apply playbook's "Unattended (full automation)".
+  Enable ONE profile per chat (`full` carries the KB writes); `MAESTRO_CS_*` has no legacy fallback. **Apply executor:** headed Chrome; reference: `docs/entities/others.md`, "Attended executor", and the apply playbook's "Unattended (full automation)".
   **Directory listing** uses `plugins/maestro-career-studio/` (not `.mcpb`); policy `PRIVACY.md`.
 - **Guided tailoring workflow** (`mcp_server/workflow.py`): wrapped tools carry a `next` envelope
   (`state`/`blocking`/`offer`/`ask_user`/`options`/`call`) that walks §5's arc — score all bases → recommend →

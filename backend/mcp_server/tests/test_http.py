@@ -1,5 +1,6 @@
 """Streamable HTTP contract, using only in-process ASGI requests."""
 
+import asyncio
 import contextlib
 import inspect
 import json
@@ -129,6 +130,37 @@ def test_registered_tools_run_off_the_event_loop_but_module_functions_stay_sync(
     assert callable(srv.list_templates) and not inspect.iscoroutinefunction(srv.list_templates)
 
 
+def test_real_registered_tool_runs_without_an_event_loop(monkeypatch):
+    seen = []
+
+    def list_templates():
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            seen.append(False)
+        else:
+            seen.append(True)
+        return {"items": []}
+
+    monkeypatch.setattr(srv._client, "list_templates", list_templates)
+    # Other endpoint constructions may already have wrapped the shared registry.
+    # Restore this real registration's sync function so this constructor must offload it.
+    tool = srv.mcp._tool_manager.get_tool("list_templates")
+    monkeypatch.setattr(tool, "fn", srv.list_templates)
+    monkeypatch.setattr(tool, "is_async", False)
+    with TestClient(_app(mcp_http.McpEndpoint())) as c:
+        sid = _session(c)
+        res = _rpc(c, "/mcp", sid, "tools/call", {"name": "list_templates"}).json()["result"]
+        assert not res["isError"], res
+    assert seen == [False]
+
+
+def test_request_body_larger_than_sdk_default_is_accepted(client):
+    sid = _session(client)
+    response = _rpc(client, "/mcp", sid, "ping", {"padding": "x" * (5 * 1024 * 1024)})
+    assert response.status_code != 413, response.text
+
+
 def test_offloading_is_idempotent_and_preserves_async_tools():
     scratch = FastMCP("idempotent-test")
 
@@ -154,7 +186,12 @@ def test_worker_receives_request_profile_and_client_info(monkeypatch):
 
     @scratch.tool()
     def list_templates(ctx: Context) -> dict:
-        return {"profile": srv.CURRENT_PROFILE.get(), "client": srv._client_label(ctx)}
+        allow = srv._active_allowed_tools()
+        return {
+            "profile": srv.CURRENT_PROFILE.get(),
+            "allowed": sorted(allow) if allow is not None else None,
+            "client": srv._client_label(ctx),
+        }
 
     with TestClient(_app(mcp_http.McpEndpoint(scratch))) as c:
         for id_, profile in enumerate(("templates", "full"), start=2):
@@ -166,6 +203,7 @@ def test_worker_receives_request_profile_and_client_info(monkeypatch):
             assert not res["isError"], res
             assert json.loads(res["content"][0]["text"]) == {
                 "profile": profile,
+                "allowed": sorted(allowed_tools(profile)) if profile != "full" else None,
                 "client": "pytest-client",
             }
     assert srv.CURRENT_PROFILE.get() is None
