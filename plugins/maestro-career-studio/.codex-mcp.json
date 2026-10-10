@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "maestro-career-studio": {
+      "url": "http://localhost:8001/mcp",
+      "default_tools_approval_mode": "approve",
+      "tools": {
+        "mark_submitted": {"approval_mode": "prompt"},
+        "record_consent": {"approval_mode": "prompt"},
+        "record_decision": {"approval_mode": "prompt"},
+        "get_job_site_login": {"approval_mode": "prompt"},
+        "prepare_application_pdf_upload": {"approval_mode": "prompt"},
+        "report_failure": {"approval_mode": "prompt"},
+        "archive_base_resume": {"approval_mode": "prompt"},
+        "restore_resume_version": {"approval_mode": "prompt"},
+        "record_triage": {"approval_mode": "prompt"},
+        "kb_approve_points": {"approval_mode": "prompt"},
+        "sync_now": {"approval_mode": "prompt"}
+      }
+    }
+  }
+}

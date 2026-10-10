@@ -3,8 +3,18 @@
   "rows": [
     {
       "id": "mcp-stdio-venv",
-      "status": "both-live",
-      "hand_check": "The release after /mcp ships (v0.10.0): delete scripts/setup-mcp.sh, host-venv setup prose and docker exec mcp_server.server examples. Keep maestro-career-studio-mcp until B′ provides the maestro mcp fallback. Task 9 switches client defaults to HTTP and adds the source predicate."
+      "status": "new-is-default",
+      "hand_check": "The release after /mcp ships (v0.10.0): delete scripts/setup-mcp.sh, the host-venv paragraphs in README.md, GETTING_STARTED.md and backend/mcp_server/README.md, and every docker exec mcp_server.server example. Keep maestro-career-studio-mcp as the maestro mcp fallback until B\u2032. Machine predicates require the script absent and zero source matches; the release and prose removals are verified by hand.",
+      "triggers": [
+        {
+          "kind": "command",
+          "cmd": "test ! -e scripts/setup-mcp.sh"
+        },
+        {
+          "kind": "command",
+          "cmd": "git grep -l 'docker\", \"exec\"\\|docker exec -i' -- ':!CHANGELOG.md' ':!docs/plans' ':!.slopledger.json'; test \"$?\" -eq 1"
+        }
+      ]
     },
     {
       "id": "typst-default-flip",

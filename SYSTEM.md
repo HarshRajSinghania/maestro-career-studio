@@ -106,7 +106,7 @@ data/                  the database: maestro_cs.sqlite3 + its -wal/-shm sidecars
 base_resumes/          on-disk resume data (<slug>.json) + rendered tex/pdf output
 applications/          rendered per-application artifacts (Company_Role_YYYYMMDD_<idprefix>/)
 extension/             browser-capture extension (posts pre-extracted JDs)
-scripts/               setup-mcp.sh (MCP registration), update.sh (user update path, §9)
+scripts/               setup-mcp.sh (deprecated stdio registration, §13), update.sh (user update path, §9)
 .claude/settings.json  shared Claude Code settings: enables the Superpowers plugin (obra/superpowers-marketplace);
                        the only tracked file under .claude/ — settings.local.json and the rest stay gitignored
 ```
@@ -499,7 +499,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   Lifespans run fresh stateful JSON sessions; `http.py` offloads sync tools to its eight-worker limiter. Stdio filters `MAESTRO_CS_MCP_PROFILE` (default `full`; §13 `mcp-stdio-venv`).
   Hints use request `CURRENT_PROFILE`, else env (pins: `mcp_server/tests/test_profiles.py`, `test_server.py`, `test_http.py`).
   Enable ONE profile per chat (`full` carries KB writes); `MAESTRO_CS_*` has no legacy fallback. **Apply executor:** headed Chrome (`docs/entities/others.md`, "Attended executor"; apply playbook, "Unattended (full automation)").
-  **Directory listing:** `plugins/maestro-career-studio/` (not `.mcpb`); policy `PRIVACY.md`.
+  **Plugin:** `plugins/maestro-career-studio/`: Claude Code's `.mcp.json` and Codex's `.codex-mcp.json` connect by URL; Codex prompts for durable decisions, login/upload, archive/restore, KB approval and sync. Install by release-tag Git ref with sparse paths `plugins/`; policy `PRIVACY.md`.
   Settings › Connected agents' **Connect an agent app** (`connect-assistant`) selects a tool set and copies commands/URLs, opens install links or downloads the Claude Desktop bundle.
   `GET /api/setup/connect?profile=full` composes values from `MAESTRO_CS_PUBLIC_BACKEND_URL` (default localhost:8000; compose host port unless overridden); `/api/setup/connect/bundle` serves `MCPB_BUNDLE_PATH` (compose read-only mount; `tests/test_setup_connect.py`).
   The dependency-free Node ≥18 `.mcpb` bridges stdio↔HTTP: `MAESTRO_CS_BACKEND_URL` defaults to localhost:8001; `MAESTRO_CS_MCP_PROFILE` selects `/mcp` or `/mcp/{profile}`.
@@ -941,10 +941,9 @@ citation. Priority lives in the item text, not in the ordinal.
   set those properties, so `transition-[…transform]` jumps → register a class that takes a variant; name those properties.
 ## 13. Active migrations & deprecation ledger
 
-**The rule.** A row is born when work SUPERSEDES something without deleting it; it dies when the old path
-is removed. Every row names a **removal trigger**, an observable condition for deletion; without one it is
-two ways of doing the same thing, a design bug. §11 = work NOT YET BUILT; §13 = work built TWICE.
-When a row lands, CUT superseded prose from its home section; leave "migration state: §13 `<id>`".
+**The rule.** A row tracks a superseded path until deletion, with an observable **removal trigger**.
+§11 = work NOT YET BUILT; §13 = work built TWICE. Cut superseded prose from its home section;
+leave "migration state: §13 `<id>`". Remove the row when the old path is gone.
 
 **Machine-checked.** Rows with executable triggers are mirrored (TRIGGERS only, same ids) in
 `.slopledger.json`; the maintainer runs `python3 ~/.claude/skills/ai-slop-detector/scripts/ledger_check.py
@@ -958,7 +957,7 @@ survives as fallback/backup) · `blocked` (trigger cannot be evaluated until a n
 
 | id | old → new | status | removal trigger | effort |
 |---|---|---|---|---|
-| `mcp-stdio-venv` | host stdio venv (`setup-mcp.sh`, `maestro-career-studio-mcp`) → backend `/mcp` | both-live | The release after `/mcp` ships (v0.10.0): delete `setup-mcp.sh`, host-venv setup prose and `docker exec … mcp_server.server` examples. Keep the console script until B′ provides the `maestro mcp` fallback. | small |
+| `mcp-stdio-venv` | stdio host venv (`setup-mcp.sh`, `maestro-career-studio-mcp`) and `docker exec` examples → URL (`/mcp`) + `.mcpb` bridge | new-is-default | The release after `/mcp` ships (v0.10.0): delete `scripts/setup-mcp.sh`, the venv paragraphs in README/GETTING_STARTED/mcp_server README, and every `docker exec … mcp_server.server` example. Keep the `maestro-career-studio-mcp` console script as the `maestro mcp` fallback until B′. | small |
 | `typst-default-flip` | seed `default` (LaTeX Classic) → seed `typst-classic` | both-live | **HELD by owner 2026-08-09: LaTeX stays, both engines remain first-class.** This is a longer park than 2026-08-02's, not a cancellation — the row survives because the trigger is still reachable, but nothing is waiting on it and `latex-render-path`/`texlive-layer` stay blocked behind it indefinitely. Header defects fixed (Typst `ulink()`; LaTeX separator space), DB rows re-synced. **The CLEAN 8/8 parity corpus predates 2026-08-08's extractor swap** (PyMuPDF→pypdfium2, forced by the Apache relicence), so those numbers were taken with a different measuring tape — re-run the corpus before acting on them. Then repoint `_bootstrap_default` (template_registry.py:131); a runtime `set-default` is NOT enough, seeding re-mints the LaTeX default on every fresh install. | medium |
 | `latex-render-path` | `pdf_render` latex branch + `*.tex.j2` → typst branch + `typst_classic.typ` | blocked | `select count(*) from templates where engine='latex'` = 0 **and still 0 after `GET /api/templates`** (which re-runs `ensure_seed_templates`); `cover_letter.tex.j2` has no caller, i.e. `render_cover_letter(engine="latex")` is unreachable — `compile_cover_letter_pdf` itself survives as the engine-dispatching entry point for both; no surface (web, chat, MCP, STARTER_SOURCE) can mint a latex row. Blocked on `typst-default-flip`. | large |
 | `texlive-layer` | minimal TeX Live layer (`backend/Dockerfile`) → `typst==0.15.0` in-process | blocked | Layer is already slim (install-tl `scheme-basic` + 18 tlmgr packages) and XCharter is vendored at `backend/app/assets/fonts/xcharter/` (keep the Bitstream Charter notice alongside; `settings.typst_font_paths` defaults there, so typst no longer reaches into texlive). The remaining FULL cut requires only: `grep -rn pdflatex backend/app` returns only comments. Blocked on `latex-render-path`. | medium |

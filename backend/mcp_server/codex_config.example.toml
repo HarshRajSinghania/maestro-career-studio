@@ -1,104 +1,46 @@
-# Codex CLI MCP configuration example — merge the entries you want into your own
-# ~/.codex/config.toml. The Claude Desktop equivalent is
-# claude_desktop_config.example.json in this directory; the two configure the
-# SAME stdio server, only the file format differs.
+# Codex CLI MCP configuration example: merge the entries you want into
+# ~/.codex/config.toml. Maestro runs locally; no host Python or Docker is
+# needed by this connection. Claude Desktop uses the Node bridge instead
+# (claude_desktop_config.example.json), or the easier .mcpb bundle.
 #
-# Replace every <PLACEHOLDER>:
-#   <PYTHON>  absolute path to the interpreter the backend is installed into,
-#             e.g. /usr/local/bin/python3 or <REPO>/backend/.venv/bin/python
-#   <REPO>    absolute path to your clone of this repository
-#   <HOME>    your home directory          (playwright block only)
-#   <NODE>    absolute path to node        (playwright block only)
-#
-# `scripts/setup-mcp.sh` prints a ready-made block for the profile you choose,
-# using the console script instead of <PYTHON> -m, so nothing needs replacing.
-#
-# `python -m mcp_server.server` needs the backend importable, so install it
-# first: cd backend && pip install -e ".[dev,mcp]"
-#
-# BACKEND_URL must be the HOST port compose publishes (8001 by default), NOT the
-# container's internal 8000.
-#
-# Enable ONE Maestro CS profile per session. `full` registers every tool, so
-# running it alongside a scoped profile registers the same tool twice and the
-# model has to guess which to call — use `enabled = false` to park the ones you
-# are not using rather than deleting them.
+# Enable ONE Maestro profile per session. full includes all scoped tool sets;
+# use enabled = false to park the entries you are not using.
+# Never publish port 8001 or proxy /mcp beyond this computer.
+# The client announces its name in clientInfo for Career KB timeline labels.
 
-# Every tool (88). Includes the Career KB write tools, so this profile alone is
-# enough to curate the KB — `career` below just trims the surface.
+# Every tool (88), including Career KB writes.
 [mcp_servers.maestro-career-studio]
-command = "<PYTHON>"
-args = ["-m", "mcp_server.server"]
+url = "http://localhost:8001/mcp"
 enabled = true
 
-[mcp_servers.maestro-career-studio.env]
-BACKEND_URL = "http://localhost:8001"
-MAESTRO_CS_MCP_PROFILE = "full"
-
-# Curate the Career KB: ID-bearing reads plus draft-gated writes (18 tools).
-# The only profile besides `full` with KB writes. No write tool takes a `state`
-# argument, so approving a point from here is unrepresentable — approval stays in
-# the web UI at /career. Editing a point's text sends it back to draft.
-#
-# MAESTRO_CS_MCP_CLIENT is an optional provenance FALLBACK, not an override:
-# the label recorded on each write comes from the client's own announced name,
-# and this env var is read only when that name is empty. Leave it unset unless
-# writes show up unlabelled in the entity timeline.
+# Career KB: ID-bearing reads and draft-gated writes (18 tools).
 [mcp_servers.maestro-career-studio-career]
-command = "<PYTHON>"
-args = ["-m", "mcp_server.server"]
+url = "http://localhost:8001/mcp/career"
 enabled = false
 
-[mcp_servers.maestro-career-studio-career.env]
-BACKEND_URL = "http://localhost:8001"
-MAESTRO_CS_MCP_PROFILE = "career"
-
-# Job search: capture, score and propose — never apply.
+# Job search: capture, score and propose (21 tools).
 [mcp_servers.maestro-career-studio-hunt]
-command = "<PYTHON>"
-args = ["-m", "mcp_server.server"]
+url = "http://localhost:8001/mcp/hunt"
 enabled = false
 
-[mcp_servers.maestro-career-studio-hunt.env]
-BACKEND_URL = "http://localhost:8001"
-MAESTRO_CS_MCP_PROFILE = "hunt"
-
-# Execute applications: tailor -> PDF -> autofill -> ledger through submit.
-# MAESTRO_CS_UPLOAD_DIR must match the Playwright MCP --output-dir so staged
-# PDF uploads land where the browser can reach them.
+# Execute applications: tailor, PDF, autofill and submission ledger (50 tools).
 [mcp_servers.maestro-career-studio-apply]
-command = "<PYTHON>"
-args = ["-m", "mcp_server.server"]
+url = "http://localhost:8001/mcp/apply"
 enabled = false
 
-[mcp_servers.maestro-career-studio-apply.env]
-BACKEND_URL = "http://localhost:8001"
-MAESTRO_CS_MCP_PROFILE = "apply"
-MAESTRO_CS_UPLOAD_DIR = "<REPO>/.playwright-mcp/uploads"
-
-# Read-only analytics over stored jobs and applications.
+# Read-only analytics over stored jobs and applications (11 tools).
 [mcp_servers.maestro-career-studio-explore]
-command = "<PYTHON>"
-args = ["-m", "mcp_server.server"]
+url = "http://localhost:8001/mcp/explore"
 enabled = false
 
-[mcp_servers.maestro-career-studio-explore.env]
-BACKEND_URL = "http://localhost:8001"
-MAESTRO_CS_MCP_PROFILE = "explore"
-
-# Template draft/validate/render.
+# Template draft, validation and rendering (12 tools).
 [mcp_servers.maestro-career-studio-templates]
-command = "<PYTHON>"
-args = ["-m", "mcp_server.server"]
+url = "http://localhost:8001/mcp/templates"
 enabled = false
 
-[mcp_servers.maestro-career-studio-templates.env]
-BACKEND_URL = "http://localhost:8001"
-MAESTRO_CS_MCP_PROFILE = "templates"
-
-# The apply executor. Not a Maestro CS profile — a SECOND server, the browser
-# the apply lane drives, which is why the apply profile above pins its upload
-# dir to this --output-dir. Enable it alongside `apply`, not instead of it.
+# Optional apply executor: enable alongside apply. Replace <NODE>, <HOME>
+# and <REPO> with absolute paths. Browser output paths and Maestro's upload
+# staging directory must agree; see the MCP server guide.
 # Headed real Chrome only: never headless, never stealth, never CAPTCHA bypass.
 [mcp_servers.playwright]
 command = "<NODE>"

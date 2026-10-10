@@ -1,7 +1,7 @@
 {
   "name": "maestro-career-studio",
   "version": "0.8.0",
-  "description": "Drive Maestro Career Studio from your assistant: capture and score jobs, tailor resumes against a JD, render PDFs, and track applications. Requires the stack running locally (docker compose up -d). The server talks only to your own local backend; AI features send content to the model provider you configure.",
+  "description": "Connect to Maestro Career Studio by local HTTP URL: capture and score jobs, tailor resumes, render PDFs, and track applications. Requires Maestro running on this computer. AI features send content to the model provider you configure.",
   "author": {
     "name": "Ajey Dhayashanker Loganathan"
   },
@@ -14,7 +14,7 @@
     "career",
     "mcp"
   ],
-  "mcpServers": "./.mcp.json",
+  "mcpServers": "./.codex-mcp.json",
   "interface": {
     "displayName": "Maestro Career Studio",
     "shortDescription": "Tailor resumes and track applications, from your own machine",
