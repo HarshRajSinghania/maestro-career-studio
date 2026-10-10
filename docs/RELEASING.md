@@ -146,6 +146,47 @@ curl -s "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.
 Glama, PulseMCP and Smithery copy from the registry on their own schedule; the
 listing text is the `description` in `server.json` (100 characters at most).
 
+### Chrome Web Store
+
+The owner publishes the Companion separately from the GitHub release. Create
+a Chrome Web Store developer account and complete its registration before
+the first upload. Use [the listing notes](../extension/STORE_LISTING.md) for
+the single purpose, permission explanations, privacy disclosures and five
+1280 x 800 screenshots. Link the public `PRIVACY.md` as the privacy policy.
+
+1. Confirm `extension/manifest.json` and `backend/pyproject.toml` have the same
+   version. For the **first upload only**, run from the repository root:
+
+   ```bash
+   python3 scripts/pack_extension.py --first-upload
+   ```
+
+   Upload `dist/maestro-cs-companion-X.Y.Z.zip`. This flag removes `key` from
+   the manifest inside the zip; the repository's unpacked-install key stays
+   intact until the next step. Developer notes, tests and dotfiles stay out
+   of every upload archive.
+2. Copy the store's public key into `extension/manifest.json`'s `key` and
+   append the store extension ID to both the `maestro_cs_extension_ids`
+   default in `backend/app/config.py` and `MAESTRO_CS_EXTENSION_IDS` in
+   `.env.example`. Keep the existing unpacked ID allowed for one release;
+   users with an explicit environment override must add the store ID too.
+   Verify the key-derived ID and both allowlist entries before release.
+3. **At that key change**, create the `extension-id-swap` row in `SYSTEM.md`
+   §13: old unpacked ID to store ID, with the removal trigger being the
+   release after the store ID ships. Mirror an executable trigger in
+   `.slopledger.json`. The row does not exist before the store assigns an ID.
+   Update the Companion installation docs to explain the new fixed ID and
+   the reload or reinstall steps.
+4. Publish **unlisted first**. Install that store build and test capture,
+   filling and Test connection against a freshly started backend allowing
+   its exact ID. Confirm that an unrelated extension ID remains refused.
+   Submit for public listing only after these checks and owner review.
+
+For later uploads, bump the extension and backend versions together and run
+`python3 scripts/pack_extension.py` without `--first-upload`. The archive
+retains the store public key. `dist/` is gitignored; upload the zip rather
+than committing it.
+
 ### 7. Package visibility, and an unauthenticated pull
 
 ghcr packages default to **private regardless of repository visibility**. Until

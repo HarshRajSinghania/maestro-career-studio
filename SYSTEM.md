@@ -575,7 +575,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   SQLite-chain migration that deletes the row only while it still equals the previous default
   (`4022b54933e6` did it for `chat_system`; `tests/test_prompt_sync_guard.py` explains the mechanic).
 - **Chrome extension** (`extension/`; on screen **the Companion**): MV3; the **side panel**
-  (`panel/`) is the ONE surface — toolbar icon (`openPanelOnActionClick`) and hotkey
+  (`panel/`) runs capture and fill; toolbar icon (`openPanelOnActionClick`) and hotkey
   (Alt+Shift+J → `sidePanel.open`, guarded: that method is Chrome 116 and the minimum is 114)
   both open it. Four-stage rail — Job → Resume → Fill → Track — INFERRED from the store by
   `ns.decisions.stageFor` every render, never set by a click. Job = saved AND a base chosen (a pick,
@@ -589,16 +589,15 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   get a per-render snapshot, per-CONCERN actions (`panel/actions/*.js`) a handle with one
   `write(patch)` door, and each roster THROWS at boot naming a missing script. `panel/icons.js` (`ns.icon`, inline Lucide svg) draws every icon;
   the panel carries no emoji or text glyph (`test_extension_panel_icons.py`). `shared/status-roles.js` is the application status table (word + colour role) the web `StatusChip` shares (`test_extension_status_roles.py`). `shared/` is
-  what both worlds load: `decisions.js` (the ONE home of every panel rule), `choose.js`
-  (routing, the /choose batch, `rest_fill` shaping, `QUESTIONY`); `guided-run.js` (the
-  runner, transport injected) is panel-only.
-  The failure note (never the server's raw text; `failureNote`), the rail's revisit rules, the sender model, the COMMIT GESTURE and the ONE
-  `attachableFileInputs` definition are reference tier: `extension/INTERNALS.md`. The bridge
-  storage key `widget.session` must NOT be renamed — that drops every live entry.
+  what both worlds load: `decisions.js` (the ONE home of panel rules), `choose.js` (routing, /choose batch, `rest_fill` shaping, `QUESTIONY`).
+  `guided-run.js` (runner, injected transport) is panel-only.
+  Failure copy (never server text; `failureNote`), revisit rules, sender model, COMMIT GESTURE and the ONE `attachableFileInputs` definition:
+  `extension/INTERNALS.md`. Never rename bridge storage key `widget.session` — that drops every live entry.
   **Posting identity is ONE table in two languages** — `job_url_match.posting_id` ↔
   `decisions.postingId` (LinkedIn `currentJobId` / `/jobs/view/<id>`, Indeed `jk`/`vjk`,
   embedded Greenhouse `gh_jid`), pinned by `test_extension_posting_identity.py`; add a key to
-  BOTH. **`extension/INTERNALS.md` owns the rest.**
+  BOTH. Options (`options.html`, `options.js`) read `read_settings`, save `backendUrl`/`appUrl` in `storage.sync` and test `/health`.
+  `scripts/pack_extension.py` gates matching versions; store upload and key handoff: `docs/RELEASING.md`. Rest: `extension/INTERNALS.md`.
 - **Guided fill** (design doc `2026-08-16-guided-apply-design`, unpublished — §10):
   the panel's **Fill** stage — **Autofill** → `panel_prepare` (the
   gesture-backed injection; `preparePage` is the only other injector) → a run. `fillMode` (`storage.sync`):

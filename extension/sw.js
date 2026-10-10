@@ -42,8 +42,8 @@ async function getSettings() {
   return { ...DEFAULTS, ...stored };
 }
 
-/* The only fetch site the extension has, and the only one a CONTENT SCRIPT
- * gets. Moved from the first side panel's copy unchanged at Task 8; that copy
+/* The API fetch site for the panel and content scripts. The options page
+ * separately checks GET /health. Moved from the first panel at Task 8; that copy
  * is gone, and the panel at `extension/panel/` has not reintroduced one — a
  * panel is an extension page, so it CAN fetch directly, which is exactly why
  * the rule has to be stated rather than enforced by the environment. It

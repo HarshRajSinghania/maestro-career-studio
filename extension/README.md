@@ -101,15 +101,16 @@ widget moves**, in the panel's Fill step, clears it.
 ## Different ports
 
 The extension expects the backend at `http://localhost:8001` and the app at
-`http://localhost:3000`. If you run them elsewhere, set both in the same service
-worker console, then close and reopen the panel:
+`http://localhost:3000`. If you use different ports, open `chrome://extensions`,
+choose **Details** on the Maestro CS Companion card, then **Extension options**.
+Enter the **Backend address** and **App address**, for example
+`http://localhost:9001` and `http://localhost:3001`. Use `http://` or `https://`
+with a host and optional port; leave out paths, query strings and credentials.
 
-```js
-chrome.storage.sync.set({ backendUrl: "http://localhost:9001", appUrl: "http://localhost:3001" })
-```
-
-There is no settings screen in the panel for this. (The built-in defaults live
-in `DEFAULTS` at the top of `sw.js`.)
+Press **Test connection** to check the backend address, then **Save**. Testing
+does not save your changes. Close and reopen the panel to use the new addresses.
+The options page reads the built-in defaults from `sw.js` through the same
+settings message as the panel.
 
 ## Troubleshooting
 

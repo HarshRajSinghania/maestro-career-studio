@@ -10,6 +10,7 @@
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": { "service_worker": "sw.js" },
   "side_panel": { "default_path": "panel/panel.html" },
+  "options_ui": { "page": "options.html", "open_in_tab": false },
   "content_scripts": [
     {
       "matches": ["https://*/*", "http://*/*"],

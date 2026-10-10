@@ -133,9 +133,11 @@ use Chrome's own settings sync.
 
 ### Connecting an AI assistant (MCP)
 
-The MCP server, including the `.mcpb` extension for Claude Desktop, runs inside
-your local Docker container and talks only to the local backend. The `.mcpb`
-shim starts it with `docker exec` and makes no network connections itself.
+The MCP server runs inside your local Maestro backend, reached by default at
+`http://localhost:8001/mcp`. Scoped tool sets use `/mcp/<profile>` on that same
+backend. The `.mcpb` bundle for Claude Desktop is a bridge that connects only
+to that backend address. Neither the bridge nor an assistant connecting by URL
+needs Docker on the assistant's side.
 
 But an MCP tool exists to hand information to the assistant that called it. Your
 career history, job data, resume text, and saved answers can be returned to the
