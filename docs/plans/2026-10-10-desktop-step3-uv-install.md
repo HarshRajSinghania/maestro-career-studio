@@ -1432,6 +1432,10 @@ record "pending CI" until the first run.
 - CHANGELOG `[Unreleased]`: Added (the uv install, the `maestro` command, Windows x64/Linux/macOS),
   Changed (distribution renamed; frontend image runs `node server.js`; `/health/memory` on
   Windows), Breaking changes (none for Docker users — say so).
+- `frontend/package.json` `"start": "next start"` now warns under standalone output: point it at a
+  small script that assembles static/public beside `.next/standalone/server.js` and runs it, or drop
+  it and fix every reader; PRIVACY.md:184's `npm start` line becomes "outside Docker and the uv
+  install (which set `NEXT_TELEMETRY_DISABLED=1`), set it yourself" (review of 99e2245a).
 - RELEASING: §2 note that `backend/pyproject.toml` is also the PyPI version (no new row, R1); a
   new step after the tag: confirm the `pypi` workflow published, `uv tool install --python 3.12
   maestro-career-studio==X.Y.Z` on a clean machine, `maestro status`.
