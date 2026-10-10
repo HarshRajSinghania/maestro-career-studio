@@ -11,7 +11,9 @@ The platforms differ on "now": a macOS agent with `RunAtLoad` starts the moment 
 
 Windows runs `start --no-browser`, not `run`: `start` detaches the supervisor under a hidden
 console `python.exe` (so stops stay graceful and no window appears), where `run` under the
-windowless `pythonw.exe` would have no console to deliver CTRL_BREAK to.
+windowless `pythonw.exe` would have no console to deliver CTRL_BREAK to. The task is created from
+XML, not `/SC ONLOGON`: that form means "any user's logon" (and wants elevation), skips laptops
+on battery and caps the run time.
 """
 from __future__ import annotations
 
@@ -21,6 +23,7 @@ import plistlib
 import shutil
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
@@ -33,13 +36,13 @@ UNIT_NAME = "maestro-career-studio.service"
 TASK_NAME = "Maestro Career Studio"
 ACTIONS = ("on", "off", "status")
 CALL_TIMEOUT = 30.0
-SCHTASKS_TR_LIMIT = 261  # Task Scheduler rejects a longer /TR value
+TASK_NS = "http://schemas.microsoft.com/windows/2004/02/mit/task"
+TASK_FILE = "autostart-task.xml"  # under <home>/run, deleted right after schtasks reads it
 
 Runner = Callable[[Sequence[str]], "subprocess.CompletedProcess[str]"]
 
-ON = "Autostart is on. Maestro will start when you log in; it is {now}."
-ON_MAC = ON.format(now="starting now")
-ON_LATER = ON.format(now="not started now")
+ON_MAC = "Autostart is on. Maestro will start when you log in; it is starting now."
+ON_LATER = "Autostart is on. Maestro will start when you log in."
 OFF = "Autostart is off. Maestro no longer starts at login."
 OFF_MAC_STOPPED = (
     "Autostart is off. Maestro no longer starts at login and has stopped; "
@@ -78,7 +81,9 @@ def _unit_word(text: str) -> str:
     return text
 
 
-def render_unit(shim: str | Path, home: Path, custom_home: bool) -> str:
+def render_unit(shim: str | Path, home: Path) -> str:
+    # MAESTRO_HOME is always pinned: the user manager does not see a shell's XDG_DATA_HOME, so
+    # without it the unit could start a second, empty install in the default folder.
     lines = [
         "[Unit]",
         "Description=Maestro Career Studio",
@@ -87,25 +92,47 @@ def render_unit(shim: str | Path, home: Path, custom_home: bool) -> str:
         f"ExecStart={_unit_word(str(shim))} run",
         "Restart=on-failure",
         "RestartSec=5",
+        f"Environment={_unit_word('MAESTRO_HOME=' + str(home))}",
+        "",
+        "[Install]",
+        "WantedBy=default.target",
+        "",
     ]
-    if custom_home:
-        lines.append(f"Environment={_unit_word('MAESTRO_HOME=' + str(home))}")
-    lines += ["", "[Install]", "WantedBy=default.target", ""]
     return "\n".join(lines)
 
 
-def render_schtasks_create(python: str | Path) -> list[str]:
-    program = str(python)
-    if any(c.isspace() for c in program):
-        program = f'"{program}"'
-    command = f"{program} -m maestro_cs start --no-browser"
-    if len(command) > SCHTASKS_TR_LIMIT:
-        raise ControlError(
-            "The login task's command is too long for Windows Task Scheduler "
-            f"({len(command)} of {SCHTASKS_TR_LIMIT} characters). Install Maestro under a shorter path."
-        )
-    return ["schtasks", "/Create", "/TN", TASK_NAME, "/SC", "ONLOGON", "/RL", "LIMITED", "/F",
-            "/TR", command]
+def render_task_xml(python: str | Path, user: str) -> str:
+    """Task Scheduler XML: current user only, on battery too, no time limit, no elevation."""
+    def add(parent: ET.Element, tag: str, text: str | None = None) -> ET.Element:
+        node = ET.SubElement(parent, f"{{{TASK_NS}}}{tag}")
+        if text is not None:
+            node.text = text
+        return node
+
+    ET.register_namespace("", TASK_NS)
+    task = ET.Element(f"{{{TASK_NS}}}Task", {"version": "1.2"})
+    add(add(task, "RegistrationInfo"), "Description", "Starts Maestro Career Studio when you log in.")
+    add(add(add(task, "Triggers"), "LogonTrigger"), "UserId", user)
+    principal = add(add(task, "Principals"), "Principal", None)
+    add(principal, "UserId", user)
+    add(principal, "LogonType", "InteractiveToken")
+    add(principal, "RunLevel", "LeastPrivilege")
+    settings = add(task, "Settings")
+    add(settings, "MultipleInstancesPolicy", "IgnoreNew")
+    add(settings, "DisallowStartIfOnBatteries", "false")
+    add(settings, "StopIfGoingOnBatteries", "false")
+    add(settings, "Enabled", "true")
+    add(settings, "Hidden", "false")
+    add(settings, "ExecutionTimeLimit", "PT0S")
+    exe = add(add(task, "Actions"), "Exec")
+    add(exe, "Command", str(python))
+    add(exe, "Arguments", "-m maestro_cs start --no-browser")
+    ET.indent(task)
+    return '<?xml version="1.0" encoding="UTF-16"?>\n' + ET.tostring(task, encoding="unicode") + "\n"
+
+
+def render_schtasks_create(xml_file: str | Path) -> list[str]:
+    return ["schtasks", "/Create", "/TN", TASK_NAME, "/XML", str(xml_file), "/F"]
 
 
 # --- system calls --------------------------------------------------------------------------
@@ -166,6 +193,7 @@ class Autostart:
         self.user_home = Path(user_home) if user_home else Path.home()
         self.runner, self.say, self.which = runner, say, which
         self._shim, self._python, self._uid, self._user = shim, python, uid, user
+        self._unit_dir: Path | None = None
 
     # --- where things live ------------------------------------------------------------
 
@@ -189,9 +217,23 @@ class Autostart:
 
     @property
     def unit_dir(self) -> Path:
-        config = (self.environ.get("XDG_CONFIG_HOME") or "").strip()
-        base = Path(config) if config and os.path.isabs(config) else self.user_home / ".config"
-        return base / "systemd" / "user"
+        """Where the user manager reads units: its own XDG_CONFIG_HOME, else ~/.config.
+
+        The manager's environment can differ from this terminal's, so ask it.
+        """
+        if self._unit_dir is None:
+            base = self.user_home / ".config"
+            try:
+                done = self._call(["systemctl", "--user", "show-environment"])
+            except ControlError:
+                done = None
+            if done is not None and done.returncode == 0:
+                for line in (done.stdout or "").splitlines():
+                    name, _, value = line.partition("=")
+                    if name == "XDG_CONFIG_HOME" and os.path.isabs(value.strip()):
+                        base = Path(value.strip())
+            self._unit_dir = base / "systemd" / "user"
+        return self._unit_dir
 
     @property
     def unit_path(self) -> Path:
@@ -206,6 +248,12 @@ class Autostart:
         if self._python is not None:
             return str(self._python)
         return str(runtime.venv_python(windowless=True))
+
+    @property
+    def windows_user(self) -> str:
+        name = (self.environ.get("USERNAME") or "").strip() or self.user
+        domain = (self.environ.get("USERDOMAIN") or "").strip()
+        return f"{domain}\\{name}" if domain else name
 
     @property
     def uid(self) -> int:
@@ -259,6 +307,8 @@ class Autostart:
         kind = self.kind
         if action == "on":
             getattr(self, f"_on_{kind}")()
+        elif kind == "mac":  # a job can be loaded with no plist; _off_mac asks launchd
+            self._off_mac()
         else:
             if not self.is_enabled():
                 self.say("Autostart is already off.")
@@ -275,8 +325,8 @@ class Autostart:
         if prior == wanted:
             self.say("Autostart is already on.")
             return
-        if prior is not None:  # a loaded job points at the old program; replace it
-            self._call(["launchctl", "bootout", f"gui/{self.uid}/{LABEL}"])
+        # A loaded job (old program, or the plist was deleted by hand) would make bootstrap fail.
+        self._call(["launchctl", "bootout", f"gui/{self.uid}/{LABEL}"])
         try:
             (self.home / "logs").mkdir(parents=True, exist_ok=True)  # launchd will not
             _write(path, wanted, mode)
@@ -292,11 +342,16 @@ class Autostart:
 
     def _off_mac(self) -> None:
         done = self._call(["launchctl", "bootout", f"gui/{self.uid}/{LABEL}"])
+        loaded = done is not None and done.returncode == 0
+        existed = os.path.lexists(self.plist_path)
         try:
             self.plist_path.unlink(missing_ok=True)
         except OSError as exc:
             raise ControlError(f"Cannot delete {self.plist_path}: {exc.strerror or exc}.") from None
-        self.say(OFF_MAC_STOPPED if done is not None and done.returncode == 0 else OFF)
+        if not (loaded or existed):
+            self.say("Autostart is already off.")
+        else:
+            self.say(OFF_MAC_STOPPED if loaded else OFF)
 
     # Linux
 
@@ -306,7 +361,7 @@ class Autostart:
         path, mode = self.unit_path, 0o644
         prior = path.read_bytes() if path.is_file() else None
         try:
-            _write(path, render_unit(self.shim, self.home, self.custom_home).encode(), mode)
+            _write(path, render_unit(self.shim, self.home).encode(), mode)
         except OSError as exc:
             raise ControlError(f"Cannot write {path}: {exc.strerror or exc}.") from None
         try:
@@ -321,8 +376,10 @@ class Autostart:
             self.say(NO_BOOT_LINGER)
 
     def _off_linux(self) -> None:
-        self._call(["systemctl", "--user", "disable", UNIT_NAME])
+        done = self._call(["systemctl", "--user", "disable", UNIT_NAME])
         try:
+            if done is None or done.returncode != 0:  # a refused disable must not leave it enabled
+                (self.unit_dir / "default.target.wants" / UNIT_NAME).unlink(missing_ok=True)
             self.unit_path.unlink(missing_ok=True)
         except OSError as exc:
             raise ControlError(f"Cannot delete {self.unit_path}: {exc.strerror or exc}.") from None
@@ -332,7 +389,18 @@ class Autostart:
     # Windows
 
     def _on_windows(self) -> None:
-        self._must(render_schtasks_create(self.python), "Windows would not create the login task")
+        xml_file = self.home / "run" / TASK_FILE
+        try:
+            xml_file.parent.mkdir(parents=True, exist_ok=True)
+            text = render_task_xml(self.python, self.windows_user)
+            xml_file.write_bytes(("\ufeff" + text).encode("utf-16-le"))  # the BOM schtasks expects
+        except OSError as exc:
+            xml_file.unlink(missing_ok=True)
+            raise ControlError(f"Cannot write {xml_file}: {exc.strerror or exc}.") from None
+        try:
+            self._must(render_schtasks_create(xml_file), "Windows would not create the login task")
+        finally:
+            xml_file.unlink(missing_ok=True)
         self.say(ON_LATER)
         if self.custom_home:
             self.say(WINDOWS_HOME_NOTE)

@@ -5,6 +5,7 @@ Nothing here runs launchctl, systemctl, loginctl or schtasks, and nothing writes
 import plistlib
 import shutil
 import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -17,9 +18,16 @@ from maestro_cs.autostart import (
     Autostart,
     render_plist,
     render_schtasks_create,
+    render_task_xml,
     render_unit,
 )
 from maestro_cs.control import ControlError
+
+OFF_STOPPED = (
+    "Autostart is off. Maestro no longer starts at login and has stopped; "
+    "run `maestro start` to use it now."
+)
+NS = "{http://schemas.microsoft.com/windows/2004/02/mit/task}"
 
 SHIM = "/Users/ann/.local/share/uv/tools/maestro-career-studio/bin/maestro"
 SHIM_SPACES = "/Users/ann lee/.local/share/uv/tools/maestro-career-studio/bin/maestro"
@@ -59,7 +67,7 @@ def test_rendered_plist_passes_plutil_lint(tmp_path):
 
 
 def test_unit_text_is_exact():
-    text = render_unit(SHIM, Path(HOME), custom_home=False)
+    text = render_unit(SHIM, Path("/home/ann/.local/share/maestro-career-studio"))
     assert text == (
         "[Unit]\n"
         "Description=Maestro Career Studio\n"
@@ -68,6 +76,7 @@ def test_unit_text_is_exact():
         f"ExecStart={SHIM} run\n"
         "Restart=on-failure\n"
         "RestartSec=5\n"
+        "Environment=MAESTRO_HOME=/home/ann/.local/share/maestro-career-studio\n"
         "\n"
         "[Install]\n"
         "WantedBy=default.target\n"
@@ -75,30 +84,52 @@ def test_unit_text_is_exact():
 
 
 def test_unit_quotes_paths_and_escapes_specifiers():
-    text = render_unit('/home/ann lee/100%/$bin/maestro', Path("/srv/my data"), custom_home=True)
+    text = render_unit('/home/ann lee/100%/$bin/maestro', Path("/srv/my data"))
     assert 'ExecStart="/home/ann lee/100%%/$$bin/maestro" run\n' in text
     assert 'Environment="MAESTRO_HOME=/srv/my data"\n' in text
 
 
-def test_schtasks_create_argv_runs_start_not_run():
-    argv = render_schtasks_create(PYTHONW)
-    assert argv == [
-        "schtasks", "/Create", "/TN", "Maestro Career Studio", "/SC", "ONLOGON", "/RL", "LIMITED",
-        "/F", "/TR", f"{PYTHONW} -m maestro_cs start --no-browser",
+def test_task_xml_has_every_documented_element():
+    text = render_task_xml(PYTHONW, r"LAPTOP\ann")
+    assert text.startswith('<?xml version="1.0" encoding="UTF-16"?>')
+    root = ET.fromstring(text.split("?>", 1)[1])
+    assert root.tag == NS + "Task" and root.get("version") == "1.2"
+
+    def find(path):
+        node = root.find("/".join(NS + part for part in path.split("/")))
+        assert node is not None, path
+        return node.text
+
+    assert find("RegistrationInfo/Description")
+    assert find("Triggers/LogonTrigger/UserId") == r"LAPTOP\ann"
+    assert find("Principals/Principal/UserId") == r"LAPTOP\ann"
+    assert find("Principals/Principal/LogonType") == "InteractiveToken"
+    assert find("Principals/Principal/RunLevel") == "LeastPrivilege"
+    assert find("Settings/DisallowStartIfOnBatteries") == "false"
+    assert find("Settings/StopIfGoingOnBatteries") == "false"
+    assert find("Settings/ExecutionTimeLimit") == "PT0S"
+    assert find("Settings/MultipleInstancesPolicy") == "IgnoreNew"
+    assert find("Settings/Enabled") == "true"
+    assert find("Settings/Hidden") == "false"
+    assert find("Actions/Exec/Command") == PYTHONW
+    assert find("Actions/Exec/Arguments") == "-m maestro_cs start --no-browser"
+    assert "/SC" not in text  # one trigger, one user: not "any user's logon"
+
+
+def test_task_xml_escapes_a_path_with_spaces_and_markup_characters():
+    nasty = r"C:\Users\Ann & Bob <Lee>\AppData\Scripts\pythonw.exe"
+    text = render_task_xml(nasty, r"DOM\a&b")
+    assert "Ann &amp; Bob &lt;Lee&gt;" in text
+    root = ET.fromstring(text.split("?>", 1)[1])
+    assert root.find(f"{NS}Actions/{NS}Exec/{NS}Command").text == nasty
+    assert root.find(f"{NS}Triggers/{NS}LogonTrigger/{NS}UserId").text == r"DOM\a&b"
+
+
+def test_schtasks_create_reads_the_xml_file():
+    assert render_schtasks_create("x.xml") == [
+        "schtasks", "/Create", "/TN", "Maestro Career Studio", "/XML", "x.xml", "/F",
     ]
     assert TASK_NAME == "Maestro Career Studio"
-
-
-def test_schtasks_quotes_the_program_when_the_path_has_spaces():
-    argv = render_schtasks_create(PYTHONW_SPACES)
-    assert argv[-1] == f'"{PYTHONW_SPACES}" -m maestro_cs start --no-browser'
-    # The whole /TR value survives the Windows command-line round trip as one argument.
-    assert subprocess.list2cmdline(argv).count("/TR") == 1
-
-
-def test_schtasks_refuses_a_command_longer_than_the_scheduler_allows():
-    with pytest.raises(ControlError, match="too long"):
-        render_schtasks_create("C:\\" + "a" * 300 + "\\pythonw.exe")
 
 
 # --- the fake system -----------------------------------------------------------------------
@@ -121,7 +152,7 @@ class Runner:
             self.after(argv)
         for prefix, (code, text) in self.plan.items():
             if " ".join(argv).startswith(prefix):
-                return subprocess.CompletedProcess(argv, code, stdout="", stderr=text)
+                return subprocess.CompletedProcess(argv, code, stdout=text, stderr=text)
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
     def verbs(self):
@@ -164,7 +195,9 @@ def test_mac_on_writes_a_0644_plist_and_bootstraps_it(tmp_path):
     target = plist_file(tmp_path)
     assert plistlib.loads(target.read_bytes())["ProgramArguments"] == [SHIM, "run"]
     assert target.stat().st_mode & 0o777 == 0o644
-    assert runner.calls == [["launchctl", "bootstrap", "gui/501", str(target)]]
+    # A best-effort bootout first: the job may be loaded although its plist is gone.
+    assert runner.calls == [["launchctl", "bootout", f"gui/501/{LABEL}"],
+                            ["launchctl", "bootstrap", "gui/501", str(target)]]
     assert said == ["Autostart is on. Maestro will start when you log in; it is starting now."]
     assert (tmp_path / "data" / "logs").is_dir()  # launchd will not create the log folder
 
@@ -205,10 +238,7 @@ def test_mac_off_boots_out_then_deletes_the_plist(tmp_path):
     assert auto.handle("off") == 0
     assert runner.calls == [["launchctl", "bootout", f"gui/501/{LABEL}"]]
     assert not plist_file(tmp_path).exists()
-    assert said[-1] == (
-        "Autostart is off. Maestro no longer starts at login and has stopped; "
-        "run `maestro start` to use it now."
-    )
+    assert said[-1] == OFF_STOPPED
 
 
 def test_mac_off_when_the_job_was_not_loaded_still_removes_the_file(tmp_path):
@@ -221,11 +251,26 @@ def test_mac_off_when_the_job_was_not_loaded_still_removes_the_file(tmp_path):
     assert said[-1] == "Autostart is off. Maestro no longer starts at login."
 
 
-def test_mac_off_when_already_off_calls_nothing(tmp_path):
+def test_mac_off_when_already_off_only_probes_launchd(tmp_path):
+    runner = Runner({"launchctl bootout": (3, "Boot-out failed: 3: No such process\n")})
+    auto, said = make(tmp_path, "darwin", runner)
+    assert auto.handle("off") == 0
+    assert runner.calls == [["launchctl", "bootout", f"gui/501/{LABEL}"]]
+    assert said == ["Autostart is already off."]
+
+
+def test_mac_off_stops_a_loaded_job_whose_plist_is_gone(tmp_path):
     runner = Runner()
     auto, said = make(tmp_path, "darwin", runner)
     assert auto.handle("off") == 0
-    assert runner.calls == [] and said == ["Autostart is already off."]
+    assert said == [OFF_STOPPED]
+
+
+def test_mac_on_boots_out_a_loaded_job_with_no_plist_before_bootstrapping(tmp_path):
+    runner = Runner({"launchctl bootout": (0, "")})
+    auto, _ = make(tmp_path, "darwin", runner)
+    auto.handle("on")
+    assert runner.verbs() == [f"launchctl bootout gui/501/{LABEL}", "launchctl bootstrap gui/501"]
 
 
 def test_mac_a_symlinked_plist_stays_a_link(tmp_path):
@@ -263,19 +308,31 @@ def linux_enable_creates_link(tmp_path):
     return after
 
 
+SHOW_ENV = ["systemctl", "--user", "show-environment"]
+
+
 def test_linux_on_writes_the_unit_reloads_enables_and_lingers(tmp_path):
     runner = Runner()
     runner.after = linux_enable_creates_link(tmp_path)
     auto, said = make(tmp_path, "linux", runner)
     assert auto.handle("on") == 0
-    assert unit_file(tmp_path).read_text() == render_unit(SHIM, tmp_path / "data", False)
+    assert unit_file(tmp_path).read_text() == render_unit(SHIM, tmp_path / "data")
     assert runner.calls == [
+        SHOW_ENV,
         ["systemctl", "--user", "daemon-reload"],
         ["systemctl", "--user", "enable", UNIT_NAME],
         ["loginctl", "enable-linger", "ann"],
     ]
-    assert said == ["Autostart is on. Maestro will start when you log in; it is not started now."]
+    assert said == ["Autostart is on. Maestro will start when you log in."]
     assert auto.is_enabled() is True
+
+
+def test_linux_unit_pins_maestro_home_even_when_the_shell_set_nothing(tmp_path):
+    # XDG_DATA_HOME exists only in this shell; the user manager would not see it.
+    env = {"XDG_DATA_HOME": str(tmp_path / "xdgdata")}
+    auto, _ = make(tmp_path, "linux", environ=env)
+    auto.handle("on")
+    assert f"Environment=MAESTRO_HOME={tmp_path / 'data'}\n" in unit_file(tmp_path).read_text()
 
 
 def test_linux_refused_linger_warns_but_succeeds(tmp_path):
@@ -322,20 +379,88 @@ def test_linux_off_disables_deletes_and_reloads(tmp_path):
     assert auto.is_enabled() is False
 
 
-def test_linux_xdg_config_home_is_honoured(tmp_path):
-    auto, _ = make(tmp_path, "linux", environ={"XDG_CONFIG_HOME": str(tmp_path / "xdg")})
+def test_linux_a_refused_disable_still_removes_the_enable_link(tmp_path):
+    runner = Runner()
+    runner.after = linux_enable_creates_link(tmp_path)
+    auto, _ = make(tmp_path, "linux", runner)
+    auto.handle("on")
+    link = unit_file(tmp_path).parent / "default.target.wants" / UNIT_NAME
+    assert link.is_symlink()
+    runner.plan = {"systemctl --user disable": (1, "Failed to connect to bus\n")}
+    runner.after = None
+    assert auto.handle("off") == 0
+    assert not link.is_symlink() and not unit_file(tmp_path).exists()
+
+
+def test_linux_unit_dir_defaults_to_dot_config_even_with_xdg_in_the_shell(tmp_path):
+    auto, _ = make(tmp_path, "linux", environ={"XDG_CONFIG_HOME": str(tmp_path / "shell-only")})
+    auto.handle("on")
+    assert unit_file(tmp_path).is_file()
+    assert not (tmp_path / "shell-only").exists()
+
+
+def test_linux_unit_dir_follows_the_managers_xdg_config_home(tmp_path):
+    runner = Runner({"systemctl --user show-environment": (0, "LANG=C\nXDG_CONFIG_HOME=" + str(tmp_path / "xdg") + "\n")})
+    auto, _ = make(tmp_path, "linux", runner)
     auto.handle("on")
     assert (tmp_path / "xdg" / "systemd" / "user" / UNIT_NAME).is_file()
+    assert not unit_file(tmp_path).exists()
+
+
+def test_linux_a_relative_manager_xdg_config_home_is_ignored(tmp_path):
+    runner = Runner({"systemctl --user show-environment": (0, "XDG_CONFIG_HOME=relative/dir\n")})
+    auto, _ = make(tmp_path, "linux", runner)
+    auto.handle("on")
+    assert unit_file(tmp_path).is_file()
 
 
 # --- Windows -------------------------------------------------------------------------------
 
-def test_windows_on_creates_the_task_without_starting_it(tmp_path):
-    runner = Runner()
-    auto, said = make(tmp_path, "win32", runner)
+class XmlSpy(Runner):
+    """Captures the task file while schtasks 'reads' it, as the real program would."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.seen: list[tuple[Path, bytes]] = []
+
+    def __call__(self, argv):
+        if "/XML" in argv:
+            path = Path(argv[argv.index("/XML") + 1])
+            self.seen.append((path, path.read_bytes()))
+        return super().__call__(argv)
+
+
+def test_windows_on_creates_the_task_from_a_utf16_xml_file(tmp_path):
+    runner = XmlSpy()
+    auto, said = make(tmp_path, "win32", runner,
+                      environ={"USERDOMAIN": "LAPTOP", "USERNAME": "ann"})
     assert auto.handle("on") == 0
-    assert runner.calls == [render_schtasks_create(PYTHONW)]
-    assert said == ["Autostart is on. Maestro will start when you log in; it is not started now."]
+    path = tmp_path / "data" / "run" / "autostart-task.xml"
+    assert runner.calls == [render_schtasks_create(path)]
+    (_, raw), = runner.seen
+    assert raw[:2] == b"\xff\xfe"  # UTF-16 LE byte order mark
+    text = raw.decode("utf-16")
+    assert text.startswith('<?xml version="1.0" encoding="UTF-16"?>')
+    root = ET.fromstring(text.split("?>", 1)[1])
+    assert root.find(f"{NS}Triggers/{NS}LogonTrigger/{NS}UserId").text == "LAPTOP\\ann"
+    assert root.find(f"{NS}Actions/{NS}Exec/{NS}Command").text == PYTHONW
+    assert said == ["Autostart is on. Maestro will start when you log in."]
+    assert not path.exists()  # deleted once schtasks has read it
+
+
+def test_windows_the_xml_file_is_deleted_when_create_fails(tmp_path):
+    runner = XmlSpy({"schtasks /Create": (1, "ERROR: Access is denied.\n")})
+    auto, _ = make(tmp_path, "win32", runner)
+    with pytest.raises(ControlError, match="Access is denied"):
+        auto.handle("on")
+    assert runner.seen and not runner.seen[0][0].exists()
+
+
+def test_windows_user_without_a_domain_is_the_bare_name(tmp_path):
+    auto, _ = make(tmp_path, "win32", environ={"USERNAME": "ann"})
+    assert auto.windows_user == "ann"
+    auto, _ = make(tmp_path, "win32", environ={})
+    assert auto.windows_user == "ann"  # falls back to the injected account name
 
 
 def test_windows_uses_the_windowless_interpreter_by_default(tmp_path, monkeypatch):
@@ -344,17 +469,18 @@ def test_windows_uses_the_windowless_interpreter_by_default(tmp_path, monkeypatc
         autostart.runtime, "venv_python",
         lambda platform=None, windowless=False, **kw: seen.update(windowless=windowless) or Path(PYTHONW),
     )
-    runner = Runner()
-    obj = Autostart(tmp_path, {}, platform="win32", user_home=tmp_path, runner=runner, say=lambda *_: None)
+    obj = Autostart(tmp_path, {}, platform="win32", user_home=tmp_path, runner=Runner(),
+                    say=lambda *_: None, user="ann")
     obj.handle("on")
     assert seen == {"windowless": True}
 
 
-def test_windows_a_path_with_spaces_is_quoted(tmp_path):
-    runner = Runner()
+def test_windows_a_path_with_spaces_needs_no_quoting_in_the_xml(tmp_path):
+    runner = XmlSpy()
     auto, _ = make(tmp_path, "win32", runner, python=PYTHONW_SPACES)
     auto.handle("on")
-    assert runner.calls[0][-1] == f'"{PYTHONW_SPACES}" -m maestro_cs start --no-browser'
+    root = ET.fromstring(runner.seen[0][1].decode("utf-16").split("?>", 1)[1])
+    assert root.find(f"{NS}Actions/{NS}Exec/{NS}Command").text == PYTHONW_SPACES
 
 
 def test_windows_off_deletes_the_task(tmp_path):
@@ -371,13 +497,6 @@ def test_windows_off_when_there_is_no_task_calls_no_delete(tmp_path):
     auto, said = make(tmp_path, "win32", runner)
     assert auto.handle("off") == 0
     assert runner.verbs() == ["schtasks /Query /TN"] and said == ["Autostart is already off."]
-
-
-def test_windows_failed_create_is_one_sentence(tmp_path):
-    runner = Runner({"schtasks /Create": (1, "ERROR: Access is denied.\n")})
-    auto, _ = make(tmp_path, "win32", runner)
-    with pytest.raises(ControlError, match="Access is denied"):
-        auto.handle("on")
 
 
 def test_windows_cannot_carry_a_custom_home_and_says_so(tmp_path):
@@ -417,6 +536,14 @@ def test_a_timed_out_system_call_is_a_sentence(tmp_path):
     with pytest.raises(ControlError, match="did not answer"):
         auto.handle("on")
     assert not plist_file(tmp_path).exists()
+
+
+def test_the_real_is_enabled_answers_none_when_the_system_cannot_be_asked(real_is_enabled, tmp_path):
+    assert real_is_enabled(platform="freebsd14", environ={}, user_home=tmp_path) is None
+
+    def slow(argv):
+        raise subprocess.TimeoutExpired(argv, 30)
+    assert real_is_enabled(platform="win32", environ={}, user_home=tmp_path, runner=slow) is None
 
 
 def test_unsupported_platform_is_a_sentence(tmp_path):
