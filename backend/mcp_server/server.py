@@ -5,6 +5,7 @@ import inspect
 import logging
 import os
 from collections.abc import Callable
+from contextvars import ContextVar
 from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
 from mcp.server.fastmcp import Context, FastMCP
@@ -22,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("maestro-career-studio")
 _client = BackendClient()
+
+# HTTP sets this per request; stdio leaves it unset and uses the env profile.
+# Workflow hints must only name tools the caller's profile can see.
+CURRENT_PROFILE: ContextVar[str | None] = ContextVar("maestro_mcp_profile", default=None)
 
 # The op vocabulary belongs in the SCHEMA, not only in a tool's prose. `ops` is
 # list[dict], so without this the machine-readable contract reads "array of
@@ -240,10 +245,9 @@ def _client_label(ctx: Context | None) -> str | None:
 # "do the work, then ask for a hint" rather than re-deriving both facts inline.
 
 
-def _active_allowed_tools() -> "frozenset[str] | None":
-    """The active MAESTRO_CS_MCP_PROFILE's allowlist, so a hint never names a
-    tool this session did not register (workflow.py's invariant)."""
-    return allowed_tools(_ACTIVE_PROFILE)
+def _active_allowed_tools() -> frozenset[str] | None:
+    """The request profile's allowlist, falling back to the env for stdio hints."""
+    return allowed_tools(CURRENT_PROFILE.get())
 
 
 def _hints_enabled() -> bool:
@@ -2078,19 +2082,15 @@ def report_failure(proposal_id: str, reason: str) -> Any:
     return _client.report_failure(proposal_id, reason=reason)
 
 
-# Filter tools for MAESTRO_CS_MCP_PROFILE (default full = no-op).
-_ACTIVE_PROFILE = apply_profile_filter(mcp)
-
-
-def list_registered_tool_names() -> list[str]:
-    import asyncio
-
-    tools = asyncio.run(mcp.list_tools())
-    return [t.name for t in tools]
+def list_registered_tool_names(profile: str | None = None) -> list[str]:
+    """Tool names a client of `profile` (default: the env profile) can see."""
+    allow = allowed_tools(profile)
+    return [t.name for t in mcp._tool_manager.list_tools() if allow is None or t.name in allow]
 
 
 def main() -> None:
     http_client.repair_proxy_env()
+    apply_profile_filter(mcp)  # stdio only: this process serves one profile
     mcp.run()
 
 

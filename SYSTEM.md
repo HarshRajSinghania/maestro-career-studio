@@ -497,10 +497,10 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   gate — ingest lands drafts, `kb_sync_base` drafts new/drifted base-resume items (no LLM, no auto-approve), and
   `kb_approve_points` is the ONE approval path (`approved|retired`), its gate a convention the docstring states (the
   value is the user's decision), not server enforcement (`record_consent` precedent). `kb_edit_point` has no `state`
-  param; a text change forces `state="draft"`. No delete tool; document upload stays web-only. **Scoped profiles**
-  (`MAESTRO_CS_MCP_PROFILE`, default `full`): `hunt` / `apply` / `explore` / `templates` / `career`; allowlists in
-  `mcp_server/profiles.py`. Enable ONE per chat (`full` carries the KB writes). `MAESTRO_CS_*` variables have no
-  pre-rename fallback. Stdio examples: `mcp_server/`; ChatGPT.com cannot be a client — `mcp.run()` is stdio only.
+  param; a text change forces `state="draft"`. No delete tool; document upload stays web-only. **Scoped profiles**:
+  `mcp_server/profiles.py` owns `hunt` / `apply` / `explore` / `templates` / `career`; env `MAESTRO_CS_MCP_PROFILE` defaults to `full`.
+  Imports keep all 88 tools; stdio `main()` filters once. Hints use request `CURRENT_PROFILE`, else the env (pins: `mcp_server/tests/test_profiles.py`, `test_server.py`).
+  Enable ONE per chat (`full` carries KB writes); `MAESTRO_CS_*` has no legacy fallback. Stdio: `mcp_server/`; ChatGPT.com cannot use stdio `mcp.run()`.
   **Apply executor:** headed real Chrome; `docs/entities/others.md`, "Attended executor", and the apply playbook's "Unattended (full automation)" section.
   **Directory listing** = plugin bundle `plugins/maestro-career-studio/`, not `.mcpb`; policy `PRIVACY.md`.
 - **Guided tailoring workflow** (`mcp_server/workflow.py`): wrapped tools carry a `next` envelope
@@ -518,7 +518,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   - **`offer` ≠ `ask_user`.** `score_ats` emits only a non-blocking `offer` — mass JD capture scores twenty
     postings in a loop and a question on each would derail it; `ask_user` appears only mid-arc, after the user
     commits. **A hint never names a tool the active profile did not register** (`hunt` has no tailoring tools):
-    options AND prose filter via `profiles.allowed_tools()`; prose states facts, never commands (`test_workflow.py`).
+    options AND prose filter via `_active_allowed_tools()`; prose states facts, never commands (`test_workflow.py`).
   - **Two controls.** `mcp_workflow` `{hints: bool}` (`GET/PUT /api/settings/mcp-workflow` + its card in
     Settings › Connected agents) is the USER's master switch; `brief=true` on `score_ats` is the AGENT's, for
     triage loops, checked FIRST so a loop pays no settings read. Tools **always wrap** (`next: null` when

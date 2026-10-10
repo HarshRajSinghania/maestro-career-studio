@@ -1119,3 +1119,6 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 |---|---|---|---|---|
 | (planning) | Task 0 Codex check before any code | the check needs a running `/mcp` | run it right after Task 3 | — |
 | (planning) | one `.mcp.json` for Claude Code and Codex | Codex plugins take Codex-only keys (per-tool `approval_mode`) and the app adds marketplace Git ref / sparse paths and a custom-URL route | separate `.codex-mcp.json` with approval prompts; tag-pinned install; Codex-app row on the connect card; Tunnel warned against | One trust boundary |
+| 1 | Bare six-profile stdio command | An installed console script starts with its bin directory on `sys.path` | Run that entry point with the backend interpreter and this worktree's `backend/` on `PYTHONPATH` | Old routes keep working for one release |
+| 1 | Commit after the task | Implementer instructions forbid git writes | Leave verified changes in the worktree for the controller to commit | No Goal Card change; execution constraint |
+| 1 | Green full-suite run | Sandbox blocks socket binds and `ps` (23 failures); scratch TMPDIR starts with an empty model cache (2 failures) | Copy the existing model cache into scratch; both ATS golden tests pass offline; controller reruns the full suite with process/network permissions | No Goal Card change; verification constraint |
