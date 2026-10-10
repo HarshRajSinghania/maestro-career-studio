@@ -101,76 +101,23 @@ async function api(path, opts = {}) {
 }
 // ---- end api ----
 
-// ---------- frames ----------
-//
-// Content scripts run in EVERY frame (`all_frames`), so a tab id does not
-// identify a sender and the SW is the only context that can tell the frames
-// apart — `sender.frameId` is added by the browser and cannot be forged by
-// page script. Greenhouse and Lever put the whole application form in a
-// subframe while the top frame is marketing, which is why the fill side has to
-// address one frame rather than one tab (design §3.1).
+// ---------- the panel's tab ----------
 
-/** `${tabId}:${frameId}` for a message sender, or null if it is not an
- * addressable frame. `frameId` 0 is the top frame.
+/** The tab a fan-out lands on: the one the SIDE PANEL names, and no one else's.
  *
- * Null covers any extension page: such a sender carries no `sender.tab`, and
- * "undefined:0" would collide all of them onto one key. It also covers
- * `tab.id === -1`, which is Chrome's "no tab" — a real number that would key
- * and then address nothing.
+ * The panel is our own UI with no tab at all, so it names the tab it is bound
+ * to; that tab is a fact only it holds. `sender.tab === undefined` is the
+ * discriminator and it is not fakeable from a page: a page cannot reach
+ * `onMessage` in the first place (no `externally_connectable`, and the listener
+ * drops anything not sent by this extension), and a content script cannot shed
+ * the `tab` the browser attaches. A sender WITH a tab is refused, whichever
+ * frame it is: content scripts are the fill engine and nothing else, and none
+ * of them asks for a fan-out. Tab-less is the TRUSTED shape, so for it the id
+ * check at the top of `onMessage` is the whole of provenance, not a second
+ * opinion.
  *
- * Neither half is defaulted. A missing `frameId` filled in as 0 would name the
- * TOP frame, so a fill aimed at a subframe would land somewhere else; refusing
- * to produce a key fails loudly instead. */
-function frameKey(sender) {
-  const tabId = sender?.tab?.id;
-  const frameId = sender?.frameId;
-  // Number.isInteger, not `typeof === "number"`: NaN, Infinity, 7.5 and 1e21
-  // all pass a typeof check and all mint a key that `parseFrameKey` then
-  // refuses — a key that cannot be addressed again is worse than no key.
-  if (!Number.isInteger(tabId) || tabId < 0) return null;
-  if (!Number.isInteger(frameId) || frameId < 0) return null;
-  return `${tabId}:${frameId}`;
-}
-// ---- end frameKey ----
-
-/** The inverse. Numbers, because `chrome.tabs.sendMessage` takes numbers and a
- * string tab id silently addresses nothing. */
-function parseFrameKey(key) {
-  const match = /^(\d+):(\d+)$/.exec(String(key));
-  if (!match) return null;
-  return { tabId: Number(match[1]), frameId: Number(match[2]) };
-}
-// ---- end parseFrameKey ----
-
-/** The tab a fan-out lands on, resolved from WHO is asking.
- *
- * Two sender shapes, trusted differently — and since R-C only ONE of them has
- * a caller in this repo. A top-frame content script fans out to ITS OWN tab,
- * full stop: `msg.tabId` is ignored for it, because a page's frame must never
- * aim the engine at another tab (the sendToFrame rules, restated for
- * broadcast), and a subframe may not fan out at all — a broadcast request
- * arriving from a subframe of a Greenhouse posting is an ad iframe, not a UI.
- *
- * THAT BRANCH IS KEPT DELIBERATELY NOW THAT NOTHING TAKES IT. The floating
- * card was its one caller and R-C deleted it, so every fan-out in the shipped
- * extension is the panel's. Deleting the branch would not tighten anything the
- * `sender.tab === undefined` discriminator below does not already decide — it
- * would only move the refusal from a named error to an unreadable one, and it
- * would delete the written rule for the next content-script caller, which is
- * the thing worth keeping. Read it as: if a content script ever fans out
- * again, these are its terms, already decided.
- *
- * The side panel is our own UI with no tab at all, so it names the tab it is
- * bound to — it is an extension page and the tab it renders for is a fact only
- * it holds. `sender.tab === undefined` is the discriminator, and it is not
- * fakeable from a page: a page cannot reach `onMessage` in the first place (no
- * `externally_connectable`, and the listener drops anything not sent by this
- * extension), and a content script cannot shed the `tab` the browser attaches
- * — the same reason `sender.frameId` is trusted above. Note what that leaves
- * to the id check at the top of `onMessage`: tab-less is now the TRUSTED
- * shape, so for a tab-less sender that check is the only thing establishing
- * the message came from us at all, rather than a second opinion behind this
- * one.
+ * The refusal comes before any field of `msg` is read: the panel's extra reach
+ * is "it may name a tab", and a page's frame must not get a taste of it.
  *
  * WHERE THIS STOPS. It answers WHO may name a tab; WHICH tab is named is the
  * panel's own to get right, and the SW cannot check it — a tab id is valid or
@@ -182,57 +129,16 @@ function parseFrameKey(key) {
  * What this does NOT relax: which frames may RECEIVE user data. That gate is
  * `frameMayReceiveUserData` in the content scripts, on the receiving side of
  * every message this resolves a tab for, and nothing here touches it. */
-function fanoutTab(msg, frame, sender) {
-  if (sender?.tab === undefined) {
-    const tabId = msg?.tabId;
-    // Rejects the wild shapes — undefined, null, NaN, -1, a string. It needs no
-    // round trip the way frameKey's rule did: an integer naming no real tab
-    // dies at sendMessage as a dead message, not as a message somewhere else.
-    if (!Number.isInteger(tabId) || tabId < 0) throw new Error(`panel named no tab: ${tabId}`);
-    return tabId;
-  }
-  const from = parseFrameKey(frame);
-  if (!from) throw new Error("sender is not an addressable frame");
-  if (from.frameId !== 0) throw new Error(`only the top frame may fan out (from ${frame})`);
-  return from.tabId;
+function fanoutTab(msg, sender) {
+  if (sender?.tab !== undefined) throw new Error("not a panel sender");
+  const tabId = msg?.tabId;
+  // Rejects the wild shapes — undefined, null, NaN, -1, a string. An integer
+  // naming no real tab dies at sendMessage as a dead message, not as a message
+  // somewhere else.
+  if (!Number.isInteger(tabId) || tabId < 0) throw new Error(`panel named no tab: ${tabId}`);
+  return tabId;
 }
 // ---- end fanoutTab ----
-
-/** Dispatch to one frame on behalf of the frame that asked. The `frameId`
- * option is the whole point: without it the message goes to every frame.
- *
- * `key` arrives in a MESSAGE, from a content script running on a page we do
- * not trust, and the recipient is our own fill engine. A bare
- * `sendToFrame(msg.frame, …)` would therefore let any frame aim that engine at
- * any other frame — so the sender comes first, and two rules apply.
- *
- * SAME TAB. Without it a frame on one posting could drive a fill in a
- * completely different tab, which no user gesture anywhere would have asked
- * for.
- *
- * TOP FRAME ONLY, which is the sibling question answered: a frame may not name
- * a sibling. A request to message another frame that comes FROM a subframe is
- * not a UI asking — on a Greenhouse posting it is an ad iframe. The top frame
- * may still address the application subframe, because reaching a form in an
- * iframe is the whole job. Fan-out ("fill every frame") is not this function:
- * the SW picks those targets itself, behind the explicit user click
- * design.md:125 requires, and never from a key a page's frame supplied.
- *
- * Like `fanoutTab`'s content-script branch, this is a rule with no caller in
- * the tree since R-C removed the in-page UI. It is the decided answer for the
- * next one, not dead weight. */
-async function sendToFrame(sender, key, message) {
-  const from = parseFrameKey(frameKey(sender));
-  if (!from) throw new Error("sender is not an addressable frame");
-  if (from.frameId !== 0) {
-    throw new Error(`only the top frame may name a target (from ${from.tabId}:${from.frameId})`);
-  }
-  const target = parseFrameKey(key);
-  if (!target) throw new Error(`not a frame key: ${key}`);
-  if (target.tabId !== from.tabId) throw new Error(`cross-tab target ${key} from tab ${from.tabId}`);
-  return chrome.tabs.sendMessage(target.tabId, message, { frameId: target.frameId });
-}
-// ---- end sendToFrame ----
 
 /** agent.js's answer, unwrapped — or a throw carrying the reason.
  *
@@ -659,15 +565,12 @@ function proxyInit(init) {
 }
 // ---- end proxyInit ----
 
-/** Handlers by message type. Each gets `(msg, frame, sender)` where `frame` is
- * the sender's frame key, and returns whatever the caller should receive.
+/** Handlers by message type. Each gets `(msg, sender)` and returns whatever the
+ * caller should receive.
  *
- * `sender` is the raw one Chrome supplied, and it is passed because `frame`
- * cannot answer the question the panel raises: an extension page has no tab, so
- * its frame key is null — the same null a malformed content-script sender
- * produces. Only the sender itself tells those two apart (`sender.tab ===
- * undefined`), which is what `fanoutTab` reads. Handlers that never fan out
- * ignore the third argument. */
+ * `sender` is the raw one Chrome supplied: an extension page has no tab and a
+ * content script always has one, which is what `fanoutTab` reads. Handlers that
+ * never fan out ignore it. */
 const HANDLERS = {
   async api(msg) {
     return api(assertBackendPath(msg.path), proxyInit(msg.init));
@@ -734,7 +637,7 @@ const HANDLERS = {
     return { posted: 1 };
   },
 
-  /** Fetch a resume PDF and hand it to every frame of the sender's tab.
+  /** Fetch a resume PDF and hand it to every frame of the tab the panel names.
    *
    * The bytes never travel through the UI: a Blob does not survive a
    * message boundary in either direction — both ends serialize, and this one
@@ -746,8 +649,8 @@ const HANDLERS = {
    * `String.fromCharCode` is an argument list long enough to blow the call
    * stack. Checked in node: `String.fromCharCode(...new Uint8Array(200000))`
    * throws RangeError, and the chunked loop returns 200000. */
-  async attach_pdf(msg, frame, sender) {
-    const tabId = fanoutTab(msg, frame, sender);
+  async attach_pdf(msg, sender) {
+    const tabId = fanoutTab(msg, sender);
     const { backendUrl } = await getSettings();
     const res = await fetch(`${backendUrl}${assertBackendPath(msg.path)}`);
     if (!res.ok) {
@@ -830,12 +733,12 @@ const HANDLERS = {
    * a top document that is the careers site's chrome. It carries nothing from
    * the user and returns each frame's own page text — the public posting, the
    * same thing `panel_frame0` returns for the top document. */
-  async page_broadcast(msg, frame, sender) {
+  async page_broadcast(msg, sender) {
     const BROADCASTABLE = ["profile_fill", "collect_open_questions", "fill_answers",
       "guided_write", "scroll_to_field",
       "fill_inventory", "fill_explore", "fill_apply", "fill_step_state", "fill_sweep", "fill_focus", "fill_cancel",
       "fill_sections", "fill_add", "detect_page", "extract_job_posting"];
-    const tabId = fanoutTab(msg, frame, sender);
+    const tabId = fanoutTab(msg, sender);
     if (!BROADCASTABLE.includes(msg.message?.type)) {
       throw new Error(`not broadcastable: ${JSON.stringify(msg.message?.type)}`);
     }
@@ -850,15 +753,12 @@ const HANDLERS = {
    * re-publish onto the same namespace, and the ones with state (the fill
    * engine) and agent.js's listener registration load once (`ns.loadedOnce`).
    *
-   * Panel-only, and the guard comes FIRST — before any field of `msg` is read
-   * — because the whole of the panel's extra reach is "it may name a tab". A
-   * content script that reached this would be a page's frame injecting scripts
-   * into a tab of its choosing, which is strictly more than `page_broadcast`
-   * would ever let it do. It has no reason to call this: its own presence in
-   * the tab is the proof the scripts are already there. */
-  async panel_prepare(msg, _frame, sender) {
-    if (sender?.tab !== undefined) throw new Error("not a panel sender");
-    await injectContentScripts(fanoutTab(msg, null, sender));
+   * Panel-only, by `fanoutTab`: a content script that reached this would be a
+   * page's frame injecting scripts into a tab of its choosing. It has no reason
+   * to call this: its own presence in the tab is the proof the scripts are
+   * already there. */
+  async panel_prepare(msg, sender) {
+    await injectContentScripts(fanoutTab(msg, sender));
     return { injected: true };
   },
 
@@ -869,8 +769,8 @@ const HANDLERS = {
    *
    * Allow-listed for the same reason `page_broadcast`'s types are, and the two
    * lists are deliberately not one: this one may name a frame, so a type added
-   * here is a type that can be aimed at the top document of any tab. Panel-only
-   * guard first, as in `panel_prepare`.
+   * here is a type that can be aimed at the top document of any tab. Panel-only,
+   * and `fanoutTab` is asked FIRST, as in `panel_prepare`.
    *
    * TWO types, and both answer the same question — "what does the top document
    * say about itself?". `extract_job_posting` reads the posting's JSON-LD;
@@ -891,13 +791,12 @@ const HANDLERS = {
    * ad iframe must not cost the user the form beside it, while a read aimed at
    * frame 0 has no sibling to spare — silence means the panel never read the
    * page, and it must not render that as a fact about the page. */
-  async panel_frame0(msg, _frame, sender) {
-    if (sender?.tab !== undefined) throw new Error("not a panel sender");
+  async panel_frame0(msg, sender) {
+    const tabId = fanoutTab(msg, sender);
     const ALLOWED = ["extract_job_posting", "detect_page"];
     if (!ALLOWED.includes(msg.message?.type)) {
       throw new Error(`not allowed at frame 0: ${JSON.stringify(msg.message?.type)}`);
     }
-    const tabId = fanoutTab(msg, null, sender);
     return unwrapPageReply(
       await chrome.tabs.sendMessage(tabId, msg.message, { frameId: 0 }));
   },
@@ -910,9 +809,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   //
   // BEFORE WEAKENING THIS, read `fanoutTab`'s WHERE THIS STOPS. It trusts a
   // sender with no `tab` as the side panel and lets it name any tab in the
-  // browser — so for a tab-less sender this line is not a second opinion
-  // behind the frame rules, it is the whole of provenance. It used to be
-  // belt-and-braces; the panel made it structural.
+  // browser — so for a tab-less sender this line is the whole of provenance,
+  // not a second opinion.
   if (sender?.id !== chrome.runtime.id) return false;
   // hasOwn, not a bare lookup: `HANDLERS["toString"]` finds a function on
   // Object.prototype, and the type comes from the message.
@@ -921,7 +819,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   (async () => {
     try {
-      sendResponse({ ok: true, data: await handler(msg, frameKey(sender), sender) });
+      sendResponse({ ok: true, data: await handler(msg, sender) });
     } catch (err) {
       // Errors travel as data: sendResponse has no reject channel, and what an
       // Error object looks like on the far side of the message boundary is not

@@ -9,8 +9,8 @@ worker, which is one subject with three parts:
    `openPanelOnActionClick`) and where the hotkey goes (the panel too, since
    R-C). Task 19 deleted the first side panel because those two fought over the
    same click;
-2. `fanoutTab` — which tab a fan-out lands on, and the rule that a content
-   script's named `msg.tabId` is IGNORED while the panel's is honoured;
+2. `fanoutTab` — which tab a fan-out lands on: the panel's named tab, and no
+   routing at all for a content script;
 3. the panel's two doors (`panel_prepare`, `panel_frame0`) driven through the
    REAL router, plus the `sender.id` check that this design promoted from
    redundant to sole defense;
@@ -71,54 +71,10 @@ def test_both_ways_in_open_the_one_panel():
     assert "widget_toggle" not in SW_CODE
 
 
-# ---------- the service worker's half: who may aim the fan-out ----------
+# ---------- who may aim the fan-out: the panel's doors, through the real router
 #
-# `extract` rather than `loadModules` here, and that is the one place the
-# plan's module-loader rule does not apply: `sw.js` never joins the page
-# namespace — it has no IIFE and publishes nothing — so there is no module to
-# load. Its slices are the reason `extract` still exists.
-
-_FANOUT_DRIVER_JS = r"""
-const frameKey = extract("frameKey", "\n// ---- end frameKey ----");
-const fanoutTab = extract("fanoutTab", "\n// ---- end fanoutTab ----");
-// `fanoutTab` reaches `parseFrameKey` as a FREE variable, and `extract`
-// materializes its slice through `vm.runInThisContext` — which resolves free
-// identifiers globally, never against this module's `const`s. A module-scoped
-// binding therefore leaves every content-sender row failing with
-// "parseFrameKey is not defined", which the two rows that expect a throw would
-// have swallowed as a pass. Observed, then fixed the way
-// test_extension_manifest.py's SW driver already does.
-global.parseFrameKey = extract("parseFrameKey", "\n// ---- end parseFrameKey ----");
-main(async () => {
-  const out = {};
-  for (const [name, c] of Object.entries(spec.cases)) {
-    try { out[name] = { tab: fanoutTab(c.msg, frameKey(c.sender), c.sender) }; }
-    catch (err) { out[name] = { error: String(err.message) }; }
-  }
-  emit(out);
-});
-"""
-
-
-def test_fanout_tab_trusts_the_panel_and_never_a_named_tab_from_a_page(tmp_path):
-    out = run_node(_FANOUT_DRIVER_JS, {"cases": {
-        # Panel: no sender.tab; the tab it names is used.
-        "panel": {"sender": {"id": "ext"}, "msg": {"tabId": 7}},
-        "panel_no_tab": {"sender": {"id": "ext"}, "msg": {}},
-        # Top-frame content script: its OWN tab, and a named tabId is IGNORED —
-        # a page's frame must never aim the engine at another tab.
-        "top_frame": {"sender": {"id": "ext", "tab": {"id": 3}, "frameId": 0},
-                      "msg": {"tabId": 999}},
-        "subframe": {"sender": {"id": "ext", "tab": {"id": 3}, "frameId": 4},
-                     "msg": {"tabId": 3}},
-    }}, tmp_path, source=SW_JS)
-    assert out["panel"] == {"tab": 7}
-    assert "error" in out["panel_no_tab"]
-    assert out["top_frame"] == {"tab": 3}          # 999 ignored
-    assert "error" in out["subframe"]
-
-
-# ---------- the panel's two doors, driven through the real router ----------
+# `fanoutTab` is driven here rather than sliced out: `sw.js` never joins the page
+# namespace, and a slice cannot see the one line that hands a handler its sender.
 #
 # The WHOLE service worker runs here, not a slice, and it is the only driver in
 # the repo that does. Two reasons, both about what a slice cannot see:
@@ -126,10 +82,9 @@ def test_fanout_tab_trusts_the_panel_and_never_a_named_tab_from_a_page(tmp_path)
 # * `panel_prepare`/`panel_frame0` are object methods, not `function`
 #   declarations, so `extract` cannot reach them at all; and
 # * what is actually under test is the ROUTER — `Object.hasOwn` on HANDLERS,
-#   the sender check, and the one line that hands a handler `(msg,
-#   frameKey(sender), sender)`. A driver that called the handler directly would
-#   supply that third argument itself and prove nothing about whether the
-#   router ever does. Drop `sender` from the invocation and every sender in the
+#   the sender check, and the one line that hands a handler `(msg, sender)`.
+#   A driver that called the handler directly would supply that argument itself
+#   and prove nothing about whether the router ever does. Drop `sender` from the invocation and every sender in the
 #   browser reads as a panel; the `refuses_a_content_sender` rows below are
 #   what fail when it happens.
 #
@@ -240,6 +195,20 @@ def panel_handlers(tmp_path_factory):
                                "reply": {"ok": False, "error": "no JSON-LD here"},
                                "msg": {"type": "panel_frame0", "tabId": 7,
                                        "message": POSTING}},
+        # A content script asking for either fan-out. Nothing routes for it, not
+        # even to its own tab: the panel is the only caller of both.
+        "attach_from_a_page": {"sender": TOP_FRAME,
+                               "msg": {"type": "attach_pdf", "tabId": 9, "path": "/api/x"}},
+        "broadcast_from_a_page": {"sender": TOP_FRAME,
+                                  "msg": {"type": "page_broadcast", "tabId": 9,
+                                          "message": {"type": "fill_cancel"}}},
+        "broadcast_from_a_subframe": {"sender": {"tab": {"id": 3}, "frameId": 4},
+                                      "msg": {"type": "page_broadcast", "tabId": 3,
+                                              "message": {"type": "fill_cancel"}}},
+        # The one message a content script sends (touch-notice.js). The panel
+        # hears it directly; the router has no handler and releases the channel.
+        "fields_touched": {"sender": TOP_FRAME,
+                           "msg": {"type": "fields_touched", "fids": ["f1"]}},
         # Tab-less, like the panel, and asking for the panel's privilege — but
         # not us. See the test below for why this shape matters now.
         "foreign_extension": {"sender": {"id": "someone-else"},
@@ -277,17 +246,34 @@ def test_the_panel_only_handlers_refuse_a_sender_that_carries_a_tab(panel_handle
     `sender.tab === undefined` is what separates them, and it cannot be forged:
     a page cannot reach onMessage, and a content script cannot shed its tab.
 
-    The REASON is asserted, not merely that it failed. Delete the guard and
-    `panel_prepare` still refuses this sender — but only by accident, because
-    it passes `null` for the frame key and `fanoutTab` then finds no addressable
-    frame. That accident evaporates the day someone passes the real frame key,
-    and a bare "it errored" assertion would have called that day green.
+    The REASON is asserted, not merely that it failed: a bare "it errored"
+    assertion would stay green if the refusal moved to some later, accidental
+    failure.
     """
     for name in ("prepare_from_a_page", "frame0_from_a_page"):
         refused = panel_handlers[name]
         assert refused["reply"] == {"ok": False, "error": "not a panel sender"}, name
         assert refused["injected"] == [], name
         assert refused["addressed"] == [], name
+
+
+def test_a_content_script_gets_no_routing_at_all(panel_handlers):
+    """Naming a tab is the panel's alone. Since the floating card went, no
+    content script calls a fan-out, so there is no sender shape that is allowed
+    to: not a top frame (which once fanned out to its own tab), not a subframe.
+
+    Every row is refused before a tab is addressed, and the reason is asserted
+    for the reason the test above gives. `fields_touched` is the one thing a
+    content script sends; the panel hears it on its own listener and the router
+    ignores it, releasing the channel rather than leaving the sender waiting.
+    """
+    for name in ("attach_from_a_page", "broadcast_from_a_page", "broadcast_from_a_subframe"):
+        refused = panel_handlers[name]
+        assert refused["reply"] == {"ok": False, "error": "not a panel sender"}, name
+        assert refused["addressed"] == [], name
+    ignored = panel_handlers["fields_touched"]
+    assert ignored["declined"] == "the router declined fields_touched"
+    assert ignored["addressed"] == []
 
 
 def test_frame_zero_reads_are_allow_listed_and_addressed_to_the_top_document(panel_handlers):
@@ -331,19 +317,11 @@ def test_frame_zero_reads_are_allow_listed_and_addressed_to_the_top_document(pan
 
 
 def test_a_sender_that_is_not_this_extension_never_reaches_a_handler(panel_handlers):
-    """The router's `sender?.id !== chrome.runtime.id` check, which this change
-    promoted from redundant to load-bearing — which is why it gets a test NOW,
-    having gone untested since it was written.
+    """The router's `sender?.id !== chrome.runtime.id` check, which is load-bearing.
 
-    It used to be belt to `frameKey`'s braces. A tab-less sender that somehow
-    reached the listener produced a null frame key, and every fan-out handler
-    refused it on that basis: no tab, no frame, no fan-out. The id check was
-    the second of two answers to the same question.
-
-    Making the panel work inverted exactly that. Tab-less is now the shape that
-    is TRUSTED — it is the discriminator, and it carries the privilege of
-    naming any tab in the browser. So the id check is no longer a second
-    answer; for a tab-less sender it is the only one. Nothing else in the SW
+    Tab-less is the shape that is TRUSTED — it is the discriminator, and it
+    carries the privilege of naming any tab in the browser. So for a tab-less
+    sender the id check is the only answer. Nothing else in the SW
     would stop another extension's message (were `externally_connectable` ever
     declared) or any future tab-less surface from prepping and reading a tab it
     chose. `sw.js`'s own comment says the check exists so that adding such a

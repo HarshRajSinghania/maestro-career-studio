@@ -93,6 +93,7 @@ EXTENSION_SOURCES = [
 assert EXTENSION_SOURCES, "manifest.json declares no content scripts"
 
 FORM_MODULE_SOURCES = [
+    SHARED / "decisions.js",
     SHARED / "choose.js",
     SHARED / "policy.js",
     SHARED / "profile-fields.js",

@@ -157,12 +157,6 @@ from tests.extension_panel_harness import (
 )
 
 
-# Read for ONE assertion, section 16's: the injected copy of `sanitizeAnswer`
-# that `fillAnswersByQid` has to carry, pinned identical to the shared one.
-OPEN_QUESTIONS_JS = (
-    EXTENSION / "content" / "open-questions.js").read_text(encoding="utf-8")
-
-
 # `loadModules()` runs the real file — the IIFE, the namespace join, the
 # `ns.decisions` publication — rather than slicing one function out of the text
 # with `extract`. A module that never publishes itself, or that throws on load,

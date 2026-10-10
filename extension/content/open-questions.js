@@ -352,31 +352,17 @@ async function applyGuidedChoices(pairs) {
  * matching the answer to an option for selects and radio groups. */
 async function fillAnswersByQid(pairs) {
   const norm = (s) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
-  // Inline copy of `ns.decisions.sanitizeAnswer` (shared/decisions.js since
-  // Task 14). It STAYS a copy for the commit ladder's reason, not by oversight:
-  // this
-  // function is INJECTED into the page, where the namespace does not exist, so
-  // it has to be self-contained. Fix both or neither.
-  const sanitize = (text) => String(text ?? "")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/`{1,3}([^`]*)`{1,3}/g, "$1")
-    .replace(/^\s*(?:[-*•]|\d+[.)])\s+/gm, "")
-    .replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  const sanitize = ns.decisions.sanitizeAnswer;
   // Inline copy of fillFormFromProfile's `visitControl`/`leaveControl` — the
-  // reasoning is there in full, and it STAYS a copy for `sanitize`'s reason:
-  // this function is injected into the page, where the namespace does not
-  // exist. DELIBERATELY OUTSIDE the guarded span below: that regex captures
+  // reasoning is there in full, and it STAYS a copy, pinned by the
+  // ladder test. DELIBERATELY OUTSIDE the guarded span below: that regex captures
   // everything between `setNativeValue` and `commitValue`, and this pair sits
   // above it in both copies so the ladder test compares the same three blocks
   // it always did rather than silently acquiring two more.
   const visitControl = (el) => el?.focus?.({ preventScroll: true });
   const leaveControl = (el) => { if (el?.isConnected) el.blur(); };
   const clickControl = (el) => { visitControl(el); el.click(); leaveControl(el); };
-  // Inline copy of autofill.js's `stillChecked` — see it for the reasoning,
-  // and `sanitize` above for why this file carries copies at all.
+  // Inline copy of autofill.js's `stillChecked` — see it for the reasoning.
   const stillChecked = (el) => el?.isConnected === true && el.checked === true;
   // Inline copy of fillFormFromProfile's setNativeValue + commit ladder — see
   // the reasoning there. All three blocks are kept identical by

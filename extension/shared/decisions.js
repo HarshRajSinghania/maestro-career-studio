@@ -426,12 +426,6 @@
    * a chat window — a heading, a bolded phrase, a bullet, a fence, a rule —
    * arrives in an application as literal `##` and `**` characters.
    *
-   * A SECOND COPY STILL EXISTS and is pinned identical: `fillAnswersByQid` is
-   * INJECTED into the page, where `window.careerStudioCompanion` does not
-   * exist, so it carries the same six-`.replace` chain inline. See
-   * `extension/.slopconfig.json` and
-   * `test_the_injected_copy_of_the_sanitizer_stays_identical_to_the_shared_one`.
-   *
    * Each line strips a marker and KEEPS its content, which is the whole
    * posture: nothing here decides an answer is wrong, only that a form field
    * cannot render it. The blank-line collapse is the one that is about reading

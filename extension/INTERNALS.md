@@ -474,9 +474,10 @@ know, and each one was learned from a live failure.
   broadcastable, asked of every frame only when frame 0 has no answer. A frame
   that does not answer one of these two reads is logged at debug level, not
   warned: they run on most pages, and a warning lands in chrome://extensions →
-  Errors. Content scripts are the
-  fill engine and the field work and NOTHING else since R-C deleted the floating
-  card, so `fanoutTab`'s content-script branch is a written rule with no caller.
+  Errors. Content scripts are the fill engine and the field work and NOTHING
+  else: `fanoutTab` refuses any sender that carries a tab, so no content script
+  can route a message to a tab (its one message, `fields_touched`, has no SW
+  handler; the panel hears it directly).
 - **The COMMIT GESTURE.** `visitControl`/`leaveControl` (plus the
   `guided`-prefixed and injected copies) wrap everything that is not a text
   commit, because a `<select>` set through the native setter and a radio driven
@@ -1489,6 +1490,17 @@ comma-separated.
   thing they are asked — the detection read — is synchronous and
   side-effect-free. This is a personal, locally loaded extension — narrow it if
   that bothers you.
+- **`tabs` stays.** Without it Chrome omits `tab.url` (and `changeInfo.url`) for
+  any tab outside `host_permissions` — `chrome://newtab`, settings, the PDF viewer.
+  A bound tab that navigates from a posting to one of those then fires
+  `tabs.onUpdated` with a status and no url, `onTab` never runs, and the panel
+  keeps the posting it left (`healPosting` sees a loaded preview and does
+  nothing). Measured in Chromium, same tab, `http` page to `chrome://version`:
+  with `tabs`, `{status: "loading", url: "chrome://version/"}`; without, only
+  `{status: "loading"}` and `{status: "complete"}`. A tab SWITCH still unbinds
+  (`tabs.get` gives no url, read as `""`), and posting to posting keeps its url
+  either way. Dropping the permission needs a deliberate unbind on url-less
+  loads first.
 - **The per-application Q&A transcript is not in the panel** — a chat log is
   list-shaped, versioned and re-readable, and a 400px rail is the wrong place
   for it. The composer for the question in front of you stays; the header's

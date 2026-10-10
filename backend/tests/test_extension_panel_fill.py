@@ -60,12 +60,6 @@ from tests.extension_panel_harness import (
     _walk,
 )
 
-# Read for ONE assertion, the drawer's: the injected copy of `sanitizeAnswer`
-# that `fillAnswersByQid` has to carry, pinned identical to the shared one.
-OPEN_QUESTIONS_JS = (
-    EXTENSION / "content" / "open-questions.js").read_text(encoding="utf-8")
-
-
 # ---------- the Fill stage: choose the pass, run it, read what it did -------
 #
 # THE RUN IS THE STAGE. Everything under this row is either the choice the user
@@ -2521,35 +2515,6 @@ def test_what_the_reader_needs_survives_and_what_the_backend_omits_is_empty(sani
     assert sanitized["nothing"] == ""
     # The residue the docstring names, visible rather than discovered live.
     assert sanitized["triple_emphasis"] == "I *owned* it."
-
-
-def test_the_injected_copy_of_the_sanitizer_stays_identical_to_the_shared_one():
-    """The ONE copy of this function that is allowed to exist, and the pin that
-    keeps it honest.
-
-    `fillAnswersByQid` (content/open-questions.js) is INJECTED into the page,
-    where `window.careerStudioCompanion` does not exist — so it cannot read the
-    shared module and carries its own copy, exactly as it carries its own commit
-    ladder and for the same reason. That copy is registered in
-    `extension/.slopconfig.json` rather than hidden by a re-baseline.
-
-    What a registration cannot do is notice the two drifting, and this chain is
-    six `.replace` calls: a fix applied to one copy leaves the other stripping
-    five markers out of six, and the answers it writes into the page keep the
-    sixth. So they are compared, comments and whitespace ignored —
-    `test_both_copies_of_the_commit_ladder_stay_identical`'s shape, for the
-    other block in the same injected function.
-    """
-    chain = r'String\(text \?\? ""\)(?:\s*\.replace\([^\n]*\))+\s*\.trim\(\);'
-    copies = re.findall(chain, DECISIONS_JS + OPEN_QUESTIONS_JS, re.S)
-    assert len(copies) == 2, f"expected two sanitizers, found {len(copies)}"
-
-    def strip(text):
-        return re.sub(r"\s+", " ", re.sub(r"//[^\n]*", "", text)).strip()
-
-    assert strip(copies[0]) == strip(copies[1]), (
-        "the shared sanitizer and its injected copy have diverged — fix both "
-        "or neither")
 
 
 _QNA_DRIVER_JS = _PANEL_FAKES_JS + r"""

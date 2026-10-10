@@ -162,6 +162,21 @@ def test_ai_fill_counts_a_reformatted_answer_as_answered(tmp_path):
     assert result["filled"] == ["q1"]
 
 
+def test_ai_fill_writes_the_sanitized_answer_not_the_models_markdown(tmp_path):
+    """`fillAnswersByQid` reads `sanitizeAnswer` from the shared module, so what
+    lands in the box is the unformatted answer. Drive it through the fill, not
+    the function: a copy that stopped being called would pass the table in
+    test_extension_panel_fill.py and still paste markdown into a cover letter."""
+    result = _run_scenario(
+        tmp_path,
+        fields=[{"label": "Why now?", "kind": "textarea", "qid": "q1"}],
+        pairs=[{"qid": "q1", "kind": "textarea",
+                "answer": "## Why\nI led **three** migrations with `pytest`.\n- one\n\n\n\nTwo."}],
+    )
+    assert result["filled"] == ["q1"]
+    assert result["values"]["Why now?"] == "Why\nI led three migrations with pytest.\none\n\nTwo."
+
+
 def test_ai_fill_runs_the_same_ladder_rungs(tmp_path):
     """The whole risk of the duplicated ladder is one copy losing a rung."""
     events = _run_scenario(

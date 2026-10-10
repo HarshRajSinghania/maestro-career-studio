@@ -1,4 +1,4 @@
-"""The manifest contract, the frame keys, and why the service worker exists.
+"""The manifest contract, the backend-path guard, and why the service worker exists.
 
 Almost nothing in `extension/sw.js` can be tested from here. `chrome.*` does not
 exist in Node, the harness models a PAGE rather than an extension runtime, and
@@ -30,10 +30,10 @@ things that are real:
    is proxied through the SW. Half of that claim lives in this repo and is
    asserted below against the real app; the other half does not.
 
-4. **The pure helpers the router is built from** — the frame key and the
-   backend-path guard — run in node against `extension/sw.js` itself. They are
-   the parts with edge cases: a key that cannot be addressed again, and a path
-   that moves the host it is concatenated onto.
+4. **The pure helpers the router is built from** — the backend-path guard and
+   the request-init filter — run in node against `extension/sw.js` itself. They
+   are the parts with edge cases: a path that moves the host it is concatenated
+   onto, and an init that sets headers.
 
 WHAT IS NOT COVERED, and what would settle it — recorded here rather than in a
 report, because the next person to touch this file is the one who needs it:
@@ -362,6 +362,9 @@ def test_the_side_panel_is_registered_and_owns_the_toolbar_click(manifest):
     assert "activeTab" not in manifest["permissions"], (
         "activeTab was the first panel's; nothing in extension/ uses it"
     )
+    # `tabs` is load-bearing: without it a tab that navigates from a posting to
+    # chrome://newtab reports no url, and the panel keeps the stale job
+    # (INTERNALS.md, "`tabs` stays").
     assert set(manifest["permissions"]) == {
         "storage", "tabs", "webNavigation", "scripting", "sidePanel",
     }
@@ -505,34 +508,19 @@ def test_backend_cors_admits_the_extension_and_no_ats_host(origin, allowed):
         assert "access-control-allow-origin" not in response.headers
 
 
-# ---------- frame keys ----------
+# ---------- the proxy's helpers ----------
 
 _SW_HELPERS_DRIVER_JS = r"""
-const frameKey = extract("frameKey", "\n// ---- end frameKey ----");
-const parseFrameKey = extract("parseFrameKey", "\n// ---- end parseFrameKey ----");
 const assertBackendPath = extract("assertBackendPath", "\n// ---- end assertBackendPath ----");
 const proxyInit = extract("proxyInit", "\n// ---- end proxyInit ----");
 const api = extract("api", "\n// ---- end api ----");
-const sendToFrame = extract("sendToFrame", "\n// ---- end sendToFrame ----");
 
-// The extracted functions reach these as free variables. Only the recorders
-// are fake: what is under test is which address `sendToFrame` ends up calling
-// and which init `api` ends up handing to fetch, so the fakes record and
-// return, and never decide anything.
-global.frameKey = frameKey;
-global.parseFrameKey = parseFrameKey;
+// The extracted functions reach `getSettings` as a free variable. Only the
+// recorders are fake: what is under test is which init `api` ends up handing to
+// fetch, so the fakes record and return, and never decide anything.
 global.getSettings = async () => ({ backendUrl: "http://localhost:8001" });
 
-let sent = [];
 let fetched = [];
-global.chrome = {
-  tabs: {
-    sendMessage: (tabId, message, options) => {
-      sent.push({ tabId, message, options });
-      return Promise.resolve("delivered");
-    },
-  },
-};
 global.fetch = (url, init) => {
   fetched.push({ url, init });
   return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
@@ -552,36 +540,6 @@ main(async () => {
     resolved[name] = { host, allowed };
   }
 
-  const keys = {};
-  for (const [name, sender] of Object.entries(spec.senders)) {
-    keys[name] = frameKey(sender);
-  }
-  const parsed = {};
-  for (const [name, key] of Object.entries(spec.keys)) {
-    parsed[name] = parseFrameKey(key);
-  }
-  // Every key the SW can MINT has to be one it can also address, or a fill
-  // dispatch aims at nothing.
-  const roundTrip = Object.fromEntries(
-    Object.entries(keys)
-      .filter(([, key]) => key !== null)
-      .map(([name, key]) => [name, parseFrameKey(key)])
-  );
-  // Who may address whom. Recorded as "did chrome.tabs.sendMessage happen at
-  // all, and with what address" rather than "did it throw", because the
-  // hazard is a fill arriving somewhere nobody asked for.
-  const dispatch = {};
-  for (const [name, attempt] of Object.entries(spec.dispatches)) {
-    sent = [];
-    let error = null;
-    try {
-      await sendToFrame(attempt.sender, attempt.target, { type: "fill" });
-    } catch (e) {
-      error = String(e.message);
-    }
-    dispatch[name] = { error, sent };
-  }
-
   // What actually reaches fetch. `guarded` is the composition HANDLERS.api
   // uses; `unguarded` is the same call without the filter, and it is here to
   // show the leak is real rather than theoretical.
@@ -598,7 +556,7 @@ main(async () => {
   await api("/api/jobs/1", hostile);
   const unguarded = fetched[0];
 
-  emit({ keys, parsed, roundTrip, resolved, dispatch, guarded, unguarded });
+  emit({ resolved, guarded, unguarded });
 });
 """
 
@@ -610,50 +568,6 @@ def sw_helpers(tmp_path_factory) -> dict:
     return run_node(
         _SW_HELPERS_DRIVER_JS,
         {
-            "senders": {
-                "top": {"tab": {"id": 7}, "frameId": 0},
-                "subframe": {"tab": {"id": 7}, "frameId": 3},
-                "otherTab": {"tab": {"id": 12}, "frameId": 3},
-                # Any extension page (the panel was one): no tab at all.
-                "extensionPage": {"frameId": 0},
-                # Chrome's TAB_ID_NONE. A number, and addressable by nothing.
-                "noTab": {"tab": {"id": -1}, "frameId": 0},
-                # A sender that somehow lost its frame: must not become the top
-                # frame by default.
-                "noFrameId": {"tab": {"id": 7}},
-            },
-            "dispatches": {
-                # The widget, in the top frame, addressing the application
-                # subframe. The one case that must work.
-                "widgetToFormFrame": {
-                    "sender": {"tab": {"id": 7}, "frameId": 0},
-                    "target": "7:3",
-                },
-                # An ad iframe on a Greenhouse posting, naming its sibling.
-                "adFrameToSibling": {
-                    "sender": {"tab": {"id": 7}, "frameId": 9},
-                    "target": "7:3",
-                },
-                # …and naming the top frame.
-                "adFrameToTop": {
-                    "sender": {"tab": {"id": 7}, "frameId": 9},
-                    "target": "7:0",
-                },
-                # A top frame reaching into somebody else's tab.
-                "crossTab": {
-                    "sender": {"tab": {"id": 7}, "frameId": 0},
-                    "target": "12:0",
-                },
-                # An extension page: no tab, so no frame to speak from.
-                "noTabSender": {
-                    "sender": {"frameId": 0},
-                    "target": "7:0",
-                },
-                "junkTarget": {
-                    "sender": {"tab": {"id": 7}, "frameId": 0},
-                    "target": "7",
-                },
-            },
             "paths": {
                 "route": "/api/jobs/match?url=https://acme.test/job/1",
                 "atSignInPath": "/questions/1@2",
@@ -663,95 +577,10 @@ def sw_helpers(tmp_path_factory) -> dict:
                 "protocolRelative": "//evil.test/x",
                 "relative": "api/jobs",
             },
-            "keys": {
-                "top": "7:0",
-                "subframe": "7:3",
-                "empty": "",
-                "oneHalf": "7",
-                "threeParts": "7:3:1",
-                "negative": "-1:0",
-                "notNumbers": "tab:frame",
-                "trailingSpace": "7:0 ",
-                # JS `$` without /m is strict end-of-input, unlike Python's,
-                # which accepts a trailing newline. Pinned because the next
-                # reader of that regex works in Python all day.
-                "trailingNewline": "7:0\n",
-            },
         },
-        tmp_path_factory.mktemp("frame-keys"),
+        tmp_path_factory.mktemp("sw-helpers"),
         source=(EXTENSION / "sw.js").read_text(encoding="utf-8"),
     )
-
-
-def test_a_frame_key_names_a_frame_not_a_tab(sw_helpers):
-    """`all_frames` means one tab sends many messages, so the tab id alone is
-    not an identity — which is the reason the SW keys on the pair at all."""
-    keys = sw_helpers["keys"]
-    assert keys["top"] == "7:0"
-    assert keys["subframe"] == "7:3"
-    assert keys["top"] != keys["subframe"]
-    assert keys["subframe"] != keys["otherTab"]
-
-
-def test_a_sender_that_is_not_an_addressable_frame_gets_no_key(sw_helpers):
-    """Three ways to have no frame, all of which used to be spellable as a key.
-
-    `noFrameId` is the one that matters: defaulted to 0 it would silently name
-    the TOP frame, so a fill meant for the application subframe would run
-    against the marketing page.
-    """
-    keys = sw_helpers["keys"]
-    assert keys["extensionPage"] is None
-    assert keys["noTab"] is None
-    assert keys["noFrameId"] is None
-
-
-def test_a_minted_key_can_always_be_addressed_again(sw_helpers):
-    """Round-trip, as numbers: `chrome.tabs.sendMessage` takes a numeric tab id
-    and a string one silently addresses nothing."""
-    assert sw_helpers["roundTrip"] == {
-        "top": {"tabId": 7, "frameId": 0},
-        "subframe": {"tabId": 7, "frameId": 3},
-        "otherTab": {"tabId": 12, "frameId": 3},
-    }
-
-
-# ---------- who may address whom ----------
-
-
-def test_only_the_top_frame_may_aim_the_fill_engine(sw_helpers):
-    """A frame key arrives in a MESSAGE, and the recipient is our fill engine.
-
-    The widget mounts only in the top frame (design §3.1), so a request to
-    message another frame that comes from a subframe is not the UI — on a
-    Greenhouse posting it is an ad iframe naming the frame that holds the
-    application form. Asserted as "nothing was dispatched", not "it threw":
-    what matters is that no fill arrived anywhere.
-    """
-    dispatch = sw_helpers["dispatch"]
-
-    legitimate = dispatch["widgetToFormFrame"]
-    assert legitimate["error"] is None
-    assert legitimate["sent"] == [
-        {"tabId": 7, "message": {"type": "fill"}, "options": {"frameId": 3}}
-    ], "the frameId option is the point: without it every frame gets the message"
-
-    for name in ("adFrameToSibling", "adFrameToTop"):
-        assert dispatch[name]["sent"] == [], f"{name} reached a frame"
-        assert "top frame" in dispatch[name]["error"]
-
-
-def test_a_frame_cannot_reach_into_another_tab(sw_helpers):
-    """Nothing a user did in one tab authorises a fill in a different one."""
-    crossed = sw_helpers["dispatch"]["crossTab"]
-    assert crossed["sent"] == []
-    assert "cross-tab" in crossed["error"]
-
-
-def test_a_dispatch_needs_a_real_sender_and_a_real_target(sw_helpers):
-    dispatch = sw_helpers["dispatch"]
-    assert dispatch["noTabSender"]["sent"] == []
-    assert dispatch["junkTarget"]["sent"] == []
 
 
 # ---------- the proxy's one input ----------
@@ -821,19 +650,6 @@ def test_a_proxied_path_cannot_move_the_backend_host(sw_helpers):
         assert resolved[name]["allowed"] is False
 
 
-def test_a_key_that_is_not_two_numbers_is_rejected(sw_helpers):
-    """Rejected rather than coerced. `parseInt("7:3:1")` is 7, which is a real
-    tab and the wrong frame — a wrong address is worse than no address."""
-    parsed = sw_helpers["parsed"]
-    assert parsed["top"] == {"tabId": 7, "frameId": 0}
-    assert parsed["subframe"] == {"tabId": 7, "frameId": 3}
-    for junk in (
-        "empty", "oneHalf", "threeParts", "negative",
-        "notNumbers", "trailingSpace", "trailingNewline",
-    ):
-        assert parsed[junk] is None, f"{junk} parsed to something"
-
-
 def test_the_explicit_route_injects_before_giving_up(manifest):
     """"The icon does nothing" — the reported bug, and its real cause.
 
@@ -864,7 +680,7 @@ def test_the_explicit_route_injects_before_giving_up(manifest):
     assert re.search(r"allFrames:\s*true", sw)
 
     body = re.search(
-        r"async panel_prepare\(msg, _frame, sender\) \{(.*?)\n  \},", sw, re.S)
+        r"async panel_prepare\(msg, sender\) \{(.*?)\n  \},", sw, re.S)
     assert body, "panel_prepare is not where this test expects it"
     assert body.group(1).count("injectContentScripts(") == 1, (
         "panel_prepare no longer injects exactly once")
