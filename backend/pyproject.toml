@@ -3,11 +3,16 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "maestro-career-studio-backend"
+name = "maestro-career-studio"
 version = "0.8.0"
+description = "A local job-application copilot: ATS scoring, resume tailoring, an MCP server and a Chrome Companion, run with one command."
+readme = "PYPI.md"
 license = { text = "Apache-2.0" }
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
 ]
 requires-python = ">=3.12"
 dependencies = [
@@ -40,7 +45,21 @@ dependencies = [
     # migration; `pip install -e ".[mcp]"` is otherwise silently broken.
     # HTTP session idle timeout and request body size require 1.29.1 or later.
     "mcp>=1.29.1,<2",
+    # The `maestro` command (maestro_cs): process identity and tree kill on every OS,
+    # and the install's maestro.env read in-process.
+    "psutil>=7",
+    "python-dotenv>=1",
+    # Node for the bundled web server, so a uv install needs no separate Node. Excluded
+    # from the Docker lock (pip-compile --unsafe-package, see backend/Dockerfile): the
+    # containers never run it.
+    "nodejs-wheel-binaries>=24,<25",
 ]
+
+[project.urls]
+Homepage = "https://github.com/seinun-ai/maestro-career-studio"
+Source = "https://github.com/seinun-ai/maestro-career-studio"
+Changelog = "https://github.com/seinun-ai/maestro-career-studio/blob/main/CHANGELOG.md"
+Issues = "https://github.com/seinun-ai/maestro-career-studio/issues"
 
 [project.optional-dependencies]
 tracing = ["langfuse>=4"]
@@ -63,11 +82,13 @@ dev = [
 mcp = []
 
 [project.scripts]
+maestro = "maestro_cs.cli:main"
+# Legacy stdio entry point; stays for one release (SYSTEM.md §13 mcp-stdio-venv).
 maestro-career-studio-mcp = "mcp_server.server:main"
 
 [tool.setuptools.packages.find]
-include = ["app*", "mcp_server*"]
-exclude = ["tests*", "migrations*", "mcp_server.tests*"]
+include = ["app*", "mcp_server*", "migrations*", "maestro_cs*"]
+exclude = ["tests*", "mcp_server.tests*"]
 
 # Runtime data the app loads from disk at import/request time. Without this a
 # wheel install ships the .py files only, and the app fails at runtime on a
@@ -90,6 +111,18 @@ app = [
     "automations/skills/*/SKILL.md",
     # Copy setup prompt reads this once. Not a skill: a skill folder needs a card.
     "automations/bot-setup.md",
+]
+
+# Alembic's script template and the prompt-default lock the migrations read at run time.
+migrations = ["script.py.mako", "prompt_defaults.lock.json"]
+# The env template, bundled data, and the Next standalone bundle Task 12's build step
+# stages under maestro_cs/web (hidden files and .next included).
+maestro_cs = [
+    "maestro.env.template",
+    "data/*.json",
+    "web/**/*",
+    "web/**/.*",
+    "web/.next/**/*",
 ]
 
 [tool.pytest.ini_options]

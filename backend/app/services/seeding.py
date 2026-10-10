@@ -41,8 +41,11 @@ DEMO_SLUG = "example"
 
 
 def run_migrations() -> None:
-    alembic_ini = Path(__file__).resolve().parents[2] / "alembic.ini"
-    command.upgrade(Config(str(alembic_ini)), "head")
+    # No alembic.ini: in a wheel this file sits in site-packages/app/services/, so parents[2] is
+    # site-packages, where the `migrations` package is installed; in a checkout it is backend/.
+    cfg = Config()
+    cfg.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "migrations"))
+    command.upgrade(cfg, "head")
 
 
 def _display_name(slug: str) -> str:

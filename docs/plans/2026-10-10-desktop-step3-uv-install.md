@@ -1463,3 +1463,7 @@ Run each, record in the Gate table (with numbers), fix or log anything red.
 
 | Task | Plan said | Did instead | Why |
 |---|---|---|---|
+| 1 | Step 4: regenerate `backend/requirements.lock` in `python:3.12-slim` (+ `--unsafe-package nodejs-wheel-binaries`), update the Dockerfile recipe comment | Not done: Docker is not running | Release-time item. Until then the lock still names `maestro-career-studio-backend` in its `# via` comments and lacks `psutil`; the Dockerfile's `--no-deps -e .` therefore leaves the image without `psutil`, which only `maestro_cs` imports (not yet used by any Docker path). Regenerate before the next image build. |
+| 1 | `pip uninstall -y … && pip install -e backend` in the branch venv | `uv pip uninstall` / `uv pip install -e backend` with `VIRTUAL_ENV` set | The branch venv has no `pip` module; uv is on PATH. Result: `maestro` and `maestro-career-studio-mcp` shims resolve, mcp stays 1.29.1. |
+| 1 | `test_run_migrations_location.py`: "reuse its database fixture pattern" | Standalone test with a `tmp_path` file and `TEST_DATABASE_URL`, no shared fixture | The shared `db_session` fixture clears the session DB; this test must migrate a fresh file from scratch. |
+| 1 | Project URLs "the GitHub repo" | `https://github.com/seinun-ai/maestro-career-studio` | That is the repo's `origin` and the README's owner. |
