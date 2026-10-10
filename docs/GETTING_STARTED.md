@@ -222,6 +222,9 @@ Docker route.
   the repository's `extension` folder ([step 4](#4-the-companion-browser-extension-optional)).
 - **PDFs** render with the Typst engine that ships inside. LaTeX templates need
   TeX on your computer; without it Maestro builds them through Typst and says so.
+  TeX Live 2025 needs its pdfTeX update (1.40.28 or later); on the first 2025
+  release a template whose words would print on top of each other is refused
+  with that fix named.
 - **Something wrong?** `maestro status` and `maestro logs` come first. A port in
   use is named in the message. `maestro check` prints the install's facts as JSON
   to paste into an issue; it makes no network call.

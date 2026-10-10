@@ -507,6 +507,8 @@ interface EngineProbe {
   version: string | null;
   path: string | null;
   reason: string | null;
+  /** Available, with a known defect worth fixing (e.g. pdfTeX 1.40.27). */
+  warning: string | null;
 }
 
 export interface SetupStatus {

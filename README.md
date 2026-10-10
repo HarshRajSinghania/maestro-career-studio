@@ -209,6 +209,9 @@ deleting the folder deletes your data.
   [connect your agent](#driving-it-from-claude-codex-or-chatgpt-mcp).
 - **PDFs** render with the Typst engine that ships inside. LaTeX templates need
   TeX on your computer; without it they build through Typst and the app says so.
+  TeX Live 2025 needs its pdfTeX update (1.40.28 or later); on the first 2025
+  release a template whose words would print on top of each other is refused
+  with that fix named.
 - **What it contacts, and when:** [PRIVACY.md](PRIVACY.md#what-the-maestro-command-and-first-start-download).
 - **Updating** is `maestro update`; see [Updating](#updating).
 
@@ -879,7 +882,9 @@ support the default mode (some network drives), set
 **PDFs fail to build:**
 LaTeX templates need TeX, which the app's Docker image includes. On a uv install
 or any backend outside Docker, without TeX, LaTeX templates build through a Typst
-template instead and the app says so.
+template instead and the app says so. A template marked "text overprints" on
+TeX Live 2025 needs pdfTeX 1.40.28 or later: install TeX Live 2026 (or update
+TeX Live 2025 with `tlmgr`), then re-validate the template.
 
 **The app came up empty after updating from v0.3.0 or older:**
 Your data isn't gone — it's still in the old Postgres volume. See

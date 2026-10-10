@@ -326,7 +326,7 @@ def test_check_keys_and_code_head(tmp_path):
     assert report["code_head"] == head_of_checkout()
     assert report["db_revision"] == "abc123"
     assert set(report["engines"]) == {"pdflatex", "typst"}
-    assert set(report["engines"]["typst"]) == {"name", "available", "version", "path", "reason"}
+    assert set(report["engines"]["typst"]) == {"name", "available", "version", "path", "reason", "warning"}
     assert report["web"] is False and report["node"] == "v22.1.0"
     assert run.calls == []
 

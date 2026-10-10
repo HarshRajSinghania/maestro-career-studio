@@ -392,7 +392,10 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   `derived.agrees_to_terms`.
 - **PDF word-spacing** `{#inv-pdf-word-spacing}`: pdflatex+XCharter joins words for strict extractors;
   `pdfinterwordspaceon` + the parse_certified gate protect this — see the shared header partial `_header.tex.j2`, which
-  BOTH resume and cover-letter templates include (format/scanner changes must handle both).
+  BOTH resume and cover-letter templates include (format/scanner changes must handle both). pdfTeX 1.40.27 misplaces
+  that space for fonts with their own `/space` (Helvetica, Times, Fira Mono) → overprinted words that still extract
+  cleanly; `template_validation.text_overprints` refuses such a LaTeX sample and `engines` warns on that build. A uv
+  install uses the HOST's TeX, not Docker's TL 2026 — a PDF's `PTEX.Fullbanner` names the pdfTeX that made it.
 - **A render never changes engine silently** `{#inv-render-fallback-explained}`: `services/engines` is the ONE probe;
   `MAESTRO_CS_PDFLATEX` overrides and fails CLOSED. Without `pdflatex`, `pdf_render.resolve_render_template` uses the
   first ready Typst template for LaTeX resumes, bases and cover letters; `render_note` names both. VALIDATION never
