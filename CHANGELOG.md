@@ -53,8 +53,10 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 ### Changed
 
 - Langfuse tracing is an optional extra; the Docker image still includes it.
-- Backend image copies files with the app user's ownership and excludes tests,
-  calibration and native-install scripts; the Docker sync-key tool stays available.
+- Backend image copies files with the app user's ownership and excludes tests
+  and every backend script except `scripts/sync_key.py`, the Docker sync-key
+  tool; dev tools (pytest, ruff) are no longer installed in it. mako moves off
+  the yanked 1.4.0 to 1.4.3, and the image shrinks from about 1.88 GB to 1.72 GB.
 
 ### Fixed
 

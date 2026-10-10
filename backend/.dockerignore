@@ -10,3 +10,10 @@ scripts/*
 .ruff_cache/
 .slop-baseline.json
 .slopconfig.json
+.venv/
+venv/
+*.egg-info/
+.env
+data/
+.coverage
+htmlcov/

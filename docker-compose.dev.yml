@@ -4,7 +4,6 @@ services:
       - ./backend/app:/app/app
       - ./backend/migrations:/app/migrations
       - ./backend/alembic.ini:/app/alembic.ini
-      - ./backend/tests:/app/tests
       - ./applications:/app/applications
       - ./settings:/app/settings
       - ./logs:/app/logs

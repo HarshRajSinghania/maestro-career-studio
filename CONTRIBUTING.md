@@ -260,7 +260,7 @@ When submitting a pull request:
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
-The dev overlay bind-mounts `backend/app` (plus `migrations/` and `tests/`)
+The dev overlay bind-mounts `backend/app` (plus `migrations/`)
 and runs `uvicorn --reload`, and builds the frontend from `Dockerfile.dev`
 with `frontend/app`, `components`, `lib`, `hooks` and `public` mounted under
 `npm run dev`. Plain `docker compose up` stays the production build, because dev
