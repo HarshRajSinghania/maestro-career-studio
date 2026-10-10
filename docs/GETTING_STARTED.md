@@ -206,8 +206,9 @@ folder to your `C:` drive from the Ubuntu window and load the copy instead:
 doesn't update itself, so repeat that command after every update.
 
 There is nothing to set up if you kept the default ports. If you changed the
-ports in `.env`, the extension's addresses are set in `extension/sw.js`
-(`DEFAULTS`), or can be overridden in the extension's stored settings.
+ports in `.env`, open `chrome://extensions` → **Details** on the Maestro CS
+Companion card → **Extension options**. Set **Backend address** and **App address**,
+press **Test connection**, then **Save**. Close and reopen the panel to use them.
 
 The Companion records which form fields it could fill, and keeps that on your
 computer. There is no on/off switch in the panel: to turn it off, set
@@ -366,8 +367,10 @@ there is anything new, run `./scripts/update.sh --check` — it changes nothing.
   upgraded. The script tells you it is waiting.
 - **Two things are manual:** reload the extension at `chrome://extensions`
   (and reload any job tab that was already open), and restart your AI
-  assistant app (re-running `./scripts/setup-mcp.sh` if you used it). The
-  script reminds you of both.
+  assistant app. If you still use the legacy stdio setup, re-run
+  `./scripts/setup-mcp.sh`; URL connections need no setup changes. Reinstall the
+  Claude Desktop bundle once if yours is the older Docker-based one. The script
+  reminds you of these steps.
 
 Updating from an older version? Read [UPDATING.md](UPDATING.md) first. The
 [README's Updating section](../README.md#updating) covers the manual steps,

@@ -30,6 +30,10 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ### Breaking changes
 
+- **Claude Code and Codex plugins now connect to `http://localhost:8001/mcp`**
+  instead of running `docker exec`. They need v0.9.0 images: earlier images
+  have no `/mcp` endpoint. If you changed `BACKEND_HOST_PORT`, use Settings ›
+  Connected agents › **Connect an agent app** instead of the plugin.
 - **Pre-rename environment variables are now ignored silently:**
   `CAREER_STUDIO_EXTENSION_IDS`, `CAREER_STUDIO_MCP_PROFILE`,
   `CAREER_STUDIO_MCP_CLIENT`, `CAREER_STUDIO_PDF_DIR`,
@@ -60,7 +64,13 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 - The Claude Desktop **`.mcpb` bundle is a Node stdio-to-HTTP bridge**.
   Reinstall it if you used the older Docker-based bundle. Claude needs no
-  Docker or Python on its side; Claude Code and Codex plugins connect by URL.
+  Docker or Python on its side; the bundle supports macOS, Windows and Linux.
+  Claude Code and Codex plugins connect by URL.
+- **`mcp` is now a core dependency.** The `[mcp]` extra remains as an empty
+  compatibility alias for existing install commands.
+- **The Codex plugin asks before consequential tools**, including consent,
+  submission, login and upload hand-offs, restores, health-gate waivers,
+  KB approval and sync, in addition to Maestro's own consent gates.
 - Langfuse tracing is an optional `tracing` extra. Docker and native installs still
   include it; a source/dev install gets it with `pip install -e ".[tracing]"` from
   `backend/`.

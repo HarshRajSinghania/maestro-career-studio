@@ -147,8 +147,9 @@ Docker can't update these two:
    your install predates the extension's fixed ID, press **Remove** and **Load
    unpacked** again instead ([details](../extension/README.md)).
 2. **Restart your AI assistant** (Claude, Codex, ChatGPT desktop) so it sees new
-   tools. If you set the MCP server up with `./scripts/setup-mcp.sh`, re-run it
-   too — it picks up new dependencies.
+   tools. If you still use the legacy stdio setup, re-run `./scripts/setup-mcp.sh`
+   to pick up dependencies. URL connections need no setup changes. Reinstall
+   the Claude Desktop bundle once if yours is the older Docker-based one.
 
 ## Freeing disk space
 

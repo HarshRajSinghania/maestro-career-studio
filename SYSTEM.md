@@ -658,7 +658,7 @@ with the failure mode that bought it. Code citing "§8" lands here.
 - **A USER updates instead** — `./scripts/update.sh`: online SQLite snapshot
   (`app.tools.backup_db --stdout` through the running backend container, else the checkout's own image tag —
   `.env`'s `latest` can predate the tool; 0600, magic-byte checked) → ff-only to the newest `v*` tag → images pinned to that tag →
-  health poll → extension/MCP reminders (README "Updating"; `docs/RELEASING.md` cuts one). Checkout and images
+  health poll → extension/MCP reminders (only legacy stdio re-runs setup-mcp.sh; an old Docker `.mcpb` is reinstalled once; README "Updating"). Checkout and images
   move TOGETHER: a bare `docker compose pull` skews an install (docs/UPDATING.md). Contributors build. **Pre-v0.4.0 guard:** a `<project>_pgdata` volume with no
   `data/.migrated-from-postgres.json` makes `--check` warn and an update exit before touching anything; a
   v0.3.0 user's OWN old script skips the guard (recovery steps: docs/UPDATING.md, which holds both rules).

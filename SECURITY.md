@@ -35,9 +35,14 @@ reach REST and read or change your data. MCP uses the same FastAPI app and the
 same Host → Origin → CORS checks as REST. Consequences:
 
 - **Never bind these services to `0.0.0.0`, a LAN interface, or the public
-  internet. Never publish port 8001 or proxy `/mcp` beyond this computer.** This
-  includes MCP client tunnel options. The sealed `/api/sync` channel in §5 is
-  the only route intended for another machine.
+  internet.** If you must reach the app from another machine, put it behind a
+  reverse proxy that terminates TLS and enforces authentication itself, and add
+  that proxy's hostname to **both** `ALLOWED_HOSTS` and `FRONTEND_ALLOWED_HOSTS`,
+  plus its origin to `ALLOWED_WEB_ORIGINS` (§3). All three, or one of the layers
+  refuses the traffic.
+- **Never publish port 8001 or proxy `/mcp` beyond this computer.** This
+  includes MCP client tunnel options. The authenticated proxy route above is
+  for REST and the web app; `/mcp` stays local.
 - Anything else running as your user on the same machine can reach the API. This
   is inherent to the design, and it is the trade that buys you a tool with no
   cloud account attached.

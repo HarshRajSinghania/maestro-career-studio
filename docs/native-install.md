@@ -18,8 +18,9 @@ instead.
 
 - Linux (the memory numbers below were measured on arm64).
 - Python 3.12 or newer, with the `venv` module.
-- Room for the backend's 200 MB RSS budget at rest, plus your agent. The HTTP MCP
-  measurement is pending; scoring needs the extra burst below.
+- Room for the backend's 200 MB RSS budget at rest, plus your agent. One `/mcp`
+  session added about 2.5 MB RSS on macOS; the Linux arm64 reading is still
+  pending. Scoring needs the extra burst below.
 - Disk for resumes, rendered PDFs and the database, plus about 300 MB for the
   scoring model, which downloads on the first score.
 - A clone of this repository. The scripts run from the clone; your data lives
@@ -234,7 +235,8 @@ On a machine near 640 MB, the order of your work matters more than any setting.
   Open it only to browse job sites and fill forms.
 - **Measure the total.** MCP now shares the backend process. Read `/health/memory`
   after connecting and `free -m` for the whole machine. A browser added about
-  350 MB in the earlier pilot; the HTTP MCP footprint still needs measurement.
+  350 MB in the earlier pilot. One `/mcp` session added about 2.5 MB RSS on
+  macOS; the Linux arm64 reading is still pending.
 - **A score adds a helper.** It takes about 260-290 MB for 1 to 3 seconds. That
   covers tailoring, quick tailor and creating an application, because each one scores.
 - **With the browser open at 350 MB, a score does not fit.** In a test on a
@@ -276,8 +278,9 @@ tailor at :20, apply at :40. Pick times that leave each batch room to finish.
 
 These backend readings predate HTTP MCP. They were measured on Linux arm64
 (Python 3.12 slim image) with `MALLOC_ARENA_MAX=2`, over five typical cycles of
-save, score, render, fill and list. The post-HTTP reading is pending; the
-200 MB budget stays unchanged.
+save, score, render, fill and list. One `/mcp` session measured about +2.5 MB RSS
+on macOS (175.1 → 177.6 MB). The Linux arm64 reading is still pending;
+the 200 MB budget stays unchanged.
 
 | | Helper on (`start.sh` default) | Helper off |
 |---|---|---|

@@ -42,6 +42,7 @@ The Codex CLI equivalent (replace `v0.9.0` with your release tag) is:
 
 ```bash
 codex plugin marketplace add seinun-ai/maestro-career-studio --ref v0.9.0 --sparse .agents/plugins --sparse plugins
+codex plugin add maestro-career-studio@maestro-career-studio
 ```
 
 For a direct URL connection in Claude Code or Codex CLI, open Maestro's

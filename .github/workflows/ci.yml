@@ -92,9 +92,9 @@ jobs:
     # The backend job installs ".[dev,mcp]" together; this job exercises both
     # transports without dev dependencies supplying a missing runtime package.
     #
-    # This is the command in the README, run in a clean environment with no dev
-    # extra to accidentally supply a missing dependency, and it launches the
-    # real console script rather than importing a module.
+    # Install the backend with its compatibility [mcp] extra in a clean environment,
+    # then exercise the legacy console script and the in-app HTTP endpoint.
+    # No dev extra can accidentally supply a missing runtime dependency.
     #
     # It exists because `mcp>=1.2` was once unbounded, resolved to mcp 2.0 on any
     # fresh install, and died on its first import — `mcp.server.fastmcp` had

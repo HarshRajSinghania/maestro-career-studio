@@ -33,16 +33,14 @@ rather than leaving the combination broken.
 
 **3. The compose project name is fixed and must never move again.**
 `docker-compose.yml` sets `name: maestro-career-studio`, so containers are
-`maestro-career-studio-backend-1`. That container name is a **literal** in the
-shipped plugin manifest (`plugins/maestro-career-studio/.mcp.json`) because
-Codex plugin manifests support no `${VAR}` interpolation — there is nowhere to
-put a variable. Changing the project name therefore breaks marketplace installs
-on every machine at once. (The database is a file in the project folder, so
-the project name does not decide which data you see; `update.sh` still looks
-for the pre-v0.4.0 volume by it, `maestro-career-studio_pgdata`.)
-`COMPOSE_PROJECT_NAME` still overrides it for anyone who needs a second stack
-side by side; that is the supported escape hatch, and such a user configures
-their MCP server with `scripts/setup-mcp.sh` rather than the plugin.
+`maestro-career-studio-backend-1`. The database is a file in the project folder,
+so the project name does not decide which data you see; `update.sh` still looks
+for the pre-v0.4.0 volume by it, `maestro-career-studio_pgdata`.
+The plugin connects by URL to `http://localhost:8001/mcp`, independently of
+container names. `COMPOSE_PROJECT_NAME` still overrides the name for a second
+stack side by side. Give that stack different host ports and use the URL shown
+in Settings › Connected agents › **Connect an agent app**, or
+`claude mcp add --transport http maestro-career-studio <that-stack-url>`.
 
 ---
 
