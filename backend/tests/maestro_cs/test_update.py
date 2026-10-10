@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import psutil
 import pytest
 
 from maestro_cs import cli, control, detach, update
@@ -111,22 +112,30 @@ def test_latest_version_is_none_on_any_failure(body):
     assert update.latest_version(fetch=lambda url, timeout: body) is None
 
 
+@pytest.mark.parametrize("releases", [{"0.9.0": [1]}, {"0.9.0": 5}, {"0.9.0": None}, [], 7,
+                                      {"0.9.0": [{}], "0.9.1": "x"}])
+def test_malformed_releases_never_raise(releases):
+    body = json.dumps({"info": {"version": "1.0.0rc1"}, "releases": releases})
+    result = update.latest_version(fetch=lambda url, timeout: body)
+    assert result in (None, "0.9.0")
+
+
 def test_control_latest_version_delegates_to_update(monkeypatch):
     monkeypatch.setattr(update, "latest_version", lambda timeout=3.0, fetch=None: f"t{timeout}")
     assert control.latest_version(1.5) == "t1.5"
 
 
-def test_fetch_text_returns_none_without_a_network(monkeypatch):
+def test_fetch_text_returns_none_without_a_network(monkeypatch, real_fetch_text):
     import httpx
 
     def boom(*a, **k):
         raise httpx.ConnectError("offline")
 
     monkeypatch.setattr(httpx, "get", boom)
-    assert update.fetch_text("https://pypi.org/x") is None
+    assert real_fetch_text("https://pypi.org/x") is None
 
 
-def test_fetch_text_uses_the_proxy_environment_and_rejects_non_200(monkeypatch):
+def test_fetch_text_uses_the_proxy_environment_and_rejects_non_200(monkeypatch, real_fetch_text):
     import httpx
 
     calls = []
@@ -136,7 +145,7 @@ def test_fetch_text_uses_the_proxy_environment_and_rejects_non_200(monkeypatch):
         return httpx.Response(404, text="nope")
 
     monkeypatch.setattr(httpx, "get", fake_get)
-    assert update.fetch_text("https://pypi.org/x") is None
+    assert real_fetch_text("https://pypi.org/x") is None
     assert calls[0]["trust_env"] is True and calls[0]["timeout"] == 3.0
 
 
@@ -199,6 +208,17 @@ def test_upgrade_commands():
     assert update.wheel_version("/d/other.whl") is None
 
 
+@pytest.mark.parametrize("name,expected", [
+    ("maestro_career_studio-0.0.0.dev2-py3-none-any.whl", "0.0.0.dev2"),
+    ("maestro_career_studio-0.9.0rc1-py3-none-any.whl", "0.9.0rc1"),
+    ("maestro_career_studio-0.9.0+local.1-py3-none-any.whl", "0.9.0+local.1"),
+    ("Maestro_Career_Studio-1.0.0-py3-none-any.whl", "1.0.0"),
+    ("maestro_career_studio-.whl", None),
+])
+def test_wheel_version_reads_any_pep_440_name(name, expected):
+    assert update.wheel_version(f"/d/{name}") == expected
+
+
 # --- the flow ----------------------------------------------------------------------------------
 
 class Rig:
@@ -206,7 +226,8 @@ class Rig:
 
     def __init__(self, tmp_path, monkeypatch, *, version="0.8.0", latest="0.9.0", running=True,
                  backup_error=None, db=True, uv="/bin/uv", uv_code=0, answers=("y",),
-                 platform="linux", served_version=None, installed="0.9.0", changelog=CHANGELOG):
+                 platform="linux", served_version=None, installed="0.9.0", changelog=CHANGELOG,
+                 start_code=0):
         home = tmp_path / "home"
         for name in ("logs", "run", "data"):
             (home / name).mkdir(parents=True, exist_ok=True)
@@ -214,7 +235,7 @@ class Rig:
         self.events, self.said, self.asked = [], [], []
         self.popen_calls, self.run_calls = [], []
         self.answers = list(answers)
-        self.uv_code, self.installed = uv_code, installed
+        self.uv_code, self.installed, self.start_code = uv_code, installed, start_code
         self.served_version = served_version if served_version is not None else latest
         rig = self
         pypi_body = json.dumps({"info": {"version": latest}}) if latest else None
@@ -268,7 +289,7 @@ class Rig:
         if argv[1:] == ["--version"]:
             return subprocess.CompletedProcess(argv, 0, stdout=f"maestro-career-studio {self.installed}\n", stderr="")
         self.events.append("start")
-        return subprocess.CompletedProcess(argv, 0, stdout="Maestro is running: http://localhost:13000\n", stderr="")
+        return subprocess.CompletedProcess(argv, self.start_code, stdout="Maestro is running: http://localhost:13000\n", stderr="")
 
     def popen(self, argv, **kwargs):
         self.events.append("handoff")
@@ -407,6 +428,27 @@ def test_a_version_mismatch_prints_the_snapshot_and_the_rollback_line(tmp_path, 
     assert "only run forward" in rig.text
 
 
+def test_a_new_version_that_fails_to_start_says_so_not_unknown(tmp_path, monkeypatch):
+    rig = Rig(tmp_path, monkeypatch, start_code=1)
+    assert rig.up.run(yes=True) == 1
+    assert "Maestro didn't start after the update." in rig.text
+    assert "unknown" not in rig.text and "not the 0.9.0 that was expected" not in rig.text
+    assert str(rig.ctx.home / "backups" / "db-1.sqlite3.gz") in rig.text
+    assert "uv tool install --force --python 3.12 maestro-career-studio==0.8.0" in rig.text
+    assert "verify" not in rig.events
+
+
+def test_a_dev_wheel_gets_the_post_install_check(tmp_path, monkeypatch):
+    wheel = tmp_path / "maestro_career_studio-0.0.0.dev2-py3-none-any.whl"
+    wheel.write_bytes(b"w")
+    rig = Rig(tmp_path, monkeypatch, version="0.8.0", served_version="0.8.0")
+    assert rig.up.run(source=str(wheel), yes=True) == 1
+    assert "Maestro is on version 0.8.0, not the 0.0.0.dev2 that was expected." in rig.text
+    ok = Rig(tmp_path, monkeypatch, version="0.8.0", served_version="0.0.0.dev2")
+    assert ok.up.run(source=str(wheel), yes=True) == 0
+    assert "Maestro is now version 0.0.0.dev2." in ok.text
+
+
 def test_a_mismatch_while_stopped_uses_the_installed_version(tmp_path, monkeypatch):
     rig = Rig(tmp_path, monkeypatch, running=False, installed="0.8.0")
     assert rig.up.run(yes=True) == 1
@@ -421,6 +463,40 @@ def test_source_installs_the_wheel_and_skips_the_network(tmp_path, monkeypatch):
     assert not [e for e in rig.events if e.startswith("GET")]
     uv_argv = next(a for a, _ in rig.run_calls if Path(a[0]).name == "uv")
     assert uv_argv[1:] == ["tool", "install", "--force", "--python", "3.12", str(wheel)]
+
+
+def test_a_relative_source_is_made_absolute_before_uv_runs_from_another_folder(tmp_path, monkeypatch):
+    (tmp_path / "dl").mkdir()
+    (tmp_path / "dl" / "maestro_career_studio-0.9.0-py3-none-any.whl").write_bytes(b"w")
+    monkeypatch.chdir(tmp_path)
+    rig = Rig(tmp_path, monkeypatch)
+    assert rig.up.run(source="dl/maestro_career_studio-0.9.0-py3-none-any.whl", yes=True) == 0
+    uv_argv, kwargs = next((a, k) for a, k in rig.run_calls if Path(a[0]).name == "uv")
+    expected = (tmp_path / "dl" / "maestro_career_studio-0.9.0-py3-none-any.whl").resolve()
+    assert uv_argv[-1] == str(expected) and Path(uv_argv[-1]).is_absolute()
+    assert kwargs["cwd"] == rig.ctx.home  # not the caller's folder, which is why it must be absolute
+
+
+def test_a_tilde_source_is_expanded_before_uv_gets_it(tmp_path, monkeypatch):
+    fake_home = tmp_path / "me"
+    fake_home.mkdir()
+    (fake_home / "maestro_career_studio-0.9.0-py3-none-any.whl").write_bytes(b"w")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+    rig = Rig(tmp_path, monkeypatch)
+    assert rig.up.run(source="~/maestro_career_studio-0.9.0-py3-none-any.whl", yes=True) == 0
+    uv_argv = next(a for a, _ in rig.run_calls if Path(a[0]).name == "uv")
+    assert "~" not in uv_argv[-1]
+    assert uv_argv[-1] == str((fake_home / "maestro_career_studio-0.9.0-py3-none-any.whl").resolve())
+
+
+def test_a_relative_source_reaches_the_windows_script_absolute(tmp_path, monkeypatch):
+    (tmp_path / "maestro_career_studio-0.9.0-py3-none-any.whl").write_bytes(b"w")
+    monkeypatch.chdir(tmp_path)
+    rig = Rig(tmp_path, monkeypatch, platform="win32", uv=WIN_UV)
+    assert rig.up.run(source="maestro_career_studio-0.9.0-py3-none-any.whl", yes=True) == 0
+    script = (rig.ctx.logs_dir / "update.cmd").read_text(encoding="utf-8")
+    assert str((tmp_path / "maestro_career_studio-0.9.0-py3-none-any.whl").resolve()) in script
 
 
 def test_source_must_exist(tmp_path, monkeypatch):
@@ -463,10 +539,57 @@ def test_windows_script_quotes_every_path_and_waits_before_uv():
     assert "echo [update] To pin the old version: uv tool install --force --python 3.12 maestro-career-studio==0.8.0" in lines
 
 
+def test_windows_script_doubles_percent_in_the_uv_line_and_checks_its_exit_code_next():
+    uv = r"C:\Users\100%\.local\bin\uv.exe"
+    script = update.windows_script(wait_pids=[1], uv_argv=update.upgrade_argv(Path(uv), r"C:\w\50%.whl"),
+                                   shim=WIN_SHIM, restart=False, snapshot=None, old="0.8.0")
+    lines = script.split("\r\n")
+    uv_line = next(ln for ln in lines if "uv.exe" in ln)
+    assert uv_line == (r'"C:\Users\100%%\.local\bin\uv.exe" "tool" "install" "--force" "--python" "3.12" '
+                       r'"C:\w\50%%.whl"')
+    assert lines[lines.index(uv_line) + 1] == "if errorlevel 1 goto failed"
+
+
 def test_windows_script_without_a_running_maestro_does_not_start_it():
     script = update.windows_script(wait_pids=[1], uv_argv=["uv", "x"], shim=WIN_SHIM,
                                    restart=False, snapshot=None, old="0.8.0")
     assert "start --no-browser" not in script and "Snapshot saved" not in script
+
+
+class FakeProc:
+    def __init__(self, pid, name, parent=None, gone=False):
+        self.pid, self._name, self._parent, self._gone = pid, name, parent, gone
+
+    def name(self):
+        if self._gone:
+            raise psutil.NoSuchProcess(self.pid)
+        return self._name
+
+    def parent(self):
+        return self._parent
+
+
+def own_pids(proc):
+    return update.Updater._own_pids(lambda: proc)
+
+
+def test_launcher_chain_under_uv_waits_on_both_ancestors(monkeypatch):
+    monkeypatch.setattr(update.os, "getpid", lambda: 300)
+    tree = FakeProc(300, "python.exe", FakeProc(200, "PYTHON.EXE", FakeProc(100, "maestro.exe",
+                    FakeProc(50, "python.exe", FakeProc(1, "explorer.exe")))))
+    assert own_pids(tree) == [300, 200, 100]  # at most two ancestors, the grandparent included
+
+
+def test_launcher_walk_stops_at_a_shell(monkeypatch):
+    monkeypatch.setattr(update.os, "getpid", lambda: 300)
+    assert own_pids(FakeProc(300, "python.exe", FakeProc(200, "cmd.exe", FakeProc(100, "maestro.exe")))) == [300]
+    assert own_pids(FakeProc(300, "python.exe", FakeProc(200, "Maestro.exe", FakeProc(100, "pwsh.exe")))) == [300, 200]
+    assert own_pids(FakeProc(300, "python.exe", None)) == [300]
+
+
+def test_launcher_walk_survives_a_vanished_parent(monkeypatch):
+    monkeypatch.setattr(update.os, "getpid", lambda: 300)
+    assert own_pids(FakeProc(300, "python.exe", FakeProc(200, "python.exe", gone=True))) == [300]
 
 
 def test_windows_handoff_argv_uses_a_bare_script_name():

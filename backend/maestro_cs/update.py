@@ -41,7 +41,7 @@ PYTHON = "3.12"
 WAIT_SECONDS = 30
 VERSION_RE = re.compile(r"\d+\.\d+\.\d+")
 SECTION_RE = re.compile(r"^## \[(\d+\.\d+\.\d+)\]", re.MULTILINE)
-WHEEL_RE = re.compile(r"^maestro_career_studio-(\d+\.\d+\.\d+)-")
+WHEEL_RE = re.compile(r"(?i)^maestro_career_studio-([^-]+)-")
 UV_HELP = "https://docs.astral.sh/uv/getting-started/installation/"
 
 FetchText = Callable[[str, float], str | None]
@@ -74,9 +74,9 @@ def fetch_text(url: str, timeout: float = NETWORK_TIMEOUT) -> str | None:
     return response.text if response.status_code == 200 else None
 
 
-def latest_version(timeout: float = NETWORK_TIMEOUT, fetch: FetchText = fetch_text) -> str | None:
+def latest_version(timeout: float = NETWORK_TIMEOUT, fetch: FetchText | None = None) -> str | None:
     """The newest stable release on PyPI, or None when it couldn't be read."""
-    body = fetch(PYPI_URL, timeout)
+    body = (fetch or fetch_text)(PYPI_URL, timeout)  # looked up now, so a test's patch applies
     if body is None:
         return None
     import json  # noqa: PLC0415  (only used here)
@@ -90,19 +90,26 @@ def latest_version(timeout: float = NETWORK_TIMEOUT, fetch: FetchText = fetch_te
     if parse_version(info_version):
         return info_version
     # info.version is a pre-release only when nothing stable exists; look for a stable one anyway.
-    stable = [v for v, files in releases.items()
-              if parse_version(v) and any(not f.get("yanked") for f in (files or []))]
-    return max(stable, key=lambda v: parse_version(v) or (0, 0, 0), default=None)
+    return max(_stable_versions(releases), key=lambda v: parse_version(v) or (0, 0, 0), default=None)
 
 
-def breaking_notes(current: str, new: str, fetch: FetchText = fetch_text,
+def _stable_versions(releases: Any) -> list[str]:
+    """Release names that parse as `X.Y.Z` and have at least one file that isn't yanked."""
+    if not isinstance(releases, dict):
+        return []
+    return [v for v, files in releases.items()
+            if isinstance(v, str) and parse_version(v) and isinstance(files, list)
+            and any(isinstance(f, dict) and not f.get("yanked") for f in files)]
+
+
+def breaking_notes(current: str, new: str, fetch: FetchText | None = None,
                    timeout: float = NETWORK_TIMEOUT) -> list[tuple[str, str]] | None:
     """The `### Breaking changes` body of every release in (current, new], newest first.
 
     None when the changelog couldn't be read. A release without that heading, or with an empty
     one, is left out.
     """
-    text = fetch(CHANGELOG_RAW.format(version=new), timeout)
+    text = (fetch or fetch_text)(CHANGELOG_RAW.format(version=new), timeout)
     if text is None:
         return None
     return parse_breaking(text, current, new)
@@ -259,7 +266,7 @@ class Updater:
         self,
         ctx: Context,
         *,
-        fetch: FetchText = fetch_text,
+        fetch: FetchText | None = None,
         run: Callable[..., Any] = subprocess.run,
         popen: Callable[..., Any] = subprocess.Popen,
         ask: Callable[[str], str] = input,
@@ -274,7 +281,7 @@ class Updater:
         preload: Callable[[], None] = _preload,
         user_home: Path | None = None,
     ) -> None:
-        self.ctx, self.fetch, self.run_cmd, self.popen = ctx, fetch, run, popen
+        self.ctx, self.fetch, self.run_cmd, self.popen = ctx, fetch or fetch_text, run, popen
         self.ask, self.say = ask, say
         self.make_maintenance, self.make_controller, self.which = make_maintenance, make_controller, which
         self.http_get, self.platform, self.sleep = http_get, platform, sleep
@@ -347,13 +354,21 @@ class Updater:
             pass
 
     @staticmethod
-    def _own_pids() -> list[int]:
-        """This process and, when it is a launcher stub (`maestro.exe`), its parent."""
+    def _own_pids(get_process: Callable[[], Any] = psutil.Process) -> list[int]:
+        """This process and up to two ancestors that are part of its launcher chain.
+
+        Under uv on Windows the chain is `maestro.exe` (trampoline) -> the venv's `python.exe`
+        -> the base `python.exe`; all three hold files uv is about to replace. An ancestor whose
+        name isn't `python*`/`maestro*` (a shell, Explorer) ends the walk.
+        """
         pids = [os.getpid()]
         try:
-            parent = psutil.Process().parent()
-            if parent and parent.name().lower().startswith("maestro"):
-                pids.append(parent.pid)
+            node = get_process()
+            for _ in range(2):
+                node = node.parent()
+                if node is None or not node.name().lower().startswith(("python", "maestro")):
+                    break
+                pids.append(node.pid)
         except psutil.Error:
             pass
         return pids
@@ -421,6 +436,9 @@ class Updater:
 
     def _mismatch(self, got: str | None, expected: str, snapshot: str | None, old: str) -> int:
         self.say(f"Maestro is on version {got or 'unknown'}, not the {expected} that was expected.")
+        return self._recovery(snapshot, old)
+
+    def _recovery(self, snapshot: str | None, old: str) -> int:
         if snapshot:
             self.say(f"Your data was saved before the update: {snapshot}")
         self.say(f"To go back to {old}: {rollback_command(old)}")
@@ -433,6 +451,9 @@ class Updater:
     def run(self, source: str | None = None, yes: bool = False) -> int:
         ctx = self.ctx
         old = ctx.version
+        if source:
+            # uv runs with cwd = the data folder, not the caller's; hand it an absolute path.
+            source = str(Path(source).expanduser().resolve())
         checked = self._check(source)
         if isinstance(checked, int):
             return checked
@@ -468,7 +489,8 @@ class Updater:
                 self._start_new(shim)
             return 1
         if was_running and self._start_new(shim) != 0:
-            return self._mismatch(None, new or "the new version", snapshot, old)
+            self.say("Maestro didn't start after the update.")
+            return self._recovery(snapshot, old)
         if new is None:
             self.say("Updated." + ("" if was_running else " Start it with `maestro start`."))
             return 0

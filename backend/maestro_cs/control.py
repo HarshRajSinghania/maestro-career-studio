@@ -432,6 +432,8 @@ class Controller:
     # --- status -------------------------------------------------------------------------
 
     def status(self, *, as_json: bool = False, offline: bool = False) -> int:
+        from maestro_cs import update  # lazy: update imports this module
+
         ctx = self.ctx
         sup = running_supervisor(ctx)
         running = sup is not None
@@ -441,6 +443,7 @@ class Controller:
             for name in ("backend", "web")
         }
         latest = None if offline else latest_version()
+        newer = update.is_newer(latest, ctx.version)  # a dev or newer local build isn't told to update
         autostart = autostart_enabled()
         report = {
             "running": running,
@@ -459,7 +462,7 @@ class Controller:
                 "rss_mb": _rss_mb(children["web"]),
             },
             "latest": latest,
-            "update_available": None if latest is None else latest != ctx.version,
+            "update_available": None if latest is None else newer,
             "offline": offline,
         }
         if as_json:
@@ -481,7 +484,7 @@ class Controller:
             self.say("  Latest release: not checked (--offline)")
         elif latest is None:
             self.say("  Latest release: couldn't check")
-        elif latest != ctx.version:
+        elif newer:
             self.say(f"  Latest release: {latest} (run `maestro update`)")
         else:
             self.say("  Latest release: you are up to date")

@@ -414,7 +414,7 @@ def test_status_stopped_exits_3(rig):
 
 def test_status_running_reports_everything_in_json(tmp_path, monkeypatch):
     rig = Rig(tmp_path, versions={18001: {"version": "0.8.0", "schema_revision": "abc"}})
-    monkeypatch.setattr(control, "latest_version", lambda timeout=3.0: "0.9.0")
+    monkeypatch.setattr(control, "latest_version", lambda timeout=3.0: "10.0.0")
     monkeypatch.setattr(control, "autostart_enabled", lambda: True)
     sup, backend = sleeper(), sleeper()
     try:
@@ -428,7 +428,7 @@ def test_status_running_reports_everything_in_json(tmp_path, monkeypatch):
         assert data["web"] == {"pid": None, "rss_mb": None}
         assert data["urls"]["web"] == "http://localhost:13000"
         assert data["autostart"] is True
-        assert data["latest"] == "0.9.0" and data["update_available"] is True
+        assert data["latest"] == "10.0.0" and data["update_available"] is True
         assert data["data_dir"] == str(rig.ctx.home)
     finally:
         for p in (sup, backend):
@@ -443,9 +443,21 @@ def test_status_text_says_when_a_newer_release_exists(tmp_path, monkeypatch):
     assert "Latest release: 10.0.0 (run `maestro update`)" in rig.text
 
 
-def test_status_says_when_it_could_not_check(rig):
+def test_status_says_when_it_could_not_check(rig, monkeypatch):
+    monkeypatch.setattr(control, "latest_version", lambda timeout=3.0: None)
     rig.ctl.status()
     assert "Latest release: couldn't check" in rig.text
+
+
+def test_a_newer_local_build_is_not_told_to_update(tmp_path, monkeypatch):
+    rig = Rig(tmp_path)  # installed 9.9.9
+    monkeypatch.setattr(control, "latest_version", lambda timeout=3.0: "0.9.0")
+    rig.ctl.status()
+    assert "you are up to date" in rig.text and "maestro update" not in rig.text
+    rig.printed.clear()
+    rig.ctl.status(as_json=True)
+    data = json.loads(rig.text)
+    assert data["latest"] == "0.9.0" and data["update_available"] is False
 
 
 def test_offline_never_calls_the_release_check(tmp_path, monkeypatch):
