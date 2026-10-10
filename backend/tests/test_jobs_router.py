@@ -44,7 +44,9 @@ def test_post_jobs_creates_job_and_skills(db_session, monkeypatch, client):
         lambda raw_text, session=None: _fake_extraction(),
     )
 
-    response = client.post("/api/jobs", json={"raw_text": "Need SQL", "source_url": "https://x.test"})
+    response = client.post(
+        "/api/jobs", json={"raw_text": "Need SQL", "source_url": "https://x.test"}
+    )
 
     assert response.status_code == 200
     body = response.json()

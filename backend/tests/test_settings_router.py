@@ -371,8 +371,8 @@ def test_quick_tailor_round_trip_merges_defaults(db_session, tmp_path, monkeypat
 
 
 def test_quick_tailor_loads_when_stored_profile_still_has_removed_key(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     """Hand-edited profiles that still carry default_base_resume must load.
 
     The field is consulted by nothing and is gone from DEFAULTS; dropping it

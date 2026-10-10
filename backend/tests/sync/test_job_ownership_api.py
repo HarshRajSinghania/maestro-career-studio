@@ -221,7 +221,9 @@ def _count_queries(db, call):
 
 
 @pytest.mark.parametrize("path", ["/api/jobs", "/api/applications", "/api/proposals"])
-def test_ownership_cost_does_not_grow_with_the_number_of_jobs(client, db_session, sync_on, monkeypatch, path):
+def test_ownership_cost_does_not_grow_with_the_number_of_jobs(
+    client, db_session, sync_on, monkeypatch, path
+):
     reads = []
     real = status.read_key
     monkeypatch.setattr(status, "read_key", lambda: reads.append(1) or real())

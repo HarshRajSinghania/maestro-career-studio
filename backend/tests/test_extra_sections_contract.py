@@ -327,8 +327,8 @@ def _stub_base_render(monkeypatch, tmp_path: Path):
 
 
 def test_base_put_preserves_extra_sections_in_db_file_and_response(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     import json
 
     _stub_base_render(monkeypatch, tmp_path)

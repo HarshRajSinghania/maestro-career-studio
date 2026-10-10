@@ -326,7 +326,9 @@ def _seed_open_session(db_session, job, slug, resolutions, status="open"):
     return row
 
 
-def test_quick_tailor_409_when_open_session_has_resolutions(db_session, tmp_path, monkeypatch, client):
+def test_quick_tailor_409_when_open_session_has_resolutions(
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_llm(monkeypatch)
@@ -354,7 +356,9 @@ def test_quick_tailor_409_when_open_session_has_resolutions(db_session, tmp_path
     assert db_session.get(TailoringSession, existing.id).status == "open"
 
 
-def test_quick_tailor_proceeds_when_open_session_only_skips(db_session, tmp_path, monkeypatch, client):
+def test_quick_tailor_proceeds_when_open_session_only_skips(
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_llm(monkeypatch)
@@ -367,7 +371,9 @@ def test_quick_tailor_proceeds_when_open_session_only_skips(db_session, tmp_path
     assert response.json()["nothing_to_tailor"] is False
 
 
-def test_quick_tailor_proceeds_when_open_session_empty_resolutions(db_session, tmp_path, monkeypatch, client):
+def test_quick_tailor_proceeds_when_open_session_empty_resolutions(
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_llm(monkeypatch)
@@ -379,7 +385,9 @@ def test_quick_tailor_proceeds_when_open_session_empty_resolutions(db_session, t
     assert response.status_code == 200
 
 
-def test_quick_tailor_proceeds_when_prior_session_not_open(db_session, tmp_path, monkeypatch, client):
+def test_quick_tailor_proceeds_when_prior_session_not_open(
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_llm(monkeypatch)
@@ -519,8 +527,8 @@ def test_quick_tailor_unknown_job_404_unknown_base_422(db_session, tmp_path, mon
 
 
 def test_quick_tailor_proceeds_when_open_session_has_only_system_autos(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     """Auto-resolutions seeded at session creation (payload.provenance) are not
     user work: an untouched-but-enriched session must not block quick tailor."""
     job = _seed_job(db_session)

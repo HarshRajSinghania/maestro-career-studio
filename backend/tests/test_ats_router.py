@@ -47,8 +47,8 @@ def test_run_ats_scores_all_bases(db_session, tmp_path, monkeypatch, client):
 
 
 def test_run_ats_scores_single_base_target_defaults_to_base_phase(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
@@ -66,8 +66,8 @@ def test_run_ats_scores_single_base_target_defaults_to_base_phase(
 
 
 def test_run_ats_scores_single_application_target_defaults_to_tailored_phase(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     application = Application(
@@ -137,8 +137,8 @@ def test_compare_endpoint(db_session, tmp_path, monkeypatch, client):
 
 
 def test_compare_endpoint_422s_for_pre_phase2_config_row(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     application = Application(
@@ -229,7 +229,9 @@ def test_run_ats_scores_honors_explicit_phase_override(db_session, tmp_path, mon
     assert body[0]["target_type"] == "application"
 
 
-def test_run_ats_scores_invalid_application_uuid_returns_422(db_session, tmp_path, monkeypatch, client):
+def test_run_ats_scores_invalid_application_uuid_returns_422(
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     _seed_base(db_session, tmp_path, monkeypatch)
 

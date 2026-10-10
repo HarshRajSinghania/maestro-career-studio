@@ -79,8 +79,8 @@ BASE_DATA = {
 
 
 def test_extra_sections_e2e_create_render_frombase_edit_diff(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     # Keep base JSON writes/reads inside the test tmp dir, and stub the actual
     # pdflatex render invoked by create (the .tex is asserted directly below).
     monkeypatch.setattr(settings, "base_resumes_dir", tmp_path)

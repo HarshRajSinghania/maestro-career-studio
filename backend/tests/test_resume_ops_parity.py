@@ -64,8 +64,8 @@ def _versions(db_session, kind, key):
 
 
 def test_base_edits_rest_and_chat_produce_identical_results(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     rest_slug = _seed_base(db_session, tmp_path, monkeypatch, "parity_rest")
     chat_slug = _seed_base(db_session, tmp_path, monkeypatch, "parity_chat")
 

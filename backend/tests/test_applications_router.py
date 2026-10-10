@@ -179,7 +179,9 @@ def test_patch_application_rejects_unknown_status(db_session, client):
     assert "submitted" in str(response.json()["detail"])
 
 
-def test_render_application_uses_generic_role_in_filename(db_session, tmp_path, monkeypatch, client):
+def test_render_application_uses_generic_role_in_filename(
+    db_session, tmp_path, monkeypatch, client
+):
     job = _job(db_session)
     job.title = "Junior LLM Data Scientist"
     db_session.commit()
@@ -228,7 +230,9 @@ def test_render_application_uses_generic_role_in_filename(db_session, tmp_path, 
     )
 
 
-def test_render_application_generates_files_and_updates_paths(db_session, tmp_path, monkeypatch, client):
+def test_render_application_generates_files_and_updates_paths(
+    db_session, tmp_path, monkeypatch, client
+):
     job = _job(db_session)
     application = Application(
         job_id=job.id,
@@ -361,8 +365,8 @@ def test_render_falls_back_for_unknown_template(db_session, tmp_path, monkeypatc
 
 
 def test_render_application_reports_explicit_resolved_template(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     job = _job(db_session)
     application = Application(
         job_id=job.id,
@@ -390,8 +394,8 @@ def test_render_application_reports_explicit_resolved_template(
 
 
 def test_render_application_reports_explicit_template_fallback(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     job = _job(db_session)
     application = Application(
         job_id=job.id,
@@ -621,8 +625,8 @@ def test_patch_customized_json_unlinks_pdf(db_session, tmp_path, client):
 
 
 def test_render_uses_saved_customized_json_without_recompute(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     job = _job(db_session)
     customized = {
         "contact": {"name": "Riley Quill", "email": "x@y.com"},
@@ -812,8 +816,8 @@ def test_from_base_auto_scores(db_session, tmp_path, monkeypatch, client):
 
 
 def test_from_base_without_extracted_skills_creates_without_scores(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     import json
 
     from app.config import settings as app_settings
@@ -1084,8 +1088,8 @@ def test_patch_application_edits_updates_customized_json(db_session, monkeypatch
 
 
 def test_patch_application_edits_hash_mismatch_returns_409_without_write(
-    db_session, monkeypatch
-, client):
+    db_session, monkeypatch, client
+):
     job = _job(db_session, role_category="content_hash_guard")
     base = {
         "contact": {"name": "Riley Quill", "email": "a@example.com"},
@@ -1423,7 +1427,9 @@ def _ready_no_extras_template(db_session, tid: str) -> None:
     db_session.commit()
 
 
-def test_render_incompatible_template_returns_400_not_500(db_session, tmp_path, monkeypatch, client):
+def test_render_incompatible_template_returns_400_not_500(
+    db_session, tmp_path, monkeypatch, client
+):
     # F1: an extras-bearing resume rendered through a template that cannot render
     # custom sections must surface a clean, user-actionable 400 with the message
     # (TemplateMissingExtraSectionsError now subclasses ValueError) — never the
@@ -1764,8 +1770,8 @@ def test_resume_diff_no_session_defaults_all_llm(db_session, monkeypatch, client
 
 
 def test_coherence_check_409_when_not_tailored_and_flags_pass_through(
-    db_session, monkeypatch
-, client):
+    db_session, monkeypatch, client
+):
     from app.services import coherence_check as coherence_service
 
     job = _job(db_session)

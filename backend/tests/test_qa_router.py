@@ -115,7 +115,9 @@ def test_post_qa_threads_the_named_base_to_the_job_answer(db_session, monkeypatc
     assert seen["base"] == "data_scientist"
 
 
-def test_post_qa_threads_the_named_base_to_the_job_cover_letter_too(db_session, monkeypatch, client):
+def test_post_qa_threads_the_named_base_to_the_job_cover_letter_too(
+    db_session, monkeypatch, client
+):
     """The twin of the test above, and it earns its place rather than mirroring
     it for symmetry's sake.
 
@@ -144,7 +146,9 @@ def test_post_qa_threads_the_named_base_to_the_job_cover_letter_too(db_session, 
     assert seen["base"] == "data_scientist"
 
 
-def test_post_qa_answers_an_unreadable_base_with_a_reason_not_a_500(db_session, monkeypatch, client):
+def test_post_qa_answers_an_unreadable_base_with_a_reason_not_a_500(
+    db_session, monkeypatch, client
+):
     """The guard's outward face.
 
     What shipped was a bare `FileNotFoundError` out of the disk read — an
@@ -224,8 +228,8 @@ def test_patch_qa_entry_updates_answer_and_clears_pdf(db_session, tmp_path, clie
 
 
 def test_render_cover_letter_writes_pdf_and_sets_path(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     application = _application(db_session)
     entry = QAEntry(
         application_id=application.id,
@@ -316,8 +320,8 @@ def test_get_cover_letter_pdf_404_when_missing(db_session, client):
 
 
 def test_generate_cover_letter_replaces_prior_entry_and_pdf(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     application = _application(db_session)
     old_pdf = tmp_path / "cover_letter.pdf"
     old_pdf.write_bytes(b"old")
@@ -610,8 +614,8 @@ def _cover_letter_entry(db_session, application) -> QAEntry:
 
 
 def test_render_cover_letter_follows_the_resume_engine_without_tex(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     _no_tex(monkeypatch)
     _seed_rows(db_session)
 
@@ -631,8 +635,8 @@ def test_render_cover_letter_follows_the_resume_engine_without_tex(
 
 
 def test_render_cover_letter_without_tex_or_typst_is_400_and_allocates_nothing(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     """The resolver runs BEFORE application_artifacts.get_dir, so a 400 never
     leaves an empty artifact directory (or a persisted artifact_dir) behind."""
     _no_tex(monkeypatch)

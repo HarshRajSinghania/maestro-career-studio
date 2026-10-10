@@ -421,8 +421,8 @@ def test_create_session_blocked_by_failing_fatal_gate(db_session, tmp_path, monk
 
 
 def test_create_session_ignores_stale_failing_fatal_report_with_warning(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     first = resume_versions.record_version(
@@ -497,8 +497,8 @@ def test_create_session_waived_fatal_gate_not_blocked(db_session, tmp_path, monk
 
 
 def test_create_session_unblocked_by_a_waiver_row_the_stored_report_predates(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     """The waiver TABLE is the authority, not the snapshot beside it.
 
     `POST /gates/{id}/waive` writes a `HealthGateWaiver` row and nothing else —
@@ -542,8 +542,8 @@ def test_create_session_unblocked_by_a_waiver_row_the_stored_report_predates(
 
 
 def test_create_session_stays_blocked_when_the_waiver_names_another_gate(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     """A waiver is per-gate: waiving S1 must not release S2."""
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
@@ -572,8 +572,8 @@ def test_create_session_stays_blocked_when_the_waiver_names_another_gate(
 
 
 def test_create_session_waiver_does_not_travel_to_another_base_resume(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     """A waiver belongs to the resume it was filed against.
 
     Reading waivers by gate id alone (or by kind alone) would let one waived
@@ -649,7 +649,9 @@ def test_create_session_healthy_report_no_warning(db_session, tmp_path, monkeypa
     assert body["health_warning"] is None
 
 
-def test_create_session_no_health_report_proceeds_silently(db_session, tmp_path, monkeypatch, client):
+def test_create_session_no_health_report_proceeds_silently(
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     # no ResumeLintReport seeded — health is opt-in
@@ -1408,8 +1410,8 @@ def test_surviving_keywords_skip_retry(db_session, tmp_path, monkeypatch):
 
 
 def test_patch_add_keyword_experience_index_out_of_range_returns_400(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
@@ -1438,8 +1440,8 @@ def test_patch_add_keyword_experience_index_out_of_range_returns_400(
 
 
 def test_patch_add_keyword_skills_unknown_category_returns_400(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
@@ -1467,8 +1469,8 @@ def test_patch_add_keyword_skills_unknown_category_returns_400(
 
 
 def test_patch_add_keyword_skills_additional_skills_accepted(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
@@ -1497,7 +1499,9 @@ def test_patch_add_keyword_skills_additional_skills_accepted(
     assert saved[0]["payload"]["placement_target"]["index_or_category"] == "Additional Skills"
 
 
-def test_patch_add_keyword_experience_valid_index_accepted(db_session, tmp_path, monkeypatch, client):
+def test_patch_add_keyword_experience_valid_index_accepted(
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
@@ -1527,7 +1531,9 @@ def test_patch_add_keyword_experience_valid_index_accepted(db_session, tmp_path,
     }
 
 
-def test_patch_attach_project_unknown_project_returns_400(db_session, tmp_path, monkeypatch, client):
+def test_patch_attach_project_unknown_project_returns_400(
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
@@ -1759,7 +1765,9 @@ def test_apply_profile_does_not_reopen_a_stored_skip(db_session, tmp_path, monke
     assert by_id["skill:salesforce"]["action"] == "skip"
 
 
-def test_apply_profile_absent_skill_still_lands_in_skills(db_session, tmp_path, monkeypatch, client):
+def test_apply_profile_absent_skill_still_lands_in_skills(
+    db_session, tmp_path, monkeypatch, client
+):
     """The honesty invariant holds through this path: the fill goes through
     save_resolutions, which re-enforces skills-only for absent skills."""
     job = _seed_job(db_session)
@@ -1780,8 +1788,8 @@ def test_apply_profile_absent_skill_still_lands_in_skills(db_session, tmp_path, 
 
 
 def test_apply_profile_uses_standing_instruction_only_as_fallback(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     """The standing instruction reaches tailor() when the session has no note of
     its own, and NEVER overrides one that does — the gap page's textarea wins."""
     job = _seed_job(db_session)
@@ -1817,8 +1825,8 @@ def test_apply_profile_uses_standing_instruction_only_as_fallback(
 
 
 def test_tailor_without_apply_profile_leaves_resolutions_alone(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     """The flag is opt-in: the normal Tailor button path is untouched."""
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
@@ -1877,7 +1885,9 @@ def test_apply_profile_with_nothing_actionable_400s(db_session, tmp_path, monkey
 # read what was planned and author its own ops (SYSTEM.md §11 item 13).
 
 
-def test_apply_profile_fills_resolutions_without_tailoring(db_session, tmp_path, monkeypatch, client):
+def test_apply_profile_fills_resolutions_without_tailoring(
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     # Proves the route stops at the fill: a stray call into tailor() (LLM ops,
@@ -1934,8 +1944,8 @@ def test_apply_profile_maps_plain_value_errors_to_400(db_session, tmp_path, monk
 
 
 def test_apply_profile_409s_on_a_closed_session_and_404s_on_a_missing_one(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
@@ -2003,7 +2013,9 @@ def test_tailor_happy_path(db_session, tmp_path, monkeypatch, client):
     assert calls[0]["model"] == settings.smart_model
 
 
-def test_tailor_unverified_skill_add_keyword_lands_in_skills(db_session, tmp_path, monkeypatch, client):
+def test_tailor_unverified_skill_add_keyword_lands_in_skills(
+    db_session, tmp_path, monkeypatch, client
+):
     """Missing-skill add_keyword (skills placement) -> add_skill_item op -> the skill
     lands in customized_json.skills, in a category the base resume did not have."""
     job = _seed_job(db_session)
@@ -2046,7 +2058,9 @@ def test_tailor_unverified_skill_add_keyword_lands_in_skills(db_session, tmp_pat
     assert application.customized_json["experience"] == SAMPLE_RESUME["experience"]
 
 
-def test_tailor_user_prompt_reaches_prompt_and_application(db_session, tmp_path, monkeypatch, client):
+def test_tailor_user_prompt_reaches_prompt_and_application(
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     calls = _mock_tailor_llm(monkeypatch)
@@ -2098,7 +2112,9 @@ def test_tailor_without_anchors_sends_no_anchor_line(db_session, tmp_path, monke
     assert "RESUME ANCHORS" not in prompt
 
 
-def test_tailor_prompt_excludes_skipped_gaps_from_mandate(db_session, tmp_path, monkeypatch, client):
+def test_tailor_prompt_excludes_skipped_gaps_from_mandate(
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     calls = _mock_tailor_llm(monkeypatch)
@@ -2466,7 +2482,9 @@ def test_tailor_second_call_returns_409(db_session, tmp_path, monkeypatch, clien
     assert len(list(db_session.scalars(select(Application)))) == 1
 
 
-def test_tailor_without_actionable_resolutions_returns_400(db_session, tmp_path, monkeypatch, client):
+def test_tailor_without_actionable_resolutions_returns_400(
+    db_session, tmp_path, monkeypatch, client
+):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     calls = _mock_tailor_llm(monkeypatch)
@@ -2642,8 +2660,8 @@ def _applications_for(db_session, job, slug):
 
 
 def test_tailor_reuses_existing_application_preserving_state(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     """A second tailoring pass for the same job+base updates the existing
     application in place: same row, refreshed customized_json, but status, notes,
     Q&A, and other tracking fields survive and stale artifacts are unlinked."""
@@ -3072,8 +3090,8 @@ def _resume_with_volunteer(*, section_enabled=True):
 
 
 def test_patch_user_input_valid_extra_placement_target_accepted(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     # F#4: user_input resolutions can carry a placement_target (phase-2 chips
     # include custom sections). A VALID extras target is accepted, and the
     # add_keyword-only honesty guard does NOT apply — even an engine-absent skill's
@@ -3110,8 +3128,8 @@ def test_patch_user_input_valid_extra_placement_target_accepted(
 
 
 def test_patch_user_input_bogus_extra_placement_target_rejected(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     # F#4: a user_input placement_target that does not resolve to a live custom
     # section (here: the section is disabled) is rejected 400 — the target space is
     # validated regardless of action, guarding MCP/API callers.
@@ -3151,8 +3169,8 @@ def test_patch_user_input_bogus_extra_placement_target_rejected(
 
 
 def test_patch_absent_add_keyword_extra_target_rejected_by_honesty(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     # F#7: the full save path rejects an add_keyword on an engine-ABSENT skill
     # whose placement_target points at a custom section — the honesty invariant
     # (unverified adds go to skills only) fires for extras exactly as for core

@@ -163,7 +163,9 @@ def test_get_unknown_base_resume_returns_404(db_session, client):
     assert response.status_code == 404
 
 
-def test_create_base_resume_validates_slug_and_writes_file(db_session, tmp_path, monkeypatch, client):
+def test_create_base_resume_validates_slug_and_writes_file(
+    db_session, tmp_path, monkeypatch, client
+):
     rendered = _stub_render(monkeypatch, tmp_path)
 
     bad = client.post(
@@ -400,8 +402,8 @@ def test_render_endpoint_returns_compile_failure_detail(
 
 
 def test_edits_render_failure_sets_render_error_then_clears(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     monkeypatch.setattr(router_module.settings, "base_resumes_dir", tmp_path)
     _seed(db_session, slug="data_scientist")
 
@@ -580,8 +582,8 @@ def test_patch_base_resume_edits_replaces_bullet_only(db_session, monkeypatch, t
 
 
 def test_patch_base_resume_edits_hash_mismatch_returns_409_without_write(
-    db_session, monkeypatch, tmp_path
-, client):
+    db_session, monkeypatch, tmp_path, client
+):
     data = {
         **SAMPLE_DATA,
         "experience": [
@@ -621,7 +623,9 @@ def test_patch_base_resume_edits_hash_mismatch_returns_409_without_write(
     assert rendered == []
 
 
-def test_patch_base_resume_edits_out_of_range_returns_400(db_session, monkeypatch, tmp_path, client):
+def test_patch_base_resume_edits_out_of_range_returns_400(
+    db_session, monkeypatch, tmp_path, client
+):
     _seed(db_session, slug="data_scientist")
     _stub_render(monkeypatch, tmp_path)
 
@@ -644,7 +648,9 @@ def test_patch_base_resume_edits_out_of_range_returns_400(db_session, monkeypatc
     assert "out of range" in response.json()["detail"]
 
 
-def test_patch_base_resume_edits_missing_skills_category_returns_400(db_session, monkeypatch, tmp_path, client):
+def test_patch_base_resume_edits_missing_skills_category_returns_400(
+    db_session, monkeypatch, tmp_path, client
+):
     _seed(db_session, slug="data_scientist")
     _stub_render(monkeypatch, tmp_path)
 
@@ -656,7 +662,9 @@ def test_patch_base_resume_edits_missing_skills_category_returns_400(db_session,
     assert response.status_code == 400
 
 
-def test_patch_base_resume_edits_unknown_slug_returns_404(db_session, monkeypatch, tmp_path, client):
+def test_patch_base_resume_edits_unknown_slug_returns_404(
+    db_session, monkeypatch, tmp_path, client
+):
     _stub_render(monkeypatch, tmp_path)
     response = client.patch(
         "/api/base-resumes/missing/edits",
@@ -1013,8 +1021,8 @@ def test_put_re_render_incompatible_template_returns_400(db_session, tmp_path, m
 
 
 def test_edit_ops_incompatible_template_degrades_to_render_error(
-    db_session, tmp_path, monkeypatch
-, client):
+    db_session, tmp_path, monkeypatch, client
+):
     # F1 deliberate deviation: the typed-edit PATCH commits the edit BEFORE
     # rendering, so an incompatible template must NOT become a 4xx (that would
     # push clients to retry the applied ops). It degrades to a persisted

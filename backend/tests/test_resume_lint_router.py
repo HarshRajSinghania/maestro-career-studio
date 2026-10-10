@@ -380,8 +380,8 @@ def test_answer_ask_matching_content_hash_returns_suggestion(db_session, monkeyp
 
 
 def test_answer_ask_content_hash_mismatch_returns_409_without_llm(
-    db_session, monkeypatch
-, client):
+    db_session, monkeypatch, client
+):
     _seed(db_session, slug="data_scientist")
     _seed_report(
         db_session,
@@ -411,8 +411,8 @@ def test_answer_ask_content_hash_mismatch_returns_409_without_llm(
 
 
 def test_answer_ask_missing_hashed_target_returns_409_without_llm(
-    db_session, monkeypatch
-, client):
+    db_session, monkeypatch, client
+):
     _seed(db_session, slug="data_scientist")
     _seed_report(
         db_session,
