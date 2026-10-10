@@ -49,7 +49,7 @@ For a direct URL connection in Claude Code or Codex CLI, open Maestro's
 Settings › Connected agents › **Connect an agent app**, or run:
 
 ```bash
-claude mcp add --transport http maestro-career-studio http://localhost:8001/mcp
+claude mcp add --scope user --transport http maestro-career-studio http://localhost:8001/mcp
 codex mcp add maestro-career-studio --url http://localhost:8001/mcp
 ```
 

@@ -434,9 +434,11 @@ and choose a **Tool set**:
 For Claude Code or Codex CLI, the commands are:
 
 ```bash
-claude mcp add --transport http maestro-career-studio http://localhost:8001/mcp
+claude mcp add --scope user --transport http maestro-career-studio http://localhost:8001/mcp
 codex mcp add maestro-career-studio --url http://localhost:8001/mcp
 ```
+
+`--scope user` makes Maestro available in every folder; without it, Claude Code adds it to the current project only.
 
 The [plugin guide](plugins/maestro-career-studio/README.md) covers release-tag
 marketplace installs. In Codex's app, use the release tag as **Git ref** and

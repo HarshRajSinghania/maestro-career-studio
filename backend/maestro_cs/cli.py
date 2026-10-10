@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from maestro_cs import bridge, control, maintenance, package_version
+from maestro_cs import bridge, connect, control, maintenance, package_version
 from maestro_cs.home import HomeError
 
 DESCRIPTION = "Maestro Career Studio, run from a uv install."
@@ -45,6 +45,17 @@ def build_parser() -> argparse.ArgumentParser:
     mcp = sub.add_parser("mcp", help="connect an agent over stdio (used by Claude Desktop)")
     mcp.add_argument("--profile", default="full", help="tool profile (default: full)")
     mcp.add_argument("--url", help="backend URL (default: this install's, from maestro.env)")
+    link = sub.add_parser("connect", help="add Maestro to an agent app (list them with no app)")
+    link.add_argument("client", nargs="?", choices=connect.CLIENT_IDS, metavar="app",
+                      help="one of: " + ", ".join(connect.CLIENT_IDS))
+    link.add_argument("--profile", default="full", help="tool profile (default: full)")
+    link.add_argument("--print", dest="print_only", action="store_true",
+                      help="show what would be added; change nothing")
+    link.add_argument("--now", action="store_true",
+                      help="Claude Desktop: write now instead of waiting for it to quit")
+    waiter = sub.add_parser(connect.WAITER_VERB)  # no help=: argparse then leaves it out of --help
+    waiter.add_argument("--profile", default="full")
+    waiter.add_argument("--timeout", type=float, default=connect.WAIT_SECONDS)
     return parser
 
 
@@ -54,6 +65,10 @@ def _dispatch(args: argparse.Namespace) -> int:
     ctx = control.load_context()
     if args.command == "run":
         return control.run(ctx)
+    if args.command == "connect":
+        return connect.Connector(ctx).connect(args.client, args.profile, args.print_only, args.now)
+    if args.command == connect.WAITER_VERB:
+        return connect.Connector(ctx).wait_and_write(args.profile, args.timeout)
     if args.command in ("backup", "migrate", "check"):
         upkeep = maintenance.Maintenance(ctx)
         if args.command == "backup":

@@ -38,11 +38,12 @@ The card copies CLI commands, opens install links for Cursor and VS Code,
 and gives other HTTP MCP clients a URL. For the default Docker port:
 
 ```bash
-claude mcp add --transport http maestro-career-studio http://localhost:8001/mcp
+claude mcp add --scope user --transport http maestro-career-studio http://localhost:8001/mcp
 codex mcp add maestro-career-studio --url http://localhost:8001/mcp
 ```
 
 Use `/mcp` exactly — no trailing slash (`POST /mcp/` is a 307 redirect).
+`--scope user` makes Maestro available in every folder; without it, Claude Code adds it to the current project only.
 For a scoped profile, append its name, for example `/mcp/hunt`.
 
 In the Codex app, open **Plugins** › **Add** › **Create custom MCP server**,

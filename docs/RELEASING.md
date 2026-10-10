@@ -40,7 +40,7 @@ The plugin connects by URL to `http://localhost:8001/mcp`, independently of
 container names. `COMPOSE_PROJECT_NAME` still overrides the name for a second
 stack side by side. Give that stack different host ports and use the URL shown
 in Settings › Connected agents › **Connect an agent app**, or
-`claude mcp add --transport http maestro-career-studio <that-stack-url>`.
+`claude mcp add --scope user --transport http maestro-career-studio <that-stack-url>`.
 
 ---
 

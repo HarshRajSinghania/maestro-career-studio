@@ -246,11 +246,12 @@ for Cursor or VS Code, and copies the URL for any other HTTP MCP client. With
 the default Docker install, the commands are:
 
 ```bash
-claude mcp add --transport http maestro-career-studio http://localhost:8001/mcp
+claude mcp add --scope user --transport http maestro-career-studio http://localhost:8001/mcp
 codex mcp add maestro-career-studio --url http://localhost:8001/mcp
 ```
 
 Use `/mcp` exactly — no trailing slash (`POST /mcp/` redirects with 307).
+`--scope user` makes Maestro available in every folder; without it, Claude Code adds it to the current project only.
 Scoped tool sets use `/mcp/hunt`, `/mcp/apply`, `/mcp/explore`, `/mcp/templates`
 or `/mcp/career`. If you changed the backend port, copy the card's values.
 
