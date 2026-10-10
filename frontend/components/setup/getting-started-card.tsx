@@ -79,9 +79,10 @@ export function GettingStartedCard() {
   if (setupStatus.isLoading || !status || status.complete) return null;
 
   // A PDF step with nothing left to do is not a step (the strip drops it too);
-  // it stays while a few templates still need TeX.
+  // it stays while a few templates still need TeX, or the TeX needs an update.
+  const { pdflatex } = status.engines;
   const rows = buildSetupSteps(status, pathname).filter(
-    (row) => !(row.id === "engines" && row.done && status.engines.pdflatex.available),
+    (row) => !(row.id === "engines" && row.done && pdflatex.available && !pdflatex.warning),
   );
   return (
     <>

@@ -25,11 +25,12 @@ REQUIRES_TEX = "requires TeX (pdflatex not found)"
 # causes it, its warning follows after ": ".
 OVERPRINT = "text overprints: words are drawn on top of each other in the PDF"
 
-# Glyph pairs whose boxes overlap by half or more both ways. A clean sample
-# render has a handful at most (italic "y," kerns into the comma); the
-# pdfTeX 1.40.27 bug produced hundreds. SAMPLE_RESUME is fixed, so the margin
-# is not data-dependent.
+# Glyph pairs whose boxes overlap by half or more both ways. Punctuation that
+# kerns under a letter (italic "y,") and ligature glyphs are never counted, so a
+# clean render scores ~0 however long it is; the pdfTeX 1.40.27 bug produced
+# hundreds on SAMPLE_RESUME.
 _OVERPRINT_MIN_PAIRS = 10
+_OVERPRINT_IGNORED = frozenset(",.;:") | frozenset(chr(c) for c in range(0xFB00, 0xFB07))
 
 SAMPLE_RESUME: dict = {
     "contact": {
@@ -220,7 +221,8 @@ def text_overprints(pdf_path: Path) -> bool | None:
                 textpage = page.get_textpage()
                 boxes = []
                 for i in range(textpage.count_chars()):
-                    if not textpage.get_text_range(i, 1).strip():
+                    char = textpage.get_text_range(i, 1)
+                    if not char.strip() or char in _OVERPRINT_IGNORED:
                         continue
                     left, bottom, right, top = textpage.get_charbox(i)
                     if right - left > 0.5 and top - bottom > 0.5:
@@ -386,6 +388,11 @@ def validate_template(template_id: str, session: Session) -> dict:
     row.validated_at = datetime.now(UTC)
     row.last_error = None
     report = build_parse_report(preview)
+    if report is not None and row.engine == "latex":
+        # compile_against_sample refuses overprinting LaTeX before this point;
+        # the marker is what `template_registry.
+        # recheck_ready_latex_for_engine_warning` skips on.
+        report["overprint_checked"] = True
     if report is None:
         row.parse_certified = None
         row.parse_report_json = None

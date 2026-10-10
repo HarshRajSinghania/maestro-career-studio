@@ -217,14 +217,17 @@ That leaves the folder; deleting the folder deletes your data. Add your AI key i
 Docker route.
 
 - **Don't run a Docker install and a uv install at the same time.** They are
-  separate copies with separate data, and both use ports 8001 and 3000.
+  separate copies with separate data, and both use ports 8001 and 3000. Coming
+  from Docker? `maestro import-docker` moves your data over once
+  ([steps](UPDATING.md#move-from-docker-to-the-uv-install)).
 - **The Companion needs no changes**: it expects the same ports. Load it from
   the repository's `extension` folder ([step 4](#4-the-companion-browser-extension-optional)).
 - **PDFs** render with the Typst engine that ships inside. LaTeX templates need
   TeX on your computer; without it Maestro builds them through Typst and says so.
-  TeX Live 2025 needs its pdfTeX update (1.40.28 or later); on the first 2025
-  release a template whose words would print on top of each other is refused
-  with that fix named.
+  TeX Live 2025 needs its pdfTeX update (1.40.28 or later): on 1.40.27 a
+  template whose words would print on top of each other is refused. Install
+  MacTeX 2026, or update TeX Live 2025 from its final repository:
+  `sudo tlmgr option repository https://ftp.math.utah.edu/pub/tex/historic/systems/texlive/2025/tlnet-final && sudo tlmgr update --self --all`
 - **Something wrong?** `maestro status` and `maestro logs` come first. A port in
   use is named in the message. `maestro check` prints the install's facts as JSON
   to paste into an issue; it makes no network call.

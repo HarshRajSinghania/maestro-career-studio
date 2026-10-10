@@ -515,3 +515,54 @@ def test_list_reports_engine_availability(db_session, monkeypatch, client):
     monkeypatch.setattr(engines, "pdflatex_available", lambda: True)
     body = client.get("/api/templates").json()
     assert all(t["engine_available"] for t in body)
+
+
+def _fail_compile(monkeypatch, error):
+    from app.routers import templates as tr
+
+    monkeypatch.setattr(
+        tr.tv,
+        "compile_against_sample",
+        lambda source, keep_pdf_at=None, default_formatting=None, engine="latex": error,
+    )
+
+
+def test_default_formatting_that_breaks_a_ready_template_is_refused(
+    db_session, monkeypatch, client
+):
+    """compile_against_sample RETURNS its error; the route used to treat any
+    return as success and stamp validated_at over a preview it never wrote. A
+    knob change that breaks a ready template (a compile error, or text that
+    overprints) keeps the old state and says why, as the validate route does."""
+    from app.services import template_registry as reg
+
+    client.post("/api/templates", json={"id": "brk", "display_name": "B", "source": "X"})
+    row = reg.get(db_session, "brk")
+    row.status = "ready"
+    row.default_formatting = {"font_size": 11}
+    db_session.commit()
+    before = reg.get(db_session, "brk").validated_at
+    _fail_compile(monkeypatch, "text overprints: words are drawn on top of each other in the PDF")
+
+    r = client.put("/api/templates/brk/default-formatting", json={"formatting": {"font_size": 12}})
+
+    assert r.status_code == 400
+    assert "overprints" in r.json()["detail"]
+    db_session.expire_all()
+    row = reg.get(db_session, "brk")
+    assert row.default_formatting == {"font_size": 11}
+    assert row.status == "ready"
+    assert row.validated_at == before
+
+
+def test_default_formatting_on_a_draft_persists_without_a_validated_stamp(
+    db_session, monkeypatch, client
+):
+    client.post("/api/templates", json={"id": "drf", "display_name": "D", "source": "X"})
+    _fail_compile(monkeypatch, "! Undefined control sequence.")
+
+    r = client.put("/api/templates/drf/default-formatting", json={"formatting": {"font_size": 12}})
+
+    assert r.status_code == 200
+    assert r.json()["default_formatting"] == {"font_size": 12}
+    assert r.json()["validated_at"] is None

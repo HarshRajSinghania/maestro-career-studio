@@ -598,6 +598,40 @@ def ensure_seed_templates(session: Session, *, validate: bool = True) -> None:
     _bootstrap_default(session, validate=validate)
     _bootstrap_typst_classic(session, validate=validate)
     _bootstrap_bundled(session, validate=validate)
+    if validate:
+        recheck_ready_latex_for_engine_warning(session)
+
+
+def recheck_ready_latex_for_engine_warning(session: Session) -> None:
+    """On a pdflatex the probe warns about (pdfTeX 1.40.27 overprints words),
+    re-validate every ready LaTeX template whose validation predates the
+    overprint check — seeds AND the user's — so one validated before it stops
+    rendering garbage: it turns draft with the reason instead. Once per
+    template: a pass leaves `overprint_checked` in its parse report, a failure
+    leaves it draft. Best-effort like `_seed_validate`; startup only."""
+    from app.services import template_validation  # lazy: avoid import cycle
+
+    status = engines.probe_pdflatex()
+    if not status.available or status.warning is None:
+        return
+    rows = session.scalars(
+        select(Template).where(
+            Template.engine == "latex",
+            Template.status == "ready",
+            Template.archived_at.is_(None),
+        )
+    ).all()
+    for row in rows:
+        if (row.parse_report_json or {}).get("overprint_checked"):
+            continue
+        if row.id in _SEED_VALIDATION_ATTEMPTED:
+            continue
+        _SEED_VALIDATION_ATTEMPTED.add(row.id)
+        try:
+            template_validation.validate_template(row.id, session)
+        except Exception:  # noqa: BLE001 -- a recheck must not break seeding
+            logger.exception("%s overprint recheck failed; left as it was", row.id)
+            session.rollback()
 
 
 def get(session: Session, template_id: str) -> Template | None:

@@ -208,7 +208,7 @@ def test_pdftex_1_40_27_is_available_but_warned(monkeypatch, tmp_path):
     """pdfTeX 1.40.27 (TeX Live 2025 as released, e.g. an un-updated MacTeX
     2025) mispositions the interword space it emits under
     \\pdfinterwordspaceon for fonts whose encoding has a real /space at slot 32
-    (8r URW Helvetica/Times, Fira Mono): every word after the first is drawn
+    (many Type 1 fonts: Helvetica, Charter, Garamond, Fira...): every word after the first is drawn
     ~2 em to the LEFT, on top of its neighbour. Fixed in 1.40.28 ("fix
     overlapping text in ptmr8r and other fonts"). Most templates are
     unaffected, so the engine stays available; the probe names the bug and
@@ -238,3 +238,15 @@ def test_other_pdftex_builds_carry_no_warning(monkeypatch, tmp_path, banner):
     status = engines.probe_pdflatex()
     assert status.available is True
     assert status.warning is None
+
+
+def test_pdftex_warning_names_the_reach_and_the_real_remedy():
+    """Not just three fonts: the reviewer reproduced it with Charter, Crimson,
+    EB Garamond, Merriweather, Fira Sans, Source Sans Pro, BaskervilleF and
+    Helvetica. And a frozen TL 2025 cannot `tlmgr update` from the default
+    (2026) repository, so the remedy names MacTeX 2026 or 2025's final updates."""
+    warning = engines.PDFTEX_1_40_27_WARNING
+    assert "many Type 1 fonts" in warning
+    assert "1.40.28+" in warning
+    assert "MacTeX 2026" in warning
+    assert "TeX Live 2025's final updates" in warning

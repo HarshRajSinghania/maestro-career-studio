@@ -393,8 +393,9 @@ this contract. Code citing "§4" lands here; the table says which file to open.
 - **PDF word-spacing** `{#inv-pdf-word-spacing}`: pdflatex+XCharter joins words for strict extractors;
   `pdfinterwordspaceon` + the parse_certified gate protect this — see the shared header partial `_header.tex.j2`, which
   BOTH resume and cover-letter templates include (format/scanner changes must handle both). pdfTeX 1.40.27 misplaces
-  that space for fonts with their own `/space` (Helvetica, Times, Fira Mono) → overprinted words that still extract
-  cleanly; `template_validation.text_overprints` refuses such a LaTeX sample and `engines` warns on that build. A uv
+  that space for many Type 1 fonts (e.g. Helvetica, Charter, Garamond, Fira) → overprinted words that still extract
+  cleanly; `template_validation.text_overprints` refuses such a LaTeX sample and `engines` warns on that build, where
+  boot re-validates ready LaTeX templates once (`template_registry.recheck_ready_latex_for_engine_warning`). A uv
   install uses the HOST's TeX, not Docker's TL 2026 — a PDF's `PTEX.Fullbanner` names the pdfTeX that made it.
 - **A render never changes engine silently** `{#inv-render-fallback-explained}`: `services/engines` is the ONE probe;
   `MAESTRO_CS_PDFLATEX` overrides and fails CLOSED. Without `pdflatex`, `pdf_render.resolve_render_template` uses the
@@ -684,7 +685,7 @@ with the failure mode that bought it. Code citing "§8" lands here.
   uvicorn (127.0.0.1:8001) and `node server.js` (:3000); stop = `run/stop.request` + a signal; process identity = pid + psutil
   create_time. `maestro update` = verified snapshot → stop → `uv tool install --force …==NEW` (Windows: a detached `cmd` script) → start. The web
   process gets no API keys (`home._WEB_STRIPPED`). CI: `maestro-cli`, `uv-wheel`, `uv-smoke`, `uv-upgrade`; `pypi.yml` publishes on
-  `v*` tags. Detail: `docs/entities/others.md`, "The uv install".
+  `v*` tags. `maestro import-docker` copies a Docker checkout's data in once (the checkout is read, never written). Detail: `docs/entities/others.md`, "The uv install".
 - **Native run (no Docker)** — `docs/native-install.md`: `backend/scripts/native/` runs one loopback worker under `$MAESTRO_HOME`; URLs follow the MCP rule above, `MCPB_BUNDLE_PATH` uses the checkout's `mcpb/maestro-career-studio.mcpb` (`tests/test_native_scripts.py`).
   `slow` tests skip with `MAESTRO_SKIP_SLOW` (CI); `integration` MCP loopback and `tests/sync/test_two_machines.py`
   run in CI ON PURPOSE, never `slow`: no downloads. With `EMBEDDINGS_OUT_OF_PROCESS` at most ONE embedding

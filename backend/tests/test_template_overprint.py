@@ -130,3 +130,116 @@ def test_harshibar_on_this_hosts_pdftex(db_session, tmp_path, monkeypatch):
         assert error is None
     else:
         assert error is not None and error.startswith(tv.OVERPRINT)
+
+
+def test_punctuation_and_ligatures_never_count_however_long_the_text(tmp_path):
+    # A kerned "y," / "f." and ligatures repeat with the text's length; they
+    # must not add up to an overprint verdict on a long document.
+    clean = _pdf(
+        tmp_path,
+        "long.pdf",
+        b"#set page(height: auto)\n"
+        + b"_Many, any, fly; Globally, f. y. fi ffl, efficiently, y:_ " * 40
+        + b"\n",
+    )
+    assert tv.text_overprints(clean) is False
+
+
+def test_validation_records_that_the_overprint_check_ran(db_session, tmp_path, monkeypatch):
+    clean = _pdf(tmp_path, "ok.pdf", b"Jordan Sample, Senior Software Engineer.\n")
+    monkeypatch.setattr(tv.settings, "base_resumes_dir", tmp_path)
+    monkeypatch.setattr(engines, "pdflatex_available", lambda: True)
+    monkeypatch.setattr(pdf_render, "compile_pdf", _fake_latex_compile(clean))
+    src = (pdf_render.TEMPLATE_DIR / pdf_render.RESUME_TEMPLATE).read_text(encoding="utf-8")
+    reg.create_draft(db_session, id="marked", display_name="M", source=src, origin="mcp")
+
+    tv.validate_template("marked", db_session)
+
+    row = reg.get(db_session, "marked")
+    assert row.status == "ready"
+    assert row.parse_report_json["overprint_checked"] is True
+
+
+def _warned_probe():
+    return engines.EngineStatus(
+        "pdflatex", True, version="pdfTeX 3.141592653-2.6-1.40.27 (TeX Live 2025)",
+        warning=engines.PDFTEX_1_40_27_WARNING,
+    )
+
+
+def _ready_latex(db_session, template_id: str, report: dict | None):
+    src = (pdf_render.TEMPLATE_DIR / pdf_render.RESUME_TEMPLATE).read_text(encoding="utf-8")
+    row = reg.create_draft(
+        db_session, id=template_id, display_name=template_id, source=src, origin="mcp"
+    )
+    row.status = "ready"
+    row.parse_report_json = report
+    db_session.commit()
+    return row
+
+
+def test_ready_latex_templates_from_before_the_check_are_rechecked_once(
+    db_session, tmp_path, monkeypatch
+):
+    """A template validated before the overprint check existed stays `ready`
+    and keeps rendering garbage on pdfTeX 1.40.27. With the probe warning, the
+    next boot re-validates it — once: the verdict is recorded either way."""
+    monkeypatch.setattr(tv.settings, "base_resumes_dir", tmp_path)
+    monkeypatch.setattr(engines, "pdflatex_available", lambda: True)
+    monkeypatch.setattr(engines, "probe_pdflatex", _warned_probe)
+    compiles = []
+    fake = _fake_latex_compile(_overprinted(tmp_path))
+
+    def _counting(tex, out_dir, stem="preview", **kw):
+        compiles.append(stem)
+        return fake(tex, out_dir, stem=stem, **kw)
+
+    monkeypatch.setattr(pdf_render, "compile_pdf", _counting)
+    _ready_latex(db_session, "old", {"missing": []})
+    _ready_latex(db_session, "checked", {"missing": [], "overprint_checked": True})
+
+    reg.recheck_ready_latex_for_engine_warning(db_session)
+
+    old = reg.get(db_session, "old")
+    assert old.status == "draft"
+    assert old.last_error.startswith(tv.OVERPRINT)
+    assert reg.get(db_session, "checked").status == "ready"
+    assert len(compiles) == 1
+
+    reg.reset_seed_validation_attempts()  # a later boot
+    reg.recheck_ready_latex_for_engine_warning(db_session)
+    assert len(compiles) == 1
+
+
+def test_no_recheck_without_a_probe_warning(db_session, tmp_path, monkeypatch):
+    monkeypatch.setattr(tv.settings, "base_resumes_dir", tmp_path)
+    monkeypatch.setattr(
+        engines,
+        "probe_pdflatex",
+        lambda: engines.EngineStatus("pdflatex", True, version="pdfTeX 1.40.29"),
+    )
+
+    def _must_not_compile(*_a, **_k):
+        raise AssertionError("no warning, no recheck")
+
+    monkeypatch.setattr(pdf_render, "compile_pdf", _must_not_compile)
+    _ready_latex(db_session, "old", {"missing": []})
+
+    reg.recheck_ready_latex_for_engine_warning(db_session)
+
+    assert reg.get(db_session, "old").status == "ready"
+
+
+def test_validating_seed_pass_runs_the_recheck_and_listing_does_not(db_session, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        reg, "recheck_ready_latex_for_engine_warning", lambda session: calls.append(session)
+    )
+    monkeypatch.setattr(reg, "_bootstrap_default", lambda session, validate: None)
+    monkeypatch.setattr(reg, "_bootstrap_typst_classic", lambda session, validate: None)
+    monkeypatch.setattr(reg, "_bootstrap_bundled", lambda session, validate: None)
+
+    reg.ensure_seed_templates(db_session, validate=False)
+    assert calls == []
+    reg.ensure_seed_templates(db_session)
+    assert calls == [db_session]

@@ -470,14 +470,21 @@ def test_errors_and_setup_speak_plainly():
     for words in (
         'title: "Add your answers for job forms",',
         'title: "Describe yourself as a candidate (persona)",',
-        '"PDF creation is ready."',
-        '"PDF creation is ready. A few templates need extra software to look their best."',
+        "detail: pdfOutputDetail(status.engines.pdflatex),",
         '`${count(bases, "base resume", "base resumes")}, ${count(items, "item", "items")} in your career history`',
     ):
         assert words in steps, words
+    # The PDF row's words live in lib/pdf-output.ts (lib/pdf-output.test.ts has the cases).
+    pdf_output = _read("lib/pdf-output.ts")
+    for words in (
+        '"PDF creation is ready."',
+        '"PDF creation is ready. A few templates need extra software to look their best."',
+        "`PDF creation is ready, but your TeX needs an update: ${pdflatex.warning}.`",
+    ):
+        assert words in pdf_output, words
     card = _read("components/setup/getting-started-card.tsx")
-    # A PDF step with nothing to do is not a step.
-    assert '!(row.id === "engines" && row.done && status.engines.pdflatex.available)' in card
+    # A PDF step with nothing to do is not a step; a TeX that needs an update is.
+    assert '!(row.id === "engines" && row.done && pdflatex.available && !pdflatex.warning)' in card
     strip = _flat(_read("components/setup/setup-status-strip.tsx"))
     assert '<span className="text-muted-foreground text-label-medium">Setup steps:</span>' in strip
     assert '<Check aria-hidden="true" className="size-3" />' in strip

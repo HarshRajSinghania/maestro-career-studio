@@ -1,3 +1,4 @@
+import { pdfOutputDetail } from "@/lib/pdf-output";
 import { anchorHref } from "@/lib/settings-tabs";
 import type { SetupStatus } from "@/lib/types";
 
@@ -169,9 +170,7 @@ export function buildSetupSteps(
       id: "engines",
       label: "PDF output",
       title: "PDF output",
-      detail: status.engines.pdflatex.available
-        ? "PDF creation is ready."
-        : "PDF creation is ready. A few templates need extra software to look their best.",
+      detail: pdfOutputDetail(status.engines.pdflatex),
       done: status.engines.typst.available,
       home: "/templates",
       anchor: "template-gallery",

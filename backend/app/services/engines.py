@@ -158,8 +158,10 @@ def _pdflatex_version(path: str) -> tuple[str | None, str | None]:
 
 # pdfTeX 1.40.27 — TeX Live 2025 as released, so an un-updated MacTeX/BasicTeX
 # 2025 — mispositions the space glyph `pdf_render` asks for with
-# \pdfinterwordspaceon when the font's own encoding has /space at slot 32
-# (8r URW Helvetica/Times via helvet/times, Fira Mono): the TJ kern after each
+# \pdfinterwordspaceon when the font's own encoding has /space at slot 32 —
+# many Type 1 fonts (Helvetica/Times via 8r, Charter, Crimson, EB Garamond,
+# Merriweather, Fira, Source Sans Pro, BaskervilleF all reproduce it; Computer
+# Modern and XCharter do not): the TJ kern after each
 # space is ~9 space-widths too large, so every following word is drawn about
 # 2 em LEFT, on top of the previous one. Extraction still reads in order, so
 # the parse gate passes it; template validation checks the PDF itself
@@ -168,10 +170,9 @@ def _pdflatex_version(path: str) -> tuple[str | None, str | None]:
 # component is the pdfTeX version: "pdfTeX 3.141592653-2.6-1.40.27 (TeX Live 2025)".
 _PDFTEX_OVERPRINT_BUILD = re.compile(r"-1\.40\.27(?!\d)")
 PDFTEX_1_40_27_WARNING = (
-    "pdfTeX 1.40.27 (TeX Live 2025 without its May 2025 update) draws words on "
-    "top of each other with fonts that carry their own space glyph, such as "
-    "Helvetica, Times or Fira Mono; update TeX to pdfTeX 1.40.28 or later "
-    "(TeX Live 2026, or update TeX Live 2025 with tlmgr)"
+    "pdfTeX 1.40.27 draws words on top of each other with many Type 1 fonts "
+    "(e.g. Helvetica, Charter, Garamond, Fira); update to pdfTeX 1.40.28+ "
+    "(MacTeX 2026, or TeX Live 2025's final updates)"
 )
 
 

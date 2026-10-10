@@ -182,6 +182,7 @@ Python under emulation: `uv tool install --python cpython-3.12-windows-x86_64-no
 | `maestro connect [app]` | Add Maestro to Claude Desktop, Claude Code, Codex, Cursor or VS Code |
 | `maestro autostart on\|off\|status` | Start Maestro when you log in |
 | `maestro backup` | Save a snapshot of your data now (`--out PATH`) |
+| `maestro import-docker CHECKOUT` | Move your data from a Docker install into this one, once (`--dry-run` shows the plan; [steps](docs/UPDATING.md#move-from-docker-to-the-uv-install)) |
 
 `maestro migrate`, `maestro check` and `maestro mcp` are for repair and for
 agents; `maestro --help` lists everything.
@@ -202,16 +203,18 @@ login item keeps retrying a launcher that is gone), then
 deleting the folder deletes your data.
 
 - **Docker and uv are separate copies.** They keep separate data, and both want
-  ports 8001 and 3000, so run one at a time. Neither reads the other's data.
+  ports 8001 and 3000, so run one at a time. To bring your Docker data over once,
+  stop Docker and run `maestro import-docker` ([steps](docs/UPDATING.md#move-from-docker-to-the-uv-install)).
 - **Everything else works as in the Docker route**: add your AI key in
   **Settings › AI & models**, load the [Companion](#the-companion-browser-extension)
   (it expects the same ports), and run `maestro connect` to
   [connect your agent](#driving-it-from-claude-codex-or-chatgpt-mcp).
 - **PDFs** render with the Typst engine that ships inside. LaTeX templates need
   TeX on your computer; without it they build through Typst and the app says so.
-  TeX Live 2025 needs its pdfTeX update (1.40.28 or later); on the first 2025
-  release a template whose words would print on top of each other is refused
-  with that fix named.
+  TeX Live 2025 needs its pdfTeX update (1.40.28 or later): on 1.40.27 a
+  template whose words would print on top of each other is refused. Install
+  MacTeX 2026, or update TeX Live 2025 from its final repository:
+  `sudo tlmgr option repository https://ftp.math.utah.edu/pub/tex/historic/systems/texlive/2025/tlnet-final && sudo tlmgr update --self --all`
 - **What it contacts, and when:** [PRIVACY.md](PRIVACY.md#what-the-maestro-command-and-first-start-download).
 - **Updating** is `maestro update`; see [Updating](#updating).
 
@@ -882,9 +885,11 @@ support the default mode (some network drives), set
 **PDFs fail to build:**
 LaTeX templates need TeX, which the app's Docker image includes. On a uv install
 or any backend outside Docker, without TeX, LaTeX templates build through a Typst
-template instead and the app says so. A template marked "text overprints" on
-TeX Live 2025 needs pdfTeX 1.40.28 or later: install TeX Live 2026 (or update
-TeX Live 2025 with `tlmgr`), then re-validate the template.
+template instead and the app says so. A template marked "text overprints" needs
+pdfTeX 1.40.28 or later (TeX Live 2025 shipped 1.40.27; a plain `tlmgr update`
+refuses because the default repository is now 2026). Install MacTeX 2026, or update TeX Live 2025 from its final repository:
+`sudo tlmgr option repository https://ftp.math.utah.edu/pub/tex/historic/systems/texlive/2025/tlnet-final && sudo tlmgr update --self --all`
+Then re-validate the template.
 
 **The app came up empty after updating from v0.3.0 or older:**
 Your data isn't gone — it's still in the old Postgres volume. See
