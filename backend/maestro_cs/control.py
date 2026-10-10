@@ -137,8 +137,10 @@ def http_get_json(url: str, timeout: float = 2.0) -> dict[str, Any] | None:
 
 
 def autostart_enabled() -> bool | None:
-    """Whether Maestro starts at login. TODO(Task 10): call autostart.is_enabled()."""
-    return None
+    """Whether Maestro starts at login (None when the system can't be asked)."""
+    from maestro_cs import autostart  # lazy: autostart imports ControlError from here
+
+    return autostart.is_enabled()
 
 
 def latest_version(timeout: float = 3.0) -> str | None:

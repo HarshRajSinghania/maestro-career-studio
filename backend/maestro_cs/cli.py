@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from maestro_cs import bridge, connect, control, maintenance, package_version
+from maestro_cs import autostart, bridge, connect, control, maintenance, package_version
 from maestro_cs.home import HomeError
 
 DESCRIPTION = "Maestro Career Studio, run from a uv install."
@@ -41,6 +41,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="write the snapshot here (default: backups/ in your data folder)")
     sub.add_parser("migrate", help="bring the database up to date (Maestro must be stopped)")
     sub.add_parser("check", help="print install facts as JSON (no network)")
+    login = sub.add_parser("autostart", help="start Maestro when you log in (on, off, status)")
+    login.add_argument("action", choices=autostart.ACTIONS, help="on, off or status")
     sub.add_parser("run", help="run Maestro in the foreground (used by autostart)")
     mcp = sub.add_parser("mcp", help="connect an agent over stdio (used by Claude Desktop)")
     mcp.add_argument("--profile", default="full", help="tool profile (default: full)")
@@ -65,6 +67,8 @@ def _dispatch(args: argparse.Namespace) -> int:
     ctx = control.load_context()
     if args.command == "run":
         return control.run(ctx)
+    if args.command == "autostart":
+        return autostart.Autostart(ctx.home, ctx.environ).handle(args.action)
     if args.command == "connect":
         return connect.Connector(ctx).connect(args.client, args.profile, args.print_only, args.now)
     if args.command == connect.WAITER_VERB:
