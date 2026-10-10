@@ -16,7 +16,6 @@
       "js": [
         "shared/decisions.js",
         "shared/choose.js",
-        "shared/guided-run.js",
         "shared/policy.js",
         "shared/profile-fields.js",
         "content/field-reader.js",

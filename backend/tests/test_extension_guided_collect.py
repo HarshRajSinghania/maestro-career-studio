@@ -285,28 +285,23 @@ def test_without_a_prior_rule_pass_nothing_is_retryable(tmp_path):
         row["label"] for row in result["collected"]["excluded"]]
 
 
-def test_both_strict_listbox_button_discriminators_stay_identical():
-    """The Workday listbox-button discriminator exists twice on purpose: the
-    fill engine's copy (autofill.js) and collection's copy (open-questions.js)
-    were written in different lanes with a file-ownership boundary between
-    them. Nothing but this test stops a detection fix from landing in one walk
-    and not the other — which is exactly the fill/collection asymmetry this
-    round existed to close. (guidedWrite's own `guidedIsListboxButton` is
-    deliberately LOOSER — it rechecks elements collection already vetted — and
-    is not part of this pin.)"""
-    import re
+def test_collection_reads_the_fill_engines_listbox_button_discriminator():
+    """The Workday listbox-button discriminator has ONE definition: the fill
+    engine's (autofill.js), published on the namespace, and collection
+    (open-questions.js) reads it from there. A copy in either walk is how a
+    detection fix lands in one and not the other. (guidedWrite's own
+    `guidedIsListboxButton` is deliberately LOOSER — it rechecks elements
+    collection already vetted — and is not part of this pin.)"""
     from pathlib import Path
 
-    root = Path(__file__).resolve().parents[2]
-    copies = []
-    for name in ("autofill.js", "open-questions.js"):
-        src = (root / "extension" / "content" / name).read_text(encoding="utf-8")
-        found = re.findall(
-            r"const isListboxButton = \(el\) =>.*?;", src, re.S)
-        assert len(found) == 1, f"{name}: expected one strict copy, found {len(found)}"
-        copies.append(re.sub(r"\s+", " ", found[0]).strip())
-    assert copies[0] == copies[1], \
-        "the two strict listbox-button discriminators have diverged — fix both or neither"
+    content = Path(__file__).resolve().parents[2] / "extension" / "content"
+    fill = (content / "autofill.js").read_text(encoding="utf-8")
+    collect = (content / "open-questions.js").read_text(encoding="utf-8")
+    assert fill.count("const isListboxButton = (el) =>") == 1
+    assert "ns.isListboxButton = isListboxButton;" in fill
+    assert "ns.listboxButtonEmpty = listboxButtonEmpty;" in fill
+    assert "const isListboxButton =" not in collect
+    assert "const { isListboxButton, listboxButtonEmpty } = ns;" in collect
 
 
 # ---------- what the panel is told about the page, in the page's words ----------

@@ -56,7 +56,7 @@ def test_rest_fill_telemetry_only_emits_whitelisted_keys_and_known_outcomes(tmp_
     """extra=forbid 422s a whole batch. Values never appear; a bogus outcome
     from a stubbed writer is dropped rather than posted.
 
-    THE HOST IS THE ROW'S. `collectFromPage` stamps every question and every
+    THE HOST IS THE ROW'S. The runner's page collection stamps every question and every
     retryable with the host of the FRAME that answered — the truthful host for
     an iframe-embedded form — and Task 12 removed the `location.hostname`
     fallback this function used to keep for rows that carried none. It had to
@@ -471,7 +471,7 @@ def test_telemetry_is_one_batch_of_values_free_observations(tmp_path):
     The host is the FRAME's, and this is where that is pinned: the runner takes
     no host of its own (see the runner's note on why a run-level one would have
     no reachable effect), so the only way `acme.wd5…` can appear below is the
-    per-row stamp `collectFromPage` takes off the frame that answered. The
+    per-row stamp the runner's page collection takes off the frame that answered. The
     ambient `location.hostname` in this harness is `jobs.example.test` — the
     value an embedded Greenhouse form would be misattributed to — and it must
     not show up.

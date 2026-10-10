@@ -28,10 +28,10 @@
  * exactly as a clean run would, so the two paths converge on ONE predicate
  * rather than agreeing about it in two files.
  *
- * WHAT THIS FILE PUBLISHES BESIDES ITS ACTION: `ns.saveTargetFor`,
- * `ns.withProfileAnswer`, `ns.withCustomAnswer` — the three PURE pieces of the
- * save, published beside it because none of them needs a store handle to be
- * driven, and each has a behaviour table behind it.
+ * WHAT THIS FILE PUBLISHES BESIDES ITS ACTION: `ns.saveTargetFor` and
+ * `ns.withCustomAnswer` — the two PURE pieces of the save, published beside it
+ * because neither needs a store handle to be driven, and each has a behaviour
+ * table behind it.
  */
 (() => {
   const ns = (window.careerStudioCompanion ??= {});
@@ -362,5 +362,4 @@
   // reach it would be testing the handle.
   ns.saveTargetFor = saveTargetFor;
   ns.withCustomAnswer = withCustomAnswer;
-  ns.withProfileAnswer = withProfileAnswer;
 })();

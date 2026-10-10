@@ -86,5 +86,5 @@
     return { family: `f:${family}`, site: `s:${hash(`${family}@${location.hostname}`)}` };
   };
 
-  ns.recipes = { ENGINE_VERSION, signature };
+  ns.recipes = { signature };
 })();

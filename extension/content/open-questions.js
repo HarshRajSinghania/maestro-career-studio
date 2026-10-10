@@ -58,21 +58,10 @@ function collectOpenQuestions() {
   const isVisible = (el) =>
     !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
 
-  // Same discriminator the profile writer uses (autofill.js isListboxButton).
-  // Duplicated rather than imported: Lane S owns autofill.js this round.
-  // Form dropdowns are <button aria-haspopup="listbox" type="button"> with no
-  // data-automation-id; header chrome (Settings, account) is type=submit and
-  // always carries an automation id.
-  const isListboxButton = (el) =>
-    el instanceof HTMLButtonElement
-    && el.getAttribute("aria-haspopup") === "listbox"
-    && el.type !== "submit"
-    && !el.getAttribute("data-automation-id");
-  const LISTBOX_PLACEHOLDER = /^(select( one)?|choose( one)?|—|-)?$/;
-  const listboxButtonText = (button) =>
-    String(button.innerText ?? button.textContent ?? "").trim();
-  const listboxButtonEmpty = (button) =>
-    LISTBOX_PLACEHOLDER.test(norm(listboxButtonText(button)));
+  // The profile writer's own discriminator and empty test, read off the
+  // namespace (autofill.js publishes them and loads earlier): one definition,
+  // so a detection fix cannot land in the fill walk and miss collection.
+  const { isListboxButton, listboxButtonEmpty } = ns;
 
   // A textarea inside a detected employment block belongs to the
   // structured employment fill, never the AI (design Part 2d): oddly

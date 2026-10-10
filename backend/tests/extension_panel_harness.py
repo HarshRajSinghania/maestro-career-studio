@@ -257,28 +257,18 @@ global.chrome = {
   },
   // The panel reads its remembered pick straight from storage and writes one
   // back. `writes` is the whole record of that — what was stored, under which
-  // KEY — and `removals` is the record of the orphan sweep, which is a
-  // DIFFERENT operation and has to be visible as one: a sweep that quietly
-  // became a `set(key, null)` would leave the key present with a null value,
-  // which reads the same to `writes` and not the same to `chrome.storage`.
+  // KEY — and `removals` is the record of `remove`, which is a DIFFERENT
+  // operation and has to be visible as one: a forget that quietly became a
+  // `set(key, null)` would leave the key present with a null value, which reads
+  // the same to `writes` and not the same to `chrome.storage`.
   //
-  // `get` takes BOTH shapes, because the panel uses both: an object of
-  // defaults (`STORE_DEFAULTS`) and a bare array of key names (`ORPHAN_KEYS`).
-  // Spreading an array into an object yields index keys and would make the
-  // array form silently return junk — which the sweep would then read as
-  // "nothing to remove", passing for the wrong reason.
+  // `get` takes the defaults object (`STORE_DEFAULTS`) and merges the stored
+  // keys over it.
   storage: {
     local: {
       get: async (query) => {
         if (spec.storageThrows) throw new Error("storage is unavailable");
         const stored = spec.stored ?? {};
-        if (Array.isArray(query)) {
-          const out = {};
-          for (const key of query) {
-            if (Object.hasOwn(stored, key)) out[key] = stored[key];
-          }
-          return out;
-        }
         return { ...query, ...stored };
       },
       set: async (patch) => { writes.push(patch); },
@@ -628,7 +618,7 @@ OTHER_URL = "https://boards.other.test/somewhere"
 APP_URL = "http://localhost:3000"
 SETTINGS_REPLY = {"ok": True, "data": {
     "backendUrl": "http://localhost:8001", "appUrl": APP_URL,
-    "telemetryEnabled": True, "eeoAutofillEnabled": False}}
+    "telemetryEnabled": True}}
 # What Add job says when there is nothing on the page and nothing was typed.
 NOTHING_TO_SAVE = "Nothing to save yet"
 
@@ -759,8 +749,7 @@ _PANEL_LOAD_DRIVER_JS = _PANEL_FAKES_JS + r"""
 loadModules();
 main(async () => {
   await settle();
-  // `writes` too, because a plain load is not always write-free: the restore
-  // sweeps the key Task 8's split retired.
+  // `writes` too, because a plain load is not always write-free.
   emit({ regions: regions(), sent, writes, removals });
 });
 """

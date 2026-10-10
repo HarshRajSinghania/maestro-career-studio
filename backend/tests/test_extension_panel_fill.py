@@ -516,15 +516,12 @@ def test_with_nothing_learned_there_is_nothing_to_forget(tmp_path):
 
 def test_learned_moves_have_their_own_documented_storage_key():
     """The panel source pin: `fill.recipes` is a KEY the storage rule names,
-    read with the session through `STORE_DEFAULTS`, never swept as an orphan,
-    handed to the loop as `deps.recipes`, and the book is loaded by the
+    read with the session through `STORE_DEFAULTS`, handed to the loop as `deps.recipes`, and the book is loaded by the
     document."""
     panel = (EXTENSION / "panel" / "panel.js").read_text(encoding="utf-8")
     key = re.search(r"const KEY = \{([^}]*)\};", panel).group(1)
     assert 'recipes: "fill.recipes"' in key and 'session: "widget.session"' in key
     assert re.search(r"const STORE_DEFAULTS = \{[^}]*\[KEY\.recipes\]: null", panel)
-    orphans = re.search(r"const ORPHAN_KEYS = \[(.*?)\];", panel, re.S).group(1)
-    assert "fill.recipes" not in orphans
     rule = panel[:panel.index("const KEY = {")]
     assert "`fill.recipes`" in rule[rule.rindex("chrome.storage.local"):]
     fill = (EXTENSION / "panel" / "actions" / "fill.js").read_text(encoding="utf-8")

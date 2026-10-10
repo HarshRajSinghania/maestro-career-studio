@@ -59,7 +59,6 @@
   const MAX_ITEM_CHARS = 500;
   const MAX_OPTIONS = 1000;
   const clip = (text, n) => String(text ?? "").slice(0, n);
-  const fold = (text) => String(text ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 
   const neverFilled = (question) => {
     if (typeof ns.isNeverFilled !== "function") throw new Error("receipt: shared/policy.js is not loaded");

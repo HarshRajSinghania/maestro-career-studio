@@ -1576,7 +1576,7 @@
   }
 
   ns.fillCore = {
-    write, explore, choose, set, recommit, verify, tidy, open, readAll, own, leftOpen, stepState, move,
+    write, explore, choose, set, recommit, verify, tidy, open, own, leftOpen, stepState, move,
     snapshot, moved, takeBack,
   };
 })();

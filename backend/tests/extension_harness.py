@@ -67,8 +67,8 @@ ROOT = Path(__file__).resolve().parents[2]
 # READ FROM THE MANIFEST, which is sw.js's own rule (`contentScriptFiles`)
 # applied to the test side, and it is a correction rather than a tidy-up. The
 # list used to be typed out here, and it was WRONG in a way nothing could
-# report: `shared/decisions.js` and `shared/guided-run.js` are injected into
-# every page by `manifest.json` and were missing from it, so "everything a
+# report: `shared/decisions.js` is injected into
+# every page by `manifest.json` and was missing from it, so "everything a
 # source scan must see" was a claim this file could not keep. A hand-kept
 # mirror of a list the browser reads from a file is a mirror that drifts, and
 # the drift is invisible precisely because the tests still pass — they scan a
@@ -141,7 +141,6 @@ FILL_ENGINE_SOURCES = [
 PAGE_RUNTIME_SOURCES = [
     SHARED / "decisions.js",
     SHARED / "choose.js",
-    SHARED / "guided-run.js",
     SHARED / "policy.js",
     SHARED / "profile-fields.js",
     CONTENT / "job-posting.js",

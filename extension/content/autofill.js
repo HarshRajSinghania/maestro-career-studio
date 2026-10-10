@@ -36,6 +36,36 @@
       ));
 
 
+  // Module scope, published below: open-questions.js collection reads the SAME
+  // discriminator and empty test off the namespace.
+  const norm = (s) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+
+  // Workday's dropdowns are BUTTONS, not selects or inputs: <button
+  // aria-haspopup="listbox" type="button" id="country--country"> whose visible
+  // text is the committed value ("Select One" until one commits). Verified
+  // live twice (homedepot.wd5 2026-08-06, bah.wd1 2026-08-08). The guards are
+  // from the same dumps: the header's utility chrome (Settings, the account
+  // menu) carries aria-haspopup too, but always with a data-automation-id and
+  // type="submit", while every form dropdown has an explicit type="button"
+  // and no automation id. A button with NO type attribute defaults to
+  // "submit", so the type test also refuses those — no live form dropdown
+  // omits it.
+  const isListboxButton = (el) =>
+    el instanceof HTMLButtonElement
+    && el.getAttribute("aria-haspopup") === "listbox"
+    && el.type !== "submit"
+    && !el.getAttribute("data-automation-id");
+
+  // The committed value is the button's own text; these are the empty states.
+  // norm() runs first, so case and whitespace are already folded.
+  const LISTBOX_PLACEHOLDER = /^(select( one)?|choose( one)?|—|-)?$/;
+
+  const listboxButtonText = (button) =>
+    String(button.innerText ?? button.textContent ?? "").trim();
+  const listboxButtonEmpty = (button) =>
+    LISTBOX_PLACEHOLDER.test(norm(listboxButtonText(button)));
+
+
 /** Runs IN THE PAGE (all frames). Best-effort fill of form fields from the
  * autofill profile. Handles text inputs, native selects, radios, and
  * ARIA/react-select/select2-style comboboxes (types the value, waits for the
@@ -125,7 +155,6 @@ async function fillFormFromProfile(
   // silently — see the token branch in the fill loop.
   const SKILL_TOKEN_MAX = 10;
 
-  const norm = (s) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const eeoContext = ns.createEeoContext(profile, norm);
   const {
@@ -1049,31 +1078,6 @@ async function fillFormFromProfile(
     }
     return true;
   };
-
-  // Workday's dropdowns are BUTTONS, not selects or inputs: <button
-  // aria-haspopup="listbox" type="button" id="country--country"> whose visible
-  // text is the committed value ("Select One" until one commits). Verified
-  // live twice (homedepot.wd5 2026-08-06, bah.wd1 2026-08-08). The guards are
-  // from the same dumps: the header's utility chrome (Settings, the account
-  // menu) carries aria-haspopup too, but always with a data-automation-id and
-  // type="submit", while every form dropdown has an explicit type="button"
-  // and no automation id. A button with NO type attribute defaults to
-  // "submit", so the type test also refuses those — no live form dropdown
-  // omits it.
-  const isListboxButton = (el) =>
-    el instanceof HTMLButtonElement
-    && el.getAttribute("aria-haspopup") === "listbox"
-    && el.type !== "submit"
-    && !el.getAttribute("data-automation-id");
-
-  // The committed value is the button's own text; these are the empty states.
-  // norm() runs first, so case and whitespace are already folded.
-  const LISTBOX_PLACEHOLDER = /^(select( one)?|choose( one)?|—|-)?$/;
-
-  const listboxButtonText = (button) =>
-    String(button.innerText ?? button.textContent ?? "").trim();
-  const listboxButtonEmpty = (button) =>
-    LISTBOX_PLACEHOLDER.test(norm(listboxButtonText(button)));
 
   // An option that is not a choice. Live on Workday (bah.wd1, 2026-08-08): a
   // multiselect renders each ALREADY-CHOSEN value as
@@ -2185,5 +2189,7 @@ async function fillFormFromProfile(
 
   ns.fillFormFromProfile = fillFormFromProfile;
   ns.isCombobox = isCombobox;
+  ns.isListboxButton = isListboxButton;
+  ns.listboxButtonEmpty = listboxButtonEmpty;
   ns.guidedWrite = guidedWrite;
 })();

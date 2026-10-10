@@ -75,10 +75,9 @@
  * closing must mark the page done, and say what is left, exactly as a clean
  * run would), `ns.panelKeyProblem` and `ns.panelKeySteps` (published by
  * `actions/during.js` beside `failureNote`, read by `actions/fill.js` to say
- * why the AI pass answered nothing) and the pause row's three PURE pieces
- * (`ns.saveTargetFor`, `ns.withCustomAnswer`, `ns.withProfileAnswer`, published
- * by `actions/pause.js` because none of them needs a store handle to be
- * driven). Nothing else does, which is what "self-contained but for
+ * why the AI pass answered nothing) and the pause row's two PURE pieces
+ * (`ns.saveTargetFor`, `ns.withCustomAnswer`, published by `actions/pause.js`
+ * because neither needs a store handle to be driven). Nothing else does, which is what "self-contained but for
  * `duringAction` and `fillFinished`" meant when it was written.
  *
  * WHEN THIS DIRECTORY SPLITS AGAIN. It does not: a concern is the unit, and a

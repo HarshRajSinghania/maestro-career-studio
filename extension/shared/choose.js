@@ -37,7 +37,7 @@
  *   the function with it: nothing arms a run but a click now.
  *
  * WHAT THIS FILE PUBLISHES: ns.QUESTIONY, ns.routeOpenQuestions,
- * ns.chunkChooseFields, ns.requestChoose, ns.buildRestFillObservations.
+ * ns.requestChoose, ns.buildRestFillObservations.
  *
  * Loaded by the manifest's content_scripts (before open-questions.js, which
  * reads the regex) and by panel.html's script tags (before guided-run.js, which
@@ -188,7 +188,6 @@
 
   ns.QUESTIONY = QUESTIONY;
   ns.routeOpenQuestions = routeOpenQuestions;
-  ns.chunkChooseFields = chunkChooseFields;
   ns.requestChoose = requestChoose;
   ns.buildRestFillObservations = buildRestFillObservations;
 })();

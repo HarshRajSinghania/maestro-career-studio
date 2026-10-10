@@ -19,7 +19,7 @@ worker:
 |---|---|---|
 | `shared/decisions.js` | every frame **and** the panel document | the pure decisions the panel renders from — `stageFor`, the base ranking, `reconcileFill`, the session guards, `sanitizeAnswer`, `describesJob` |
 | `shared/choose.js` | every frame **and** the panel document | the pure half of the open-question path: routing, the ≤40 `/choose` batch, `rest_fill` shaping, and the one `QUESTIONY` |
-| `shared/guided-run.js` | every frame **and** the panel document | the guided-fill runner: one sequencing/batching engine, transport injected |
+| `shared/guided-run.js` | the panel document | the guided-fill runner: one sequencing/batching engine, transport injected |
 | `shared/policy.js` | every frame **and** the panel document | the shared never-fill policy — read by the fill engine and by the panel's pause row, whose render AND action are the half that is easy to miss |
 | `shared/receipt.js` | the panel document | the answer receipt builder: a run's report plus the post-run `fill_inventory` become the `POST /api/jobs/{id}/filled-answers` fields, each with its source pill; every same-labelled occurrence is kept, never-fill and unrun fields are not recorded, and it names no telemetry or trace channel (SYSTEM.md `{#inv-filled-answers-local}`); posted by `panel/actions/fill.js` `recordReceipt` through the generic `api` door |
 | `shared/recipe-book.js` | the panel document | the recipe book: which of the engine's own moves worked per widget family, its lifecycle and bounds; the loop's `deps.recipes` |
@@ -1416,8 +1416,7 @@ database and refuses the live file.
 ## Install internals
 
 - **Settings have one home.** `DEFAULTS` in `sw.js` (`backendUrl`, `appUrl`,
-  `telemetryEnabled`, `fillMode`, plus the legacy `eeoAutofillEnabled`, which
-  fill decisions no longer read) is the one place a default lives; stored values
+  `telemetryEnabled`, `fillMode`) is the one place a default lives; stored values
   in `chrome.storage.sync` override it. The panel asks for them over
   `read_settings` rather than keeping a copy, and there is no settings screen in
   the panel. The panel writes `fillMode` to `chrome.storage.sync` directly —
@@ -1500,8 +1499,8 @@ comma-separated.
   sees is its description, "Open the Maestro CS panel on this page". The
   `widget.session` storage key is the same trade — renaming it drops every live
   entry, stranding a user mid-wizard; `restoreSession`'s `if (entry.applicationId)`
-  guard is the condition of writing an application-less entry at all. Three orphan keys the floating card left
-  behind (`widget.dock`, `widget.hiddenOrigins`, `widget.hiddenGlobally`) plus
-  `panel.pick` are swept once on panel boot.
+  guard is the condition of writing an application-less entry at all. The keys the
+  floating card and an earlier panel build left behind (`widget.dock`, `widget.hiddenOrigins`,
+  `widget.hiddenGlobally`, `panel.pick`) are unread and unswept.
 - The hotkey cannot close the panel: `chrome.sidePanel` has an `open` and no
   counterpart, so the close affordance is the browser's own.

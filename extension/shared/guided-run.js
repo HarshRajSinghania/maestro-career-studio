@@ -9,11 +9,10 @@
  * which world it is running in, and neither surface can drift into a second
  * pipeline.
  *
- * Loaded by the manifest's content_scripts AND by panel.html's script tags.
- * It touches no `document`, no `location`, no `chrome.*` and no network of its
- * own, which is what a shared module has to be — and it stays that way now
- * that the panel is the only caller, because the writers it drives run in the
- * page and that is the boundary this file exists to sit on.
+ * Loaded by panel.html's script tags only — no content script reads it. It
+ * touches no `document`, no `location`, no `chrome.*` and no network of its
+ * own, which is what a shared module has to be, because the writers it drives
+ * run in the page and that is the boundary this file exists to sit on.
  *
  * THE LOADABILITY GAP IS CLOSED AT TASK 12, and this paragraph is the record of
  * what it was. This file reads three functions off the namespace at call time —
@@ -49,8 +48,8 @@
  * 4. Telemetry carries no values — `buildRestFillObservations` builds it and
  *    the service worker scrubs it, and neither is bypassed from here.
  *
- * WHAT THIS FILE PUBLISHES: ns.guidedRun = { runGuidedFill, collectFromPage,
- * NO_FRAME_REACHED, shown }.
+ * WHAT THIS FILE PUBLISHES: ns.guidedRun = { runGuidedFill, NO_FRAME_REACHED,
+ * shown }.
  */
 (() => {
   const ns = (window.careerStudioCompanion ??= {});
@@ -307,5 +306,5 @@
     return { essays: routed.essays, residue, closest, writeResults, blank, aiFailure: failure };
   }
 
-  ns.guidedRun = { runGuidedFill, collectFromPage, NO_FRAME_REACHED, shown };
+  ns.guidedRun = { runGuidedFill, NO_FRAME_REACHED, shown };
 })();

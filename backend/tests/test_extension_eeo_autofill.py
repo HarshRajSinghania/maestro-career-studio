@@ -2,9 +2,7 @@
 
 Standing consent is backend-owned (`eeo_consent.enabled` from
 `/api/autofill/context`). The panel's Fill stage maps that flag onto the
-`eeoEnabled` argument exercised here, and it holds no control that could set it
-— `chrome.storage.sync.eeoAutofillEnabled` is legacy and is not the source of
-truth for any fill decision.
+`eeoEnabled` argument exercised here, and it holds no control that could set it.
 
 Protected-class disclosures are the one place where filling a hidden field is a
 harm rather than a convenience, so the visibility bar is higher here than for

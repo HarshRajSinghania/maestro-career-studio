@@ -23,8 +23,6 @@ const DEFAULTS = {
   backendUrl: "http://localhost:8001",
   appUrl: "http://localhost:3000",
   telemetryEnabled: true,
-  // Legacy; fill decisions use backend eeo_consent.enabled instead.
-  eeoAutofillEnabled: false,
   // The panel's Fill stage: "assist" runs the /choose step, "rules" skips it
   // entirely (the runner's `aiAssist`). A DEFAULT here rather than in the panel
   // for this section's whole reason — a second copy is the one that drifts —
@@ -689,12 +687,10 @@ const HANDLERS = {
    * the same store this reads.
    *
    * EEO standing consent is backend-owned (`/api/settings/eeo-consent` /
-   * `eeo_consent` on `/api/autofill/context`); `eeoAutofillEnabled` remains in
-   * storage for migration only and is not authoritative for fill. */
+   * `eeo_consent` on `/api/autofill/context`), never a stored setting. */
   async read_settings() {
-    const { backendUrl, appUrl, telemetryEnabled, eeoAutofillEnabled, fillMode } =
-      await getSettings();
-    return { backendUrl, appUrl, telemetryEnabled, eeoAutofillEnabled, fillMode };
+    const { backendUrl, appUrl, telemetryEnabled, fillMode } = await getSettings();
+    return { backendUrl, appUrl, telemetryEnabled, fillMode };
   },
 
   /** Autofill telemetry, gated and scrubbed in one place.

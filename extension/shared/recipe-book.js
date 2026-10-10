@@ -214,5 +214,5 @@
     };
   };
 
-  ns.recipeBook = { VERSION, LIMIT, TTL_DAYS, AXES, clean, consult, learn, size, store };
+  ns.recipeBook = { clean, consult, learn, size, store };
 })();

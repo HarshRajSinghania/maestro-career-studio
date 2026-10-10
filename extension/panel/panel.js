@@ -7,7 +7,7 @@
  * chrome.storage directly — which is exactly why both rules are written down
  * rather than left to the environment (sw.js says the same from its side).
  *
- * WHAT THIS FILE PUBLISHES: ns.panel = { railModel, deepLink, stageAction,
+ * WHAT THIS FILE PUBLISHES: ns.panel = { railModel,
  * resetPageFacts, applyMatch, previewFrom, ingestBodyFrom, evidenceFrom,
  * sessionEntryFrom, actionStore } — the parts that decide something without a
  * document. They are
@@ -139,8 +139,8 @@
   // their pick gone, which is exactly the failure the key exists to prevent —
   // and one stale word in a comment is cheaper than that. (`widget.dock`,
   // `widget.hiddenOrigins` and `widget.hiddenGlobally` were the card's
-  // placement and its two levels of dismissal. Nothing writes those now; see
-  // `ORPHAN_KEYS` below, which sweeps them.)
+  // placement and its two levels of dismissal. Nothing reads or writes those
+  // now, and nothing sweeps them: a few bytes left in old profiles.)
   //
   // ONE SESSION KEY RATHER THAN TWO, which is worth keeping written down
   // because a second session key existed and the reason it went is a rule
@@ -148,7 +148,7 @@
   // key, and with two keys populated `restoreSession` preferred by KEY — so an older entry beat a
   // fresher one for the whole TTL. One key cannot shadow itself, so the
   // recency tie-break that split needed is not written at all. `panel.pick` is
-  // its remains, swept below.
+  // its remains, unread.
   //
   // WHAT MAKES ONE SESSION KEY SAFE is the `if (entry.applicationId)` guard in
   // `restoreSession`. A base picked in the Job step usually has NO application
@@ -169,32 +169,6 @@
   // (`forgetLearnedMoves`). Local, never `sync`: what worked in this browser
   // is this browser's.
   const KEY = { session: "widget.session", recipes: "fill.recipes" };
-
-  // EVERY KEY THIS EXTENSION HAS EVER WRITTEN TO `chrome.storage.local` AND NO
-  // LONGER READS. R-C's storage pass, and the documented set: if it is not
-  // `KEY.session` and it is not here, nothing in this extension has ever put it
-  // in local storage.
-  //
-  // - `panel.pick` is Task 8's second session key. It can hold one bare base
-  //   pick, written by a panel built between Task 8 and the collapse back to
-  //   one key.
-  // - the three `widget.*` are the floating card's dock placement and its two
-  //   levels of dismissal. R-C deleted the card; these are what it left behind
-  //   in every user's profile.
-  //
-  // SWEPT AT BOOT, WHICH IS THE FIX AND NOT JUST THE MOVE. The `panel.pick`
-  // sweep used to ride `restoreSession`, and that is only reached when the
-  // backend did NOT name an application for the page — so a user whose pages
-  // always match never ran it and kept their orphan forever. The note there
-  // said so, and deferred the fix to "R-C's own storage pass". This is it.
-  // A boot is once per panel OPEN, not once per page load, so the read this
-  // costs is nothing like the per-load write that objection was about.
-  const ORPHAN_KEYS = [
-    "panel.pick",
-    "widget.dock",
-    "widget.hiddenOrigins",
-    "widget.hiddenGlobally",
-  ];
 
   // How long a hand-picked application outlives the page that picked it. An
   // ATS wizard is six page loads and a user can walk away mid-way, so the
@@ -920,9 +894,7 @@
    * ask with defaults, and treat a failed read as "nothing remembered" rather
    * than as an error the user has to see. A storage read that fails must not
    * cost anyone the panel. */
-  // The session key and the recipe book (see `KEY`). The orphans are not read
-  // back here — they are removed once at boot (`sweepOrphanKeys`) and never
-  // consulted.
+  // The session key and the recipe book (see `KEY`).
   const STORE_DEFAULTS = { [KEY.session]: null, [KEY.recipes]: null };
 
   async function readStore() {
@@ -3460,7 +3432,6 @@
 
   async function persistFlow(tabId, entry) {
     const area = chrome.storage.session;
-    if (!area) return;
     const now = Date.now();
     const kept = Object.fromEntries(Object.entries(
       (await area.get(FLOW_KEY))?.[FLOW_KEY] ?? {}).filter(([, one]) => fresh(one, now)));
@@ -3469,7 +3440,7 @@
 
   async function loadFlows() {
     try {
-      const stored = (await chrome.storage.session?.get(FLOW_KEY))?.[FLOW_KEY] ?? {};
+      const stored = (await chrome.storage.session.get(FLOW_KEY))?.[FLOW_KEY] ?? {};
       const now = Date.now();
       for (const [tabId, entry] of Object.entries(stored)) {
         if (isWebOrigin(entry?.origin) && typeof entry?.scope === "string" && fresh(entry, now)) {
@@ -4430,39 +4401,10 @@
     return STAGE_RUN[stage];
   }
 
-  /** Remove the keys nothing reads any more. Once per panel open, and it is
-   * the only thing in this file that touches them.
-   *
-   * READ FIRST, REMOVE ONLY IF SOMETHING IS THERE, which is what keeps this
-   * from being a write on every boot: `chrome.storage.sync` is not involved,
-   * but `local` writes still hit the disk and fire `onChanged`, and almost
-   * every boot after the first has nothing to sweep. The read is one call
-   * against a fixed key list.
-   *
-   * NOT AWAITED AND NOT GUARDED, deliberately. Nothing downstream reads these
-   * keys, so a sweep that loses its race with the rest of boot costs one
-   * retry on the next open, and a sweep that throws costs nothing at all —
-   * whereas letting either fail the boot would cost the whole panel over
-   * housekeeping. The `catch` is why the failure still reaches a log.
-   *
-   * DELETE THIS whole function once no profile can plausibly still hold one of
-   * these — it is a migration, and a migration that outlives its population is
-   * just code. The keys it names are documented at `ORPHAN_KEYS`. */
-  async function sweepOrphanKeys() {
-    try {
-      const stored = await chrome.storage.local.get(ORPHAN_KEYS);
-      const found = ORPHAN_KEYS.filter((key) => stored[key] !== undefined);
-      if (found.length) await chrome.storage.local.remove(found);
-    } catch (err) {
-      console.warn("[maestro-cs] orphan-key sweep failed:", err);
-    }
-  }
-
   /** Settings first so the header link knows where the web app is, then paint,
    * then bind — a panel that cannot reach the SW still opens, on defaults,
    * instead of staying blank. */
   async function boot() {
-    sweepOrphanKeys();
     // `null` when the ask failed, and nothing here treats that as an error:
     // `readSettings` carries why, and every reader below already has a rule for
     // a settings object it does not have.
@@ -4480,9 +4422,8 @@
     await bindActiveTab();
   }
 
-  ns.panel = { railModel, deepLink, stageAction, resetPageFacts, applyMatch,
-               previewFrom, ingestBodyFrom, evidenceFrom, sessionEntryFrom,
-               actionStore };
+  ns.panel = { railModel, resetPageFacts, applyMatch, previewFrom,
+               ingestBodyFrom, evidenceFrom, sessionEntryFrom, actionStore };
   // Nobody awaits the boot, so an unhandled rejection here would leave a blank
   // panel and an empty log — the exact report sw.js's registration carries its
   // own `.catch` for ("the icon does nothing").

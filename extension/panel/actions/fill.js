@@ -83,9 +83,8 @@
    * - the two EEO flags come from the BACKEND's standing consent and from
    *   nothing else. Disclosing protected characteristics and ticking the
    *   application's own agreement boxes are different permissions, so they are
-   *   two flags off one record; the legacy `chrome.storage.sync`
-   *   `eeoAutofillEnabled` is ignored, and this panel offers no toggle that
-   *   could turn either on.
+   *   two flags off one record; this panel offers no toggle that could turn
+   *   either on.
    * - `consentForms` goes LAST in the message, matching the engine's parameter
    *   order, because a positional call converted from a keyed message is where
    *   a silent argument swap would live.

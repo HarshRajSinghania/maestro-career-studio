@@ -2135,14 +2135,12 @@ def test_a_tab_the_scripts_never_reached_reports_no_form_rather_than_a_failure(t
     assert "no reply from the page" not in note["text"]
 
 
-# ---------- local storage: one key read, four swept -------------------------
+# ---------- local storage: one key read ------------------------------------
 #
-# THE DOCUMENTED SET. `widget.session` is the only key this panel reads, and
-# `ORPHAN_KEYS` is every key the extension has ever written to
-# `chrome.storage.local` and no longer does — Task 8's second session key, plus
-# the three the floating card left in every user's profile when R-C deleted it.
-# The entry shape is `tests/extension_fixtures.py`'s, imported rather than
-# restated.
+# `widget.session` is the only session key this panel reads (`fill.recipes` is
+# its other stored key). Task 8's second session key, `panel.pick`, may still sit
+# in an old profile and is ignored. The entry shape is
+# `tests/extension_fixtures.py`'s, imported rather than restated.
 
 
 def test_the_panel_reads_one_key_and_ignores_the_one_it_retired(tmp_path):
@@ -2170,64 +2168,6 @@ def test_the_panel_reads_one_key_and_ignores_the_one_it_retired(tmp_path):
     # 64 is `data_scientist`; 72 is what the retired key — and, equally, the
     # ranking — would have shown.
     assert _by_class(out["regions"]["identity"], "ring")[0]["text"] == "64"
-
-
-def test_the_boot_sweeps_every_orphan_key_it_finds(tmp_path):
-    """R-C's storage pass, and the gap it closes.
-
-    THE SWEEP USED TO RIDE `restoreSession`, which `loadContext` only reaches
-    when the backend did NOT name an application for the page — so a user whose
-    pages always match an application never ran it and kept their orphans
-    forever. It runs at BOOT now, before anything can decide not to.
-
-    All four keys in one planting, because the three `widget.*` ones are what
-    the floating card left behind and they are exactly the rows a user who
-    never re-picks would otherwise carry for good.
-
-    THE BACKEND NAMES AN APPLICATION HERE, and that is the whole point of the
-    fixture rather than incidental colour: `loadContext` calls `restoreSession`
-    only `if (!card.application)`, so on THIS page the old rider-sweep never
-    ran at all. Give the match a null application and the test passes whether
-    the sweep is at boot or back on the rider — measured, not assumed.
-    """
-    out = _load(tmp_path, tabs=[{"id": 7, "url": LIGHTNING_APPLY_URL}], stored={
-        "widget.session": {**PICKED_ENTRY, "at": int(time.time() * 1000)},
-        "panel.pick": {"origin": "https://job-boards.greenhouse.io"},
-        "widget.dock": {"side": "right", "offset": 120},
-        "widget.hiddenOrigins": {"https://acme.example": True},
-        "widget.hiddenGlobally": True,
-    }, api={"lightningai": _reply({"match": "exact", "job": LIGHTNING_JOB,
-                                   "application": {"id": "app-1",
-                                                   "status": "draft"}}),
-            "GET /api/applications/app-1": _reply(
-                {"id": "app-1", "pdf_path": "r.pdf", "status": "draft"}),
-            "/api/base-resumes": _reply(SCORE_RESUMES),
-            "/api/ats-scores": _reply(SCORE_ROWS)})
-    # A REMOVE, not a `set(key, null)`. The second leaves the key present
-    # holding null, which is a row that survives every future sweep because it
-    # is no longer `undefined`.
-    assert out["removals"] == [[
-        "panel.pick", "widget.dock", "widget.hiddenOrigins",
-        "widget.hiddenGlobally",
-    ]], out["removals"]
-    # …and the live key is NOT among them.
-    for removed in out["removals"]:
-        assert "widget.session" not in removed
-
-
-def test_a_profile_with_no_orphans_is_not_written_to(tmp_path):
-    """The second boot, and every boot after it. The sweep reads a fixed key
-    list and removes only what it found, so a clean profile costs one read and
-    no write at all — which is what makes running it on every panel open
-    acceptable rather than housekeeping the user pays for repeatedly.
-    """
-    out = _load(tmp_path, tabs=[{"id": 7, "url": LIGHTNING_APPLY_URL}], stored={
-        "widget.session": {**PICKED_ENTRY, "at": int(time.time() * 1000)},
-    }, api={"lightningai": _reply({"match": "exact", "job": LIGHTNING_JOB,
-                                   "application": None}),
-            "/api/base-resumes": _reply(SCORE_RESUMES),
-            "/api/ats-scores": _reply(SCORE_ROWS)})
-    assert out["removals"] == []
 
 
 # ---------- the reopened done row: a view over the rail, never a stage -------

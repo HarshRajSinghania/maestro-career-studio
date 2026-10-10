@@ -40,6 +40,5 @@
     return null;
   }
 
-  ns.findJobPosting = findJobPosting;
   ns.findJobPostingInDocument = findJobPostingInDocument;
 })();

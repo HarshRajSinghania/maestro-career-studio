@@ -206,12 +206,6 @@ def test_the_content_script_is_the_split_modules_in_dependency_order(content_scr
         # inputs with `ns.QUESTIONY`, which is defined here. One definition of a
         # regex whose own comment forbids loosening it.
         "shared/choose.js",
-        # The guided-fill runner, beside them and for the same reason: the
-        # panel loads the identical file by <script> tag, and its writer half
-        # runs in the page. It calls into `shared/choose.js` but only at call
-        # time, so it does not have to load after it — its place is with the
-        # other shared modules, above every consumer.
-        "shared/guided-run.js",
         # The never-fill policy, moved out of `content/` at Task 13 for
         # `shared/choose.js`'s reason and with the same consequence: the SIDE
         # PANEL has to refuse a policy-blocked field too (a pause row may not

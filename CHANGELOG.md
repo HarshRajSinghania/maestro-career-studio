@@ -68,6 +68,9 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ### Removed
 
+- Companion dead code: the orphan-key sweep, the legacy `eeoAutofillEnabled`
+  setting and unused exports; `shared/guided-run.js` no longer loads into every
+  page's content scripts (only the panel uses it).
 - Word text extraction uses the standard library, removing python-docx and its
   sole lxml dependency while preserving paragraph and table text output.
 - Four API routes with no caller outside tests: `POST /api/resume-lint/wording/reset`,
