@@ -81,10 +81,11 @@ class Supervisor:
             return self._watch()
         finally:
             self._stop_all()
-            self._restore_signals()
             for name in ("ready.json", "supervisor.json", "stop.request",
                          *(f"{spec.name}.json" for spec in self.specs)):
                 (self.run_dir / name).unlink(missing_ok=True)
+            # Last, so a second Ctrl-C during the cleanup above only sets the flag.
+            self._restore_signals()
 
     def _should_stop(self) -> bool:
         return self.stopping or self.stop_request.exists()
@@ -110,8 +111,12 @@ class Supervisor:
         # Once per run, not per spawn: an in-run restart appends, so the crash that caused it
         # stays in the same file instead of overwriting last run's backend.log.1.
         for spec in self.specs:
-            if spec.log.exists():
+            if not spec.log.exists():
+                continue
+            try:
                 os.replace(spec.log, spec.log.with_name(spec.log.name + ".1"))
+            except OSError:  # Windows: another process (`maestro logs -f`) holds the file open
+                self.say(f"Couldn't rotate {spec.log.name}; appending.")
 
     def _spawn(self, spec: ChildSpec) -> subprocess.Popen | None:
         kwargs: dict = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {
@@ -159,6 +164,8 @@ class Supervisor:
     def _watch(self) -> int:
         while not self._should_stop():
             time.sleep(self.poll)
+            if self._should_stop():  # a stop that arrived during the sleep must not restart anything
+                break
             for spec in self.specs:
                 proc = self.children[spec.name]
                 if proc.poll() is None:

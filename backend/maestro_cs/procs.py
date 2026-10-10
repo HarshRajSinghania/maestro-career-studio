@@ -34,7 +34,8 @@ def live_process(record: dict[str, Any] | None) -> psutil.Process | None:
         return None
     try:
         proc = psutil.Process(int(record["pid"]))
-        same = abs(proc.create_time() - float(record["create_time"])) < 0.5
+        # Linux derives create_time from the boot time, which moves when the wall clock is stepped.
+        same = abs(proc.create_time() - float(record["create_time"])) < 2.0
         if same and proc.status() != psutil.STATUS_ZOMBIE:
             return proc
     except (psutil.Error, KeyError, TypeError, ValueError):

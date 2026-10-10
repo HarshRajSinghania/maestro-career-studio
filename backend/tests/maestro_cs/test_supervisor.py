@@ -20,6 +20,7 @@ from maestro_cs import procs, supervisor
 from maestro_cs.supervisor import ChildSpec, Supervisor
 
 POSIX = os.name == "posix"
+BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 # argv: port pidfile [option ...]. Options:
 #   unhealthy             /health answers 500
@@ -281,6 +282,43 @@ def test_a_previous_runs_log_is_kept_and_a_restart_appends(fleet, tmp_path):
     assert fleet.logs.joinpath("backend.log").read_text(encoding="utf-8").count("boot") == 2
 
 
+def test_a_log_that_cannot_be_rotated_is_appended_to(fleet, monkeypatch):
+    fleet.logs.joinpath("backend.log").write_text("old run\n", encoding="utf-8")
+
+    real_replace = os.replace
+
+    def locked(src, dst):  # only the log; the run records still use os.replace
+        if str(src).endswith(".log"):
+            raise PermissionError(32, "The process cannot access the file", str(src))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", locked)
+    sup = fleet.supervisor([fleet.spec("backend")])
+    request_stop_when(fleet.run_dir, wait_for_file(fleet.run_dir / "ready.json"))
+    assert sup.run() == 0
+    assert "Couldn't rotate backend.log; appending." in sup.out.getvalue()
+    text = fleet.logs.joinpath("backend.log").read_text(encoding="utf-8")
+    assert text.startswith("old run\n") and "boot" in text
+    assert list(fleet.run_dir.iterdir()) == []
+
+
+def test_a_stop_that_arrives_while_sleeping_restarts_nothing(fleet, monkeypatch):
+    class Dead:
+        returncode = 1
+
+        def poll(self):
+            return 1
+
+    sup = fleet.supervisor([fleet.spec("backend")])
+    sup.children["backend"] = Dead()
+    fleet.run_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(sup, "_start", lambda spec: pytest.fail("restarted during a stop"))
+    monkeypatch.setattr(supervisor.time, "sleep",
+                        lambda _: (fleet.run_dir / "stop.request").write_text("", encoding="utf-8"))
+    assert sup._watch() == 0
+    assert "restarting" not in sup.out.getvalue()
+
+
 def test_a_missing_executable_is_a_sentence_not_a_traceback(fleet, tmp_path):
     spec = fleet.spec("web")
     spec.argv = [str(tmp_path / "no-such-node"), "server.js"]
@@ -372,7 +410,7 @@ def run_in_subprocess(tmp_path: Path, **popen):
     run_dir = tmp_path / "run2"
     proc = subprocess.Popen(
         [sys.executable, "-c", RUNNER, str(run_dir), FAKE_SERVER, str(port), str(pidfile)],
-        env=dict(os.environ), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **popen)
+        env={**os.environ, "PYTHONPATH": str(BACKEND_DIR)}, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **popen)
     deadline = time.monotonic() + 20
     try:
         while not (run_dir / "ready.json").exists():
