@@ -285,11 +285,11 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   custom endpoint; Langfuse tracing requires an explicit `LANGFUSE_HOST` alongside both keys (opt-in by DESTINATION —
   keys without a host fall back to Langfuse Cloud and would ship resume text to a third party); compose does not forward
   the Langfuse vars.
-- **Staged artifact removal** `{#inv-staged-artifact-removal}`: NEVER delete rendered files inside a transaction that
-  can still roll back. Every `customized_json` write goes through `services/application_writes.stage_resume_update`
-  (sets draft, clears artifact refs, records version, returns stale paths); the caller commits, THEN calls
-  `artifacts.remove_files(stale)` (which also removes the `<pdf>.pages/` dir and prunes emptied folders). Chat edits and
-  version-restore follow the same pattern; there is no "immediate unlink" helper — don't reintroduce one.
+- **Staged artifact removal** `{#inv-staged-artifact-removal}`: NEVER delete rendered files in a transaction that can
+  roll back. Every `customized_json` write uses `services/application_writes.stage_resume_update` (sets draft, clears
+  refs, records version, returns stale paths); callers commit, THEN call `artifacts.remove_files(stale)` to remove
+  files/PDF previews and prune empty folders. Unlink failures warn with tracebacks; missing files and failed folder
+  pruning stay quiet. Chat edits and version restores follow this pattern; never reintroduce an immediate unlink helper.
 - **Stable per-application `artifact_dir`** `{#inv-stable-artifact-dir}`: one folder per application,
   `applications/Company_Role_YYYYMMDD_<idprefix>/`, allocated once via `services/application_artifacts.get_dir`,
   persisted on `Application.artifact_dir`; resume/source/PDF, previews, cover letters and proposal `evidence/` colocate
@@ -394,13 +394,12 @@ this contract. Code citing "§4" lands here; the table says which file to open.
 - **PDF word-spacing** `{#inv-pdf-word-spacing}`: pdflatex+XCharter joins words for strict extractors;
   `pdfinterwordspaceon` + the parse_certified gate protect this — see the shared header partial `_header.tex.j2`, which
   BOTH resume and cover-letter templates include (format/scanner changes must handle both).
-- **A render never changes engine silently** `{#inv-render-fallback-explained}`: with no `pdflatex` (`services/engines`,
-  the ONE probe; `MAESTRO_CS_PDFLATEX` overrides and fails CLOSED) a LaTeX template renders through the first ready
-  Typst template and `render_note` names both — resumes, base resumes and cover letters alike
-  (`pdf_render.resolve_render_template`); template VALIDATION never substitutes. Error contract
-  (`base_resume_render.record_render_error`): a committed write degrades to a persisted `render_error`, a render that IS
-  the request is a 400, never a 500. Every `render_base_resume` call site is enumerated by
-  `tests/test_render_note_coverage.py`. Pinned by `tests/test_render_fallback.py`.
+- **A render never changes engine silently** `{#inv-render-fallback-explained}`: `services/engines` is the ONE probe;
+  `MAESTRO_CS_PDFLATEX` overrides and fails CLOSED. Without `pdflatex`, `pdf_render.resolve_render_template` uses the
+  first ready Typst template for LaTeX resumes, bases and cover letters; `render_note` names both. VALIDATION never
+  substitutes. `base_resume_render.record_render_error`: committed writes persist `render_error`; render-only requests
+  return 400, never 500. Startup seed-render failures warn with tracebacks and leave the base usable; its first save
+  retries. Call sites: `tests/test_render_note_coverage.py`. Pinned by `tests/test_render_fallback.py`.
 - **`user_cannot_confirm` is durable.** `{#inv-provenance-no-decay}` No code path upgrades that provenance to anything
   else — including the gap flow that writes it: a "cannot confirm" gap outcome stores a retired `user_cannot_confirm`
   point (on the entity its placement names, else the archived "Unconfirmed claims" holder) and future sessions

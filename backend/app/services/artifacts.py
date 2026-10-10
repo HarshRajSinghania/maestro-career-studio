@@ -1,9 +1,13 @@
+import logging
 from pathlib import Path
 from shutil import rmtree
 
 from app.models.application import Application
 from app.models.qa_entry import QAEntry
 from app.services import pdf_preview
+
+
+logger = logging.getLogger(__name__)
 
 
 def remove_files(paths: list[Path]) -> None:
@@ -19,13 +23,15 @@ def remove_files(paths: list[Path]) -> None:
         parents.add(path.parent)
         try:
             path.unlink()
-        except OSError:
+        except FileNotFoundError:
             pass
+        except OSError:
+            logger.warning("Could not remove %s", path, exc_info=True)
     for parent in parents:
         try:
             parent.rmdir()
         except OSError:
-            pass
+            pass  # not empty (the normal case) or already gone
 
 
 def stage_resume_artifact_removal(application: Application) -> list[Path]:

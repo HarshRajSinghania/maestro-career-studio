@@ -82,7 +82,9 @@ def seed_base_resumes(session: Session) -> list[str]:
         try:
             base_resume_render.render_base_resume(slug, session)
         except Exception:
-            pass
+            # Best effort: a seeded base without a PDF still works and renders on
+            # its first save. Say so instead of hiding it.
+            logger.warning("Seed render failed for base resume %s", slug, exc_info=True)
 
     return seeded
 

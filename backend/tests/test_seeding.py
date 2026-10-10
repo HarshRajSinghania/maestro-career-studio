@@ -1,4 +1,5 @@
 import json
+import logging
 
 from app.models.base_resume import BaseResume
 from app.models.setting import Setting
@@ -56,6 +57,28 @@ def test_seed_base_resumes_tolerates_render_failure(db_session, tmp_path, monkey
     seeded = seeding.seed_base_resumes(db_session)
 
     assert seeded == ["hybrid"]
+
+
+def test_a_seed_render_failure_is_logged(db_session, tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(seeding.settings, "base_resumes_dir", tmp_path)
+    (tmp_path / "hybrid.json").write_text(
+        json.dumps({"contact": {"name": "Sample", "email": "a@example.com"}}),
+        encoding="utf-8",
+    )
+
+    def boom(slug, db):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(seeding.base_resume_render, "render_base_resume", boom)
+    with caplog.at_level(logging.WARNING, logger="app.services.seeding"):
+        seeded = seeding.seed_base_resumes(db_session)
+
+    assert seeded == ["hybrid"]
+    assert db_session.get(BaseResume, "hybrid") is not None
+    assert "hybrid" in caplog.text
+    assert "boom" in caplog.text
+    assert caplog.records[0].levelno == logging.WARNING
+    assert caplog.records[0].exc_info is not None
 
 
 def test_seed_prompts_inserts_missing_prompt_settings(db_session, tmp_path, monkeypatch):

@@ -8,6 +8,7 @@ pages directories.
 """
 import hashlib
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -433,6 +434,32 @@ def test_remove_files_takes_preview_pages_dir(tmp_path):
     assert not pages.exists()
     # the emptied parent folder is pruned too
     assert not pdf.parent.exists()
+
+
+def test_remove_files_logs_an_unlink_failure_but_not_a_missing_file(
+    tmp_path, monkeypatch, caplog,
+):
+    missing = tmp_path / "gone.tex"
+    locked = tmp_path / "locked.tex"
+    locked.write_text("x", encoding="utf-8")
+    real_unlink = Path.unlink
+
+    def fake_unlink(self, *args, **kwargs):
+        if self == locked:
+            raise PermissionError("denied")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fake_unlink)
+    with caplog.at_level(logging.WARNING, logger="app.services.artifacts"):
+        artifacts.remove_files([missing, locked])
+
+    assert locked.exists()
+    assert "locked.tex" in caplog.text
+    assert "denied" in caplog.text
+    assert "gone.tex" not in caplog.text
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelno == logging.WARNING
+    assert caplog.records[0].exc_info is not None
 
 
 def test_stage_resume_artifact_removal_defers_disk_io(db_session, tmp_path):
