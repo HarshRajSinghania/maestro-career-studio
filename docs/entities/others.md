@@ -793,3 +793,31 @@
   show **Last ran** or **Not run yet** after data arrives; a read that never produced data
   shows no line, while a failed background refetch keeps the cached line ([agent-runs.md](agent-runs.md)). A
   ran card also wears its newest run's outcome chip; until a card has run, the connect-your-agent note is a callout.
+
+- **The uv install** (`backend/maestro_cs/`, command `maestro`; route summary in SYSTEM.md §9, folder in §6 inv-one-home).
+  - **The wheel** is `backend/` renamed `maestro-career-studio` (version = `backend/pyproject.toml`), `py3-none-any`: `scripts/build_wheel.py`
+    stages `git ls-files` (no tests, no host scripts), adds `maestro_cs/web/` (Next standalone + `.next/static` + `public`, with every
+    frontend `.env*` dropped) and `maestro_cs/data/example.json`; `scripts/check_wheel.py` refuses a wheel missing a required file or
+    carrying a forbidden one. Node comes from `nodejs-wheel-binaries` (a core dependency, left out of `requirements.lock`).
+  - **The folder** (`home.default_home`; `MAESTRO_HOME` wins) holds `data/`, `applications/`, `settings/`, `base_resumes/`,
+    `kb_documents/`, `logs/`, `exports/`, `fastembed_cache/`, `uploads/`, `backups/`, `run/` (process records, `stop.request`), `sync-key`
+    when sync is on, and `maestro.env`. A symlinked folder or `maestro.env` is refused. Ports: process environment, then `maestro.env`,
+    then 8001/3000 (`MAESTRO_PORT`, `MAESTRO_WEB_PORT`; for side-by-side copies only).
+  - **Environment** (`home.backend_env`, `web_env`): the backend gets the shell, then `maestro.env` (a name set there wins in any
+    capitalisation), then the enforced paths and `ALLOWED_HOSTS=localhost,127.0.0.1`; `DATABASE_URL` and other foreign data pointers are
+    stripped. The web process gets the shell minus `_WEB_STRIPPED`, `HOSTNAME=127.0.0.1`, `NEXT_TELEMETRY_DISABLED=1`, and
+    `FRONTEND_ALLOWED_HOSTS` from the file.
+  - **Run and stop**: `maestro start` preflights both ports, seeds the demo resume, downloads the scoring model into an empty
+    `fastembed_cache/` (skip: `--skip-model`), detaches `maestro run` and waits for both health URLs. `maestro stop` writes
+    `run/stop.request`; the supervisor stops each child (SIGTERM to its session on POSIX, `CTRL_BREAK_EVENT` on Windows), then a tree kill after 10 s.
+  - **Update**: `maestro update` checks PyPI, prints the changelog's `### Breaking changes`, asks, writes a verified snapshot
+    (`backups/db-*.sqlite3.gz`, newest five kept), stops, runs `uv tool upgrade` (or `install --force --python 3.12 WHEEL` for
+    `--source`), starts, and compares versions. On Windows the running executables are locked, so a detached `cmd` script
+    (`logs/update.cmd`, log `logs/update.log`) waits for this process to exit and does the upgrade.
+  - **Connect and bridge**: `maestro connect` reuses `app.services.connect.build`, the connect card's own strings. Claude Desktop's
+    config gets `{"command": <absolute shim>, "args": ["mcp"]}`; when Desktop runs, a detached waiter writes after it quits. `maestro mcp`
+    is a stdio-to-HTTP bridge (one total deadline per request, session replay) that imports no `app` module.
+  - **Autostart**: launchd agent (macOS), systemd user unit (Linux), Task Scheduler logon task from XML for the current user (Windows).
+  - **CI**: `maestro-cli` (`tests/maestro_cs` on the three OSes), `uv-wheel`, `uv-smoke` (`scripts/smoke_uv_install.py`: install, start, score over
+    `/mcp`, backup, loopback and Host/Origin checks, stop), `uv-upgrade` (`scripts/upgrade_check.py`: old wheel to new via `update --source`);
+    `pypi.yml` repeats build and smoke on a tag, then publishes through PyPI trusted publishing.

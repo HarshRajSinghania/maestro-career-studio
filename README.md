@@ -63,6 +63,7 @@ you** — your whole record exports to one `career.md` file
 > [`SECURITY.md`](SECURITY.md) has the details.
 
 **Contents:** [Why Maestro CS?](#why-maestro-cs) ·
+[Install without Docker (uv)](#install-without-docker-uv) ·
 [Prerequisites](#prerequisites) · [Quickstart](#quickstart) ·
 [Updating](#updating) ·
 [Using it well](#using-it-well) ·
@@ -136,7 +137,82 @@ gone stale):
 
 ---
 
+## Install without Docker (uv)
+
+The shortest route if you are comfortable in a terminal: no Docker, no Git, no
+clone. [uv](https://docs.astral.sh/uv/) installs Maestro as a command and fetches
+the Python it needs; the package carries the web app and its own Node. It runs on
+macOS, Linux and Windows (x64).
+
+```bash
+# 1. Install uv once, then open a new terminal.
+curl -LsSf https://astral.sh/uv/install.sh | sh     # macOS and Linux
+```
+
+```powershell
+# On Windows, in PowerShell instead of the line above:
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+```bash
+# 2. Install Maestro, then start it.
+uv tool install --python 3.12 maestro-career-studio
+maestro start
+```
+
+`maestro start` runs Maestro in the background and opens **http://localhost:3000**.
+Closing the terminal does not stop it. The first start downloads the small
+scoring model (about 100 MB, once) from Hugging Face, so allow a minute or two.
+If the terminal says `maestro` is not found, run `uv tool update-shell` and open a
+new terminal.
+
+| Command | What it does |
+|---|---|
+| `maestro start` | Start Maestro and open the app (`--no-browser`, `--skip-model`) |
+| `maestro stop` | Stop it |
+| `maestro restart` | Stop, then start (use it after editing `maestro.env`) |
+| `maestro status` | Whether it is running, its version and whether a newer one exists (`--offline` skips that check, `--json` for scripts; exit code 3 means stopped) |
+| `maestro logs [backend\|web\|supervisor\|update]` | The end of a log (`-n` lines, `-f` to follow) |
+| `maestro open` | Open the app in your browser |
+| `maestro update` | Save a snapshot of your data, update, restart (`-y` skips the question) |
+| `maestro connect [app]` | Add Maestro to Claude Desktop, Claude Code, Codex, Cursor or VS Code |
+| `maestro autostart on\|off\|status` | Start Maestro when you log in |
+| `maestro backup` | Save a snapshot of your data now (`--out PATH`) |
+
+`maestro migrate`, `maestro check` and `maestro mcp` are for repair and for
+agents; `maestro --help` lists everything.
+
+**Where your data lives.** One folder per user. It holds the database, resumes,
+settings, backups, logs and `maestro.env` (your API keys and, if you need them,
+port overrides):
+
+| System | Folder |
+|---|---|
+| macOS | `~/Library/Application Support/Maestro Career Studio` |
+| Windows | `%APPDATA%\Maestro Career Studio` |
+| Linux | `$XDG_DATA_HOME/maestro-career-studio` (default `~/.local/share/maestro-career-studio`) |
+
+Uninstalling with `uv tool uninstall maestro-career-studio` leaves that folder;
+deleting the folder deletes your data.
+
+- **Docker and uv are separate copies.** They keep separate data, and both want
+  ports 8001 and 3000, so run one at a time. Neither reads the other's data.
+- **Everything else works as in the Docker route**: add your AI key in
+  **Settings › AI & models**, load the [Companion](#the-companion-browser-extension)
+  (it expects the same ports), and run `maestro connect` to
+  [connect your agent](#driving-it-from-claude-codex-or-chatgpt-mcp).
+- **PDFs** render with the Typst engine that ships inside. LaTeX templates need
+  TeX on your computer; without it they build through Typst and the app says so.
+- **What it contacts, and when:** [PRIVACY.md](PRIVACY.md#what-the-maestro-command-and-first-start-download).
+- **Updating** is `maestro update`; see [Updating](#updating).
+
+Docker stays the route for contributors and for servers.
+
+---
+
 ## Prerequisites
+
+These are for the Docker route below.
 
 - **Docker Desktop** (or Docker Engine + Compose v2). Docker runs the app in a
   self-contained box on your computer, so you don't install anything else.
@@ -240,6 +316,12 @@ on each model in **Settings › AI & models** and tell us what worked in an issu
 ---
 
 ## Updating
+
+**Installed with uv?** Run `maestro update`. It checks PyPI for a newer release,
+prints any breaking changes from the changelog, saves a verified snapshot of your
+data, stops Maestro, updates it and starts it again
+([details](docs/UPDATING.md#updating-a-uv-install)). The rest of this section is
+the Docker route.
 
 **One command, from the folder you cloned:**
 
@@ -422,14 +504,22 @@ the PDF. It runs on **your computer** against **your** data.
 With the app running, open Settings › Connected agents › **Connect an agent app**
 and choose a **Tool set**:
 
-- **Claude Desktop** — download the `.mcpb` bundle from the card or the
+- **Claude Desktop** — on a Docker install, download the `.mcpb` bundle from the card or the
   [release](https://github.com/seinun-ai/maestro-career-studio/releases), then
   double-click it. It bridges Claude's stdio connection to Maestro's local HTTP
   endpoint and needs no Docker or Python on Claude's side. Reinstall the bundle
-  if you have the older Docker-based extension.
+  if you have the older Docker-based extension. On a uv install, run
+  `maestro connect claude-desktop` instead: it writes Maestro into Claude
+  Desktop's settings. Desktop rewrites that file while it runs, so with Desktop
+  open the command waits, writes the entry after you quit it, and `--now` writes at once.
 - **URL clients** — Claude Code and Codex CLI get a copyable command; Cursor and
   VS Code get install buttons; other HTTP MCP clients get a URL. The default is
   `http://localhost:8001/mcp`. Use `/mcp` exactly — no trailing slash.
+
+**On a uv install, `maestro connect` does this from the terminal.** With no app
+it lists them and says which already have Maestro; `maestro connect claude-code`,
+`codex`, `cursor` or `vscode` adds Maestro to that app, and `--print` shows what
+it would add without changing anything.
 
 For Claude Code or Codex CLI, the commands are:
 
@@ -652,8 +742,9 @@ disk, and nothing about leaving is made difficult.
 
 ## Where your files live
 
-Everything stays inside the folder you cloned. These are yours, never uploaded,
-and ignored by git:
+On the Docker route, everything stays inside the folder you cloned. (A
+[uv install](#install-without-docker-uv) keeps the same folders in its per-user
+data folder instead.) These are yours, never uploaded, and ignored by git:
 
 - `data/` — the database (`maestro_cs.sqlite3`). Deleting it deletes every
   application, resume version and career-record entry.
@@ -780,8 +871,8 @@ support the default mode (some network drives), set
 `SQLITE_JOURNAL_MODE=DELETE` in `.env` and restart.
 
 **PDFs fail to build:**
-LaTeX templates need TeX, which the app's Docker image includes. If you run the
-backend outside Docker without TeX, LaTeX templates build through a Typst
+LaTeX templates need TeX, which the app's Docker image includes. On a uv install
+or any backend outside Docker, without TeX, LaTeX templates build through a Typst
 template instead and the app says so.
 
 **The app came up empty after updating from v0.3.0 or older:**

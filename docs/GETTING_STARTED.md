@@ -33,6 +33,10 @@ assistant** ([§5](#5-connect-your-ai-assistant-optional)).
 
 ## 1. What you need
 
+> **Comfortable in a terminal and want no Docker?** Skip this list and use the
+> [uv route](#or-install-with-uv-no-docker-no-git) in step 2. It needs only
+> [uv](https://docs.astral.sh/uv/), which installs Python for you.
+
 - **Docker.** Docker is a free program that runs Maestro in a self-contained
   box on your computer, so you don't install anything else. On macOS or
   Windows install [Docker Desktop](https://docs.docker.com/desktop/); on
@@ -147,6 +151,76 @@ anywhere else.
   rm -rf data/*
   ```
 
+### Or install with uv (no Docker, no Git)
+
+uv installs Maestro as a command, and Python 3.12 with it. The package carries the
+web app and its own Node, so there is nothing else to install. It runs on macOS,
+Linux and Windows (x64), natively; on Windows you do not need WSL for this route.
+
+1. **Install uv, once.** On macOS or Linux:
+
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+   On Windows, in PowerShell:
+
+   ```powershell
+   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
+
+   Then **open a new terminal** so the `uv` command is found.
+2. **Install Maestro and start it:**
+
+   ```bash
+   uv tool install --python 3.12 maestro-career-studio
+   maestro start
+   ```
+
+   `maestro start` runs Maestro in the background and opens
+   **<http://localhost:3000>**. Closing the terminal does not stop it. The first
+   start downloads the scoring model (about 100 MB, once) from Hugging Face,
+   so give it a minute or two. If the terminal says `maestro` is not found, run
+   `uv tool update-shell` and open another new terminal.
+
+Then carry on with step 3. The commands you will use:
+
+| Command | What it does |
+| --- | --- |
+| `maestro status` | Tells you whether Maestro is running and which version (`--offline` skips the check for a newer release) |
+| `maestro stop` / `maestro restart` | Stop it; stop and start it again (needed after you edit `maestro.env`) |
+| `maestro open` | Opens the app in your browser |
+| `maestro logs` | Shows the end of the backend log (`maestro logs web`, `supervisor` or `update` for the others; `-f` follows) |
+| `maestro autostart on` | Starts Maestro every time you log in (`off` and `status` too) |
+| `maestro backup` | Saves a snapshot of your data now |
+| `maestro update` | Saves a snapshot, updates and restarts ([step 7](#7-keeping-it-up-to-date)) |
+| `maestro connect` | Adds Maestro to your AI assistant ([step 5](#5-connect-your-ai-assistant-optional)) |
+
+**Your data** sits in one folder, not in a project folder:
+
+| System | Folder |
+| --- | --- |
+| macOS | `~/Library/Application Support/Maestro Career Studio` |
+| Windows | `%APPDATA%\Maestro Career Studio` |
+| Linux | `$XDG_DATA_HOME/maestro-career-studio` (default `~/.local/share/maestro-career-studio`) |
+
+It holds the database, your resumes and settings, `backups/`, `logs/` and
+`maestro.env`, the one settings file (API keys and, if ever needed, port
+overrides; `maestro restart` after editing it). Uninstalling with
+`uv tool uninstall maestro-career-studio` leaves the folder; deleting the folder
+deletes your data. Add your AI key in the app (Settings › AI & models), as in the
+Docker route.
+
+- **Don't run a Docker install and a uv install at the same time.** They are
+  separate copies with separate data, and both use ports 8001 and 3000.
+- **The Companion needs no changes**: it expects the same ports. Load it from
+  the repository's `extension` folder ([step 4](#4-the-companion-browser-extension-optional)).
+- **PDFs** render with the Typst engine that ships inside. LaTeX templates need
+  TeX on your computer; without it Maestro builds them through Typst and says so.
+- **Something wrong?** `maestro status` and `maestro logs` come first. A port in
+  use is named in the message. `maestro check` prints the install's facts as JSON
+  to paste into an issue; it makes no network call.
+
 ## 3. Your first tailored resume
 
 Five steps from nothing to a PDF:
@@ -205,6 +279,11 @@ folder to your `C:` drive from the Ubuntu window and load the copy instead:
 `cp -r extension /mnt/c/Users/<your-windows-user>/maestro-extension`. The copy
 doesn't update itself, so repeat that command after every update.
 
+On a uv install there is no project folder, because the package does not carry the
+extension: download the repository (**Code › Download ZIP** on GitHub, or
+`git clone`) and load its `extension` folder. The Companion then works unchanged
+against Maestro on the default ports.
+
 There is nothing to set up if you kept the default ports. If you changed the
 ports in `.env`, open `chrome://extensions` → **Details** on the Maestro CS
 Companion card → **Extension options**. Set **Backend address** and **App address**,
@@ -226,9 +305,31 @@ connectors are outside this setup.
 Open Settings › Connected agents › **Connect an agent app**. Its **Tool set**
 selector defaults to `full` (all 88 tools). Choose one set per chat.
 
+### On a uv install: `maestro connect`
+
+If you installed with uv, one command per app does the setup, and it needs
+Maestro's folder and nothing else:
+
+```bash
+maestro connect                    # lists the apps and which already have Maestro
+maestro connect claude-desktop
+maestro connect claude-code        # also: codex, cursor, vscode, other
+```
+
+`claude-code` and `codex` run that app's own `mcp add` command for you (with
+`--scope user` for Claude Code, so Maestro shows up in every folder); `cursor` and
+`vscode` open the install link; `other` prints the URL. `claude-desktop` edits
+Claude Desktop's settings file with the **full path** to the `maestro` command
+(Desktop does not see your terminal's PATH) and keeps a `.bak` copy of the old
+file. Desktop rewrites that file while it runs, so if it is open the command waits
+in the background and writes after you quit Desktop; `--now` writes at once, and
+`--print` shows the entry without changing anything. Add `--profile hunt` (or
+`apply`, `explore`, `templates`, `career`) for a smaller tool set. Restart the
+app afterwards so it sees the tools.
+
 ### Claude Desktop
 
-Download `maestro-career-studio.mcpb` from the card or the
+On a Docker install, download `maestro-career-studio.mcpb` from the card or the
 [release](https://github.com/seinun-ai/maestro-career-studio/releases), then
 double-click it to install in Claude Desktop. You can also use Settings →
 **Extensions** → **Install Extension** and select the downloaded file.
@@ -352,7 +453,14 @@ To keep that work going while your laptop is off, see
 
 ## 7. Keeping it up to date
 
-From the project folder:
+**Installed with uv?** Run `maestro update`. It checks PyPI, shows any breaking
+changes from the changelog, saves a snapshot of your data to `backups/` in your
+Maestro folder, and only then stops Maestro, updates it and starts it again
+(on Windows the update finishes in the background; `maestro logs update` shows
+how it went). The reload-the-extension and restart-your-assistant steps below
+apply here too. [UPDATING.md](UPDATING.md#updating-a-uv-install) has the detail.
+
+**On Docker**, from the project folder:
 
 ```bash
 ./scripts/update.sh

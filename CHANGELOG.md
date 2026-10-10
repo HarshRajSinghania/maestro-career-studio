@@ -41,9 +41,29 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
   Use the `MAESTRO_CS_*` names. Leaving these set without their replacements
   means an unpacked Companion id loses API write access, the MCP profile falls back
   to `full`, and PDFs/uploads go to the default folders.
+- **Nothing in the uv install work needs an action from a Docker install.** The
+  Docker images, `docker-compose.yml`, `.env`, ports and `scripts/update.sh` work as
+  before (the Changed list below says what moved inside the images).
 
 ### Added
 
+- **A Docker-free install with uv, and the `maestro` command.**
+  `uv tool install --python 3.12 maestro-career-studio` installs Maestro (published
+  to PyPI on every release tag, with the web app and Node inside the package) on
+  macOS, Linux and Windows x64. `maestro start`, `stop`, `restart`, `status`,
+  `logs`, `open`, `update`, `backup`, `migrate`, `check`, `autostart on|off|status`,
+  `connect` and `mcp` run it from one per-user folder with one settings file,
+  `maestro.env`. `maestro update` saves a verified snapshot of your data before it
+  changes anything and prints the changelog's breaking changes first. See the
+  README, `docs/GETTING_STARTED.md` and `docs/UPDATING.md`.
+- **`maestro connect`** adds Maestro to Claude Desktop (waiting until you quit it,
+  because it rewrites its settings while running), Claude Code, Codex, Cursor and
+  VS Code. `maestro mcp` is the stdio bridge it points Claude Desktop at; on a uv
+  install the connect card's Claude Desktop row shows the command instead of the
+  bundle download.
+- CI builds the wheel, installs it with uv on macOS, Ubuntu and Windows, smoke-tests
+  it, and upgrade-tests one version to the next (`docs/RELEASING.md` has the
+  one-time PyPI setup).
 - **HTTP MCP inside the backend** at `/mcp`, with `full`, `hunt`, `apply`,
   `explore`, `templates` and `career` tool profiles on the same port and
   Host/Origin boundary as REST.
@@ -62,6 +82,22 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ### Changed
 
+- **The backend's Python distribution is renamed** `maestro-career-studio-backend`
+  to `maestro-career-studio` (it is the PyPI name). The setup scripts uninstall the
+  old name; nothing to do. `pyproject.toml` is also the PyPI version.
+- **The frontend image runs `node server.js`** from Next's standalone output
+  instead of `next start`, with image optimization off (nothing uses it) and no
+  `sharp`. `npm start` does the same outside Docker. Same ports, same behavior.
+- `/health/memory` and the sync file reads work on Windows. On Windows, a sync file
+  read no longer refuses a symlink at open (there is no `O_NOFOLLOW`); the
+  regular-file check and the packer's symlink check still apply.
+- The Claude Code command on the connect card and in the docs is
+  `claude mcp add --scope user …`, so Maestro shows up in every folder, not only
+  the one you ran it in.
+- `PRIVACY.md` names the scoring model's first download (Hugging Face) and the
+  `maestro` command's PyPI and changelog requests; both are only made when you run
+  them or on first start. Contributors: CI installs now also download
+  `nodejs-wheel-binaries` (about 60 MB); `requirements.lock` leaves it out.
 - The Claude Desktop **`.mcpb` bundle is a Node stdio-to-HTTP bridge**.
   Reinstall it if you used the older Docker-based bundle. Claude needs no
   Docker or Python on its side; the bundle supports macOS, Windows and Linux.

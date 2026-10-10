@@ -15,7 +15,8 @@ the premise.
 
 **What "local-first, single-user, no authentication" defends against:** a remote
 attacker with network access. Nothing listens on a routable interface — every
-port Compose publishes binds `127.0.0.1`. There is also no account system to
+port Compose publishes binds `127.0.0.1`, and a uv install (`maestro start`)
+runs its backend (8001) and web server (3000) on `127.0.0.1` only. There is also no account system to
 compromise, no shared tenancy, and no server of ours holding your data.
 
 **What it does not defend against, on its own:** the browser you are already
@@ -305,6 +306,40 @@ until you remove it (docs/UPDATING.md). Never commit any of it.
     does not return it. An existing key file is never overwritten. A loopback
     address ignores the proxy environment. Any other address must be `https://`
     with no path and no query.
+
+### A uv install (`maestro start`)
+
+The command keeps everything in one per-user folder (macOS
+`~/Library/Application Support/Maestro Career Studio`, Windows
+`%APPDATA%\Maestro Career Studio`, Linux
+`$XDG_DATA_HOME/maestro-career-studio`), and the rules above hold unchanged.
+
+- **Both servers bind `127.0.0.1`,** and the Host, Origin and CORS checks of §3 run
+  on both. The two ports are fixed at 8001 and 3000 for the Companion; changing
+  them (`MAESTRO_PORT`, `MAESTRO_WEB_PORT` in `maestro.env`) is for side-by-side
+  copies, and never makes either server listen beyond this computer.
+- **`maestro.env` is the only file that holds secrets** (API keys). It is created
+  mode 0600 inside a 0700 folder on macOS and Linux; Maestro refuses to use a
+  folder or file that is a symlink. Values you export in your shell for the
+  `maestro` command are read too, but the file is the supported place.
+- **The web server process gets no API keys.** It is started with your
+  environment minus every secret setting the backend reads (the AI keys, tracing
+  keys, sync settings and key file), and no value from `maestro.env` reaches it
+  except `FRONTEND_ALLOWED_HOSTS`. A test
+  walks the backend's settings and fails when a new secret-bearing field is not
+  on that list. The backend gets `maestro.env`, your environment, and its own
+  data paths.
+- **On Windows, file modes are not enforced.** The 0600 and 0700 modes above do
+  nothing there. Protection is the folder's inherited per-user ACL under
+  `%APPDATA%`, which by default admits only you, administrators and the system.
+  Maestro does not read or change that ACL, and no test checks it, so a folder you
+  moved elsewhere with `MAESTRO_HOME` has whatever access its parent grants.
+- **On Windows, sync's file reads lose one guard.** The open-time refusal of a
+  symlink (`O_NOFOLLOW`) does not exist there. The check that a sync file is a
+  regular file and the packer's refusal of any symlink in a packed tree still apply.
+- **Install and update** fetch code from PyPI; `maestro update` saves a verified
+  snapshot of your database first. [`PRIVACY.md`](PRIVACY.md#what-the-maestro-command-and-first-start-download)
+  lists every address the command contacts.
 
 ---
 

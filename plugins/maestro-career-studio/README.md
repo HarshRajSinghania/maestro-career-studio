@@ -53,6 +53,9 @@ claude mcp add --scope user --transport http maestro-career-studio http://localh
 codex mcp add maestro-career-studio --url http://localhost:8001/mcp
 ```
 
+On a uv install (`uv tool install maestro-career-studio`), `maestro connect`
+runs these for you, and `maestro connect claude-desktop` sets up Claude Desktop.
+
 Choose one connection route per client. The Codex plugin's approval prompts
 below apply to the plugin route.
 

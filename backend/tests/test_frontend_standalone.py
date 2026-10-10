@@ -12,6 +12,7 @@ lose silently and expensive to find late, so they are pinned as source text:
    all interfaces; docker-compose.yml binds only the HOST side to 127.0.0.1.
 """
 
+import json
 import re
 from pathlib import Path
 
@@ -70,3 +71,13 @@ def test_runner_listens_on_all_interfaces_and_port_3000():
 def test_compose_still_binds_the_host_side_to_loopback():
     # The runner listens on 0.0.0.0 inside the container only because of this.
     assert '"127.0.0.1:${FRONTEND_HOST_PORT:-3000}:3000"' in COMPOSE
+
+
+def test_npm_start_runs_the_standalone_server_on_loopback():
+    """`next start` warns under standalone output; `npm start` assembles and runs server.js."""
+    package = json.loads((REPO / "frontend" / "package.json").read_text())
+    assert package["scripts"]["start"] == "node scripts/start-standalone.mjs"
+    script = (REPO / "frontend" / "scripts" / "start-standalone.mjs").read_text()
+    assert 'HOSTNAME: "127.0.0.1"' in script
+    assert "server.js" in script
+    assert '".next", "static"' in script and '"public"' in script

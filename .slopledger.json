@@ -83,6 +83,36 @@
       "id": "health-rewrite-cache",
       "status": "new-is-default",
       "hand_check": "Migration 85a1bb628e28. Cut when bullet_rewrites or health_ask_answers is dropped, or GET /api/resume-lint/{kind}/{key}/answers goes away. Miss path is fallback, not a competing product."
+    },
+    {
+      "id": "native-scripts-to-maestro",
+      "status": "both-live",
+      "hand_check": "The always-on bot runs on the maestro command for one release (verify by hand). Then delete backend/scripts/native/, docs/native-install.md and tests/test_native_scripts.py. Machine predicate: the scripts folder is gone.",
+      "triggers": [
+        {
+          "kind": "command",
+          "cmd": "test ! -e backend/scripts/native"
+        }
+      ]
+    },
+    {
+      "id": "lock-wheel-deps",
+      "status": "both-live",
+      "hand_check": "Regenerate backend/requirements.lock in python:3.12-slim with --unsafe-package nodejs-wheel-binaries (recipe in backend/Dockerfile). Until then the lock names maestro-career-studio-backend and lacks psutil; the image installs the project with --no-deps -e .",
+      "triggers": [
+        {
+          "kind": "command",
+          "cmd": "grep -q '^psutil==' backend/requirements.lock"
+        },
+        {
+          "kind": "command",
+          "cmd": "! grep -q 'nodejs-wheel-binaries' backend/requirements.lock"
+        },
+        {
+          "kind": "command",
+          "cmd": "! grep -q 'maestro-career-studio-backend' backend/requirements.lock"
+        }
+      ]
     }
   ],
   "system_md_baselines": {

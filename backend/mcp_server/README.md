@@ -12,7 +12,9 @@ Keep Maestro running on the same computer as your assistant. Docker publishes
 the backend at `http://localhost:8001` by default (`BACKEND_HOST_PORT` in `.env`).
 A direct `uvicorn app.main:app --port 8000` run uses port 8000; the
 [native scripts](../../docs/native-install.md) use `http://127.0.0.1:8001`.
-The assistant needs no Docker or Python to connect over HTTP.
+The assistant needs no Docker or Python to connect over HTTP. A
+[uv install](../../README.md#install-without-docker-uv) (`maestro start`) serves the
+same URL, and its `maestro connect` command does the setup below from the terminal.
 
 ## Install
 
@@ -21,6 +23,15 @@ Open Settings › Connected agents › **Connect an agent app** and choose a
 [Profiles](#profiles) to narrow it. Enable one connection per client.
 
 ### Claude Desktop
+
+**On a uv install**, run `maestro connect claude-desktop`. It adds a
+`maestro-career-studio` entry to `claude_desktop_config.json` that runs the
+install's own `maestro mcp` (a Python stdio bridge to the same endpoint) by its
+full path, because Claude Desktop does not see your terminal's PATH. It keeps a
+`.bak` copy of the old file and changes nothing else. Claude Desktop rewrites that
+file while it runs, so when it is open the command waits and writes after you
+quit it (`--now` writes at once; `--print` shows the entry). `--profile hunt` and
+the other profile names choose a smaller tool set. On Docker, use the bundle:
 
 Download the `.mcpb` from the card or the
 [release](https://github.com/seinun-ai/maestro-career-studio/releases) and
@@ -91,6 +102,8 @@ Claude Desktop needs the bundle or a Node bridge entry in
 }
 ```
 
+(On a uv install, `maestro connect claude-desktop` writes the equivalent entry,
+`"command": "<full path to maestro>", "args": ["mcp"]`, for you.)
 Replace `<REPO>` with your clone's absolute path; use an absolute Node path if
 Claude cannot find `node`. The file is at
 `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS or
@@ -288,7 +301,7 @@ renders PDFs. Profiles share one registry. The bridge preserves the caller's
 
 ```
 URL client --------------------HTTP--> /mcp inside FastAPI --> REST --> data + LaTeX/Typst
-Claude Desktop --stdio--> Node bridge --HTTP--^ (same backend port and Host/Origin checks)
+Claude Desktop --stdio--> Node bridge (.mcpb) or `maestro mcp` --HTTP--^ (same backend port and Host/Origin checks)
 ```
 
 Contributing and running the tests: see [../../CONTRIBUTING.md](../../CONTRIBUTING.md).
