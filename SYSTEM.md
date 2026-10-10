@@ -495,14 +495,15 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   `kb_approve_points` is the ONE approval path (`approved|retired`), its gate a convention the docstring states (the
   value is the user's decision), not server enforcement (`record_consent` precedent). `kb_edit_point` has no `state`
   param; a text change forces `state="draft"`. No delete tool; document upload stays web-only. **Scoped profiles**:
-  `profiles.py` owns `full` / `hunt` / `apply` / `explore` / `templates` / `career`; imports keep 88 tools. `/mcp` = `full`,
-  `/mcp/{profile}` = the named allowlist. Each FastAPI lifespan runs fresh stateful JSON sessions; `http.py` offloads to
-  its own eight-worker limiter, keeping module functions sync. Stdio filters `MAESTRO_CS_MCP_PROFILE` (default `full`; §13 `mcp-stdio-venv`).
+  `profiles.py` owns `full` / `hunt` / `apply` / `explore` / `templates` / `career` (88 tools); `/mcp` = `full`, `/mcp/{profile}` = its allowlist.
+  Lifespans run fresh stateful JSON sessions; `http.py` offloads sync tools to its eight-worker limiter. Stdio filters `MAESTRO_CS_MCP_PROFILE` (default `full`; §13 `mcp-stdio-venv`).
   Hints use request `CURRENT_PROFILE`, else env (pins: `mcp_server/tests/test_profiles.py`, `test_server.py`, `test_http.py`).
   Enable ONE profile per chat (`full` carries KB writes); `MAESTRO_CS_*` has no legacy fallback. **Apply executor:** headed Chrome (`docs/entities/others.md`, "Attended executor"; apply playbook, "Unattended (full automation)").
   **Directory listing:** `plugins/maestro-career-studio/` (not `.mcpb`); policy `PRIVACY.md`.
   Settings › Connected agents' **Connect your assistant** (`connect-assistant`) selects a profile and copies commands/URLs, opens install links or downloads the Claude Desktop bundle.
   `GET /api/setup/connect?profile=full` composes values from `MAESTRO_CS_PUBLIC_BACKEND_URL` (default localhost:8000; compose host port unless overridden); `/api/setup/connect/bundle` serves `MCPB_BUNDLE_PATH` (compose read-only mount; `tests/test_setup_connect.py`).
+  The dependency-free Node ≥18 `.mcpb` bridges stdio↔HTTP: `MAESTRO_CS_BACKEND_URL` defaults to localhost:8001; `MAESTRO_CS_MCP_PROFILE` selects `/mcp` or `/mcp/{profile}`.
+  Requests are ordered; a stale session replays initialize + initialized before one retry, preserving `clientInfo` (`mcpb/tests/bridge.test.js`).
 - **Guided tailoring workflow** (`mcp_server/workflow.py`): wrapped tools carry a `next` envelope
   (`state`/`blocking`/`offer`/`ask_user`/`options`/`call`) that walks §5's arc — score all bases → recommend →
   quick|custom → tailor → render → apply readiness — unnarrated. `workflow.py` is PURE (no httpx/DB/LLM), a
@@ -682,10 +683,8 @@ with the failure mode that bought it. Code citing "§8" lands here.
   v0.3.0 user's OWN old script skips the guard (recovery steps: docs/UPDATING.md, which holds both rules).
 - **Windows = WSL.** The supported route is Docker Desktop's WSL 2 engine with the clone in the WSL home, never
   `/mnt/c` (SQLite WAL over the Windows share is untrusted; the scripts are bash). `.gitattributes` forces LF
-  so a Git-for-Windows clone cannot CRLF the scripts or `.env`. The `.mcpb` shim searches Docker Desktop's
-  Windows paths, then PATH (`dockerCandidates`/`onPath`, `mcpb/tests/shim.test.js`); `setup-mcp.sh` is not
-  a Windows route. The upload host root is `${PWD}` (compose falls back to its own cwd; `update.sh` pins it
-  to the repo) unless `MAESTRO_CS_UPLOAD_HOST_ROOT` says otherwise; a Windows-shaped root joins with `\`.
+  so a clone cannot CRLF scripts or `.env`; `setup-mcp.sh` is not a Windows route. The `.mcpb` uses HTTP on macOS, Windows and Linux without Docker on the assistant's side.
+  The upload host root is `${PWD}` (compose cwd; `update.sh` pins it to the repo) unless `MAESTRO_CS_UPLOAD_HOST_ROOT` overrides it; Windows joins with `\`.
 - **Native run (no Docker)** — `docs/native-install.md`: `backend/scripts/native/` runs one loopback worker under `$MAESTRO_HOME`; `BACKEND_URL` and `MAESTRO_CS_PUBLIC_BACKEND_URL` use `http://127.0.0.1:$MAESTRO_PORT`, `MCPB_BUNDLE_PATH` uses the checkout's `mcpb/maestro-career-studio.mcpb` (`tests/test_native_scripts.py`).
   `slow` tests skip with `MAESTRO_SKIP_SLOW` (CI); `integration` MCP loopback and `tests/sync/test_two_machines.py`
   run in CI ON PURPOSE, never `slow`: no downloads. With `EMBEDDINGS_OUT_OF_PROCESS` at most ONE embedding
