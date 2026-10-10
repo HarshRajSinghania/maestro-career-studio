@@ -686,9 +686,9 @@ with the failure mode that bought it. Code citing "§8" lands here.
   a Windows route. The upload host root is `${PWD}` (compose falls back to its own cwd; `update.sh` pins it
   to the repo) unless `MAESTRO_CS_UPLOAD_HOST_ROOT` says otherwise; a Windows-shaped root joins with `\`.
 - **Native run (no Docker)** — `docs/native-install.md`: `backend/scripts/native/*.sh` run one loopback worker from
-  `$MAESTRO_HOME`; `GET /health/memory` reports memory. `slow` tests (real backend, venv or model; the 200 MB budget
-  test) skip when `MAESTRO_SKIP_SLOW` is set — set it in CI. `tests/sync/test_two_machines.py` runs in CI ON PURPOSE, never `slow`: its
-  real home subprocess downloads nothing, and it is the sync contract. With `EMBEDDINGS_OUT_OF_PROCESS` at most ONE embedding
+  `$MAESTRO_HOME`; `GET /health/memory` reports memory. `slow` tests (backend, venv, model or the 200 MB budget)
+  skip with `MAESTRO_SKIP_SLOW` (set in CI). `integration` MCP loopback tests and `tests/sync/test_two_machines.py`
+  run in CI: real subprocesses, no downloads. With `EMBEDDINGS_OUT_OF_PROCESS` at most ONE embedding
   helper runs per process (`embeddings._HELPER_LOCK`): two ~290 MB helpers OOM a small machine.
 - **Version identity**: the tag bakes into both images as `APP_VERSION`, served by `GET /api/version` with
   the live alembic revision; the frontend warns when its baked copy disagrees, unless either side STARTS

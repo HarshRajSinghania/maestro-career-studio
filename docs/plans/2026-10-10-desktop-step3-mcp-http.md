@@ -1099,10 +1099,10 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 
 | Gate | Baseline (Task 0) | After |
 |---|---|---|
-| Full suite passed / skipped / wall | | Task 3: 10,232 passed / 860 skipped / 80.95 s; 23 socket/ps sandbox failures (same as Task 2) |
+| Full suite passed / skipped / wall | | Task 3: 10,232 passed / 860 skipped / 80.95 s; 23 socket/ps sandbox failures (same as Task 2). Task 4: 10,234 passed / 860 skipped / 74.57 s; same 23 socket/ps failures plus the loopback test's bind setup error |
 | Same in a CI-shaped venv | | Task 3: pending controller (online fresh install prohibited here) |
-| ruff / check_system_md / check_mcpb_bundle / node --test mcpb | | Task 3: pass / pass (994/1000) / pass / 4 passed, 3 Docker-dependent skipped |
-| slop backend / frontend / extension | | Task 3: backend pass; frontend and extension untouched |
+| ruff / check_system_md / check_mcpb_bundle / node --test mcpb | | Task 3: pass / pass (994/1000) / pass / 4 passed, 3 Docker-dependent skipped. Task 4: ruff and check_system_md pass (994/1000); bundle/bridge untouched |
+| slop backend / frontend / extension | | Tasks 3–4: backend pass; frontend and extension untouched |
 | frontend tsc / lint / build | | |
 | G4 end to end (88 tools, list_jobs, render, get PDF) | — | |
 | G5 Claude Desktop bridge + restart mid-chat (owner) | — | |
@@ -1112,6 +1112,7 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 | G9 setup-mcp.sh banner, exit 0 | — | |
 | G10 native path reaches /mcp | — | |
 | Backend RSS after one /mcp session (budget 200 MB) | | |
+| Task 4 loopback / disabled-offload proof | — | Both real-process runs stop at `socket.bind`: `PermissionError: [Errno 1] Operation not permitted`; controller must prove the 10 s `list_jobs` timeout and restored pass. Supplemental real-client in-process assertion check: 1 passed |
 
 ## Deviation log (append-only)
 
@@ -1136,7 +1137,12 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 | 3 | Green full-suite run | The same 23 socket/`ps` sandbox failures as Task 2 recur (10,232 passed, 860 skipped); all new boundary and MCP tests pass | Record the failure list in scratch; controller reruns with socket/process access | No Goal Card change; verification constraint |
 | 3 | Commit after the task | Implementer instructions forbid git writes | Leave changes in the worktree for the controller to commit | No Goal Card change; execution constraint |
 | 3 (controller) | regenerate requirements.lock in python:3.12-slim | Docker daemon not running at the time; not started (it hosts the owner's live stack) | lock left as is: `mcp` was already pinned via `--extra mcp`, so moving it to core cannot change pins; regenerate at release time (RELEASING) | Pinned behaviour never moves silently |
+| 4 | Test and pytest marker only | SYSTEM.md's header requires new test conventions to be described when introduced | Tighten §9 to name `integration` and its CI execution; keep 994/1000 lines | No Goal Card change; documentation contract |
+| 4 | Temporarily disable offloading and observe `list_jobs` time out | This sandbox refuses loopback binds before uvicorn or the client can run | Keep the real test active; validate its assertions separately with the real MCP client and in-process REST handlers; controller performs the actual deadlock proof | One tool registry; pinned behaviour never moves silently |
+| 4 | Restore with `git checkout` and commit the task | Implementer instructions prohibit every git write | Restore `http.py` byte-for-byte in a `finally`; leave the test, docs and marker for the controller to commit | No Goal Card change; execution constraint |
+| 4 | Green full suite | The 23 existing socket/ps failures recur, plus the new loopback bind error; the initial run also lacks the embedding cache | Point the locked interpreter at the existing scratch model cache offline (both ATS tests pass), rerun the suite and record 10,234 passed / 860 skipped / 23 failed / 1 error; controller reruns with socket/process access | No Goal Card change; verification constraint |
 | 0 (controller, 2026-10-10) | prove a Codex plugin `url` entry + per-tool approval | scratch marketplace + plugin against a throwaway /mcp on :8793 (config backed up, then restored byte-identical) | **works**: `.codex-mcp.json` = `{"mcpServers": {"<name>": {"url": "http://…/mcp", "default_tools_approval_mode": "approve", "tools": {"mark_submitted": {"approval_mode": "prompt"}}}}}` — no `type` key needed; Codex probes OAuth discovery (404s, harmless), initializes, lists, calls `list_jobs`; `mark_submitted` is gated ("MCP tool call requires approval, but approval policy is never" in non-interactive exec). Codex defers MCP tools behind its tool search when many servers are installed. Task 9 uses exactly this shape. | One trust boundary |
 | 3 (review) | — | `POST /mcp/` (trailing slash) is a 307 to `/mcp` (Starlette redirect_slashes; method and body kept) | Task 12 client docs say "use `/mcp`, no trailing slash" | — |
 | 3 (review) | — | MCP `serverInfo.version` reports the SDK version (1.29.1), not Maestro's | Task 12 (or a small follow-up in Task 2's module): pass the app version to the low-level `Server(...)` | — |
 | 0 (owner, 2026-10-10) | Codex app custom-server auth options | Authentication offers OAuth / **No authentication** / OAuth or no authentication; Tunnel's behaviour still unknown | Task 7's Codex-app steps say "Set Authentication to No authentication."; the Tunnel warning stays as written | One trust boundary |
+| 4 (controller) | implementer proves the red | Sol's sandbox forbids sockets | controller ran it: green 1 passed in 4.8 s; with `offload_tools` returning 0 → TimeoutError at the 10 s deadline (1 failed); http.py restored | — |
