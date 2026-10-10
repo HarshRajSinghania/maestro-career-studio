@@ -589,8 +589,8 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   `write(patch)` door, and each roster THROWS at boot naming a missing script. `panel/icons.js` (`ns.icon`, inline Lucide svg) draws every icon;
   the panel carries no emoji or text glyph (`test_extension_panel_icons.py`). `shared/status-roles.js` is the application status table (word + colour role) the web `StatusChip` shares (`test_extension_status_roles.py`). `shared/` is
   what both worlds load: `decisions.js` (the ONE home of every panel rule), `choose.js`
-  (routing, the /choose batch, `rest_fill` shaping, `QUESTIONY`) and `guided-run.js` (the
-  runner, transport injected).
+  (routing, the /choose batch, `rest_fill` shaping, `QUESTIONY`); `guided-run.js` (the
+  runner, transport injected) is panel-only.
   The failure note (never the server's raw text; `failureNote`), the rail's revisit rules, the sender model, the COMMIT GESTURE and the ONE
   `attachableFileInputs` definition are reference tier: `extension/INTERNALS.md`. The bridge
   storage key `widget.session` must NOT be renamed — that drops every live entry.
