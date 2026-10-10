@@ -93,7 +93,12 @@ def prepare_home(home: Path) -> None:
 def read_env_file(path: Path) -> dict[str, str]:
     """KEY=value lines; a blank value means unset (SYSTEM.md's scrub rule)."""
     # interpolate=False: `${HOME}/x` and `pa$$word` are the user's literal values.
-    values = dotenv_values(path, interpolate=False) if path.is_file() else {}
+    try:
+        values = dotenv_values(path, interpolate=False) if path.is_file() else {}
+    except OSError as exc:
+        raise HomeError(f"Cannot read {path}: {exc.strerror or exc}.") from None
+    except UnicodeDecodeError:
+        raise HomeError(f"Cannot read {path}: it is not UTF-8 text. Save it as UTF-8.") from None
     return {k: v.strip() for k, v in values.items() if v is not None and v.strip()}
 
 

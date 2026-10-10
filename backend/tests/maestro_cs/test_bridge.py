@@ -430,3 +430,94 @@ def test_the_cli_runs_the_bridge_without_touching_the_install_folder(monkeypatch
     assert cli.main(["mcp"]) == 0
     assert cli.main(["mcp", "--profile", "hunt", "--url", "http://localhost:9"]) == 0
     assert calls == [(None, "full"), ("http://localhost:9", "hunt")]
+
+
+# --- review follow-ups -------------------------------------------------------------------------
+
+def test_a_404_after_an_initialize_with_no_session_id_does_not_replay():
+    def respond(seen):
+        if seen.body["method"] == "initialize":
+            return reply({"jsonrpc": "2.0", "id": 1, "result": {}})  # no mcp-session-id
+        return httpx.Response(404)
+
+    result = run_messages([INITIALIZE, LIST], respond)
+    assert [seen.body["method"] for seen in result.requests] == ["initialize", "tools/list"]
+    assert result.messages()[1]["error"]["code"] == -32000
+
+
+def test_a_session_header_on_a_later_response_does_not_change_the_session():
+    def respond(seen):
+        if seen.body["method"] == "initialize":
+            return reply({"jsonrpc": "2.0", "id": 1, "result": {}}, **{"mcp-session-id": "session-1"})
+        return reply({"jsonrpc": "2.0", "id": seen.body["id"], "result": {}},
+                     **{"mcp-session-id": "intruder"})
+
+    result = run_messages([INITIALIZE, LIST, {**LIST, "id": 3}], respond)
+    assert [seen.session for seen in result.requests] == [None, "session-1", "session-1"]
+
+
+def test_the_default_client_ignores_proxy_environment_variables():
+    assert Bridge(BASE).client.trust_env is False
+
+
+@pytest.mark.parametrize("line", ["[" * 100000, '{"a":' * 100000], ids=["arrays", "objects"])
+def test_a_deeply_nested_line_is_a_parse_error_not_a_traceback(line):
+    result = run_lines([line, compact(LIST)], lambda _seen: reply({"jsonrpc": "2.0", "id": 2, "result": {}}))
+    assert result.messages() == [
+        {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}},
+        {"jsonrpc": "2.0", "id": 2, "result": {}},
+    ]
+
+
+def test_a_deeply_nested_response_is_an_invalid_json_error():
+    result = run_messages([LIST], lambda _seen: httpx.Response(200, content=b"[" * 100000))
+    assert result.messages()[0]["error"]["message"] == (
+        "Maestro Career Studio returned an invalid JSON response.")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX pipes")
+def test_a_client_that_closes_stdout_ends_the_bridge_with_exit_zero_and_no_noise(tmp_path):
+    child = subprocess.Popen(
+        [sys.executable, "-m", "maestro_cs", "mcp", "--url", "http://127.0.0.1:1"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env=child_env(tmp_path / "home"), cwd=tmp_path)
+    try:
+        child.stdout.close()  # the reader is gone: the next write is EPIPE
+        child.stdin.write((compact(LIST) + "\n").encode())
+        child.stdin.close()
+        assert child.wait(timeout=10) == 0
+        err = child.stderr.read().decode()
+    finally:
+        child.kill()
+        child.stderr.close()
+    assert "Exception ignored" not in err and "Traceback" not in err
+    assert err.strip() == NOT_RUNNING.format(url="http://127.0.0.1:1")  # the one stderr sentence
+
+
+def test_a_non_utf8_maestro_env_is_one_sentence_and_exit_one(monkeypatch, tmp_path, capsys):
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "maestro.env").write_bytes(b"MAESTRO_PORT=\xff\xfe\n")
+    monkeypatch.setenv("MAESTRO_HOME", str(home))
+    before = signal.getsignal(signal.SIGTERM)
+    assert cli.main(["mcp"]) == 1
+    err = capsys.readouterr().err
+    assert err.startswith(f"Cannot read {home / 'maestro.env'}: ") and err.count("\n") == 1
+    assert signal.getsignal(signal.SIGTERM) is before, "no handler is left installed"
+
+
+@pytest.mark.skipif(sys.platform == "win32" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                    reason="needs POSIX permissions and a non-root user")
+def test_an_unreadable_maestro_env_is_one_sentence_and_exit_one(monkeypatch, tmp_path, capsys):
+    home = tmp_path / "home"
+    home.mkdir()
+    env_file = home / "maestro.env"
+    env_file.write_text("MAESTRO_PORT=18123\n", encoding="utf-8")
+    env_file.chmod(0)
+    monkeypatch.setenv("MAESTRO_HOME", str(home))
+    try:
+        assert cli.main(["mcp"]) == 1
+    finally:
+        env_file.chmod(0o600)
+    err = capsys.readouterr().err
+    assert err.startswith(f"Cannot read {env_file}: ") and err.count("\n") == 1

@@ -5,6 +5,7 @@ comes from the process environment, then the install's `maestro.env`, then the d
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import signal
@@ -63,8 +64,9 @@ class Bridge:
                    "Content-Type": "application/json"}
         if self.session_id:
             headers["Mcp-Session-Id"] = self.session_id
-        # One deadline covers connect, headers and the complete body (httpx's own timeouts are
-        # per phase, so a body that keeps trickling would never time out).
+        # httpx's timeouts restart in every phase, so the total is checked here as each body chunk
+        # arrives. FastMCP sends headers and body together, so in practice the limit is ~T; the
+        # worst case (a slow connect, then a slow first byte) is ~2*T. There is no hard wall clock.
         deadline = time.monotonic() + self.timeout
         try:
             with self.client.stream("POST", self.url, content=line.encode("utf-8"),
@@ -87,7 +89,7 @@ class Bridge:
             if status == 200:
                 try:
                     body = json.loads(b"".join(chunks))
-                except ValueError:
+                except (ValueError, RecursionError):
                     raise BridgeError(
                         "Maestro Career Studio returned an invalid JSON response.") from None
             return status, session, body
@@ -112,7 +114,7 @@ class Bridge:
             return
         try:
             request = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):  # RecursionError: a deeply nested "[[[[..."
             self.write({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
             return
         if not isinstance(request, (dict, list)):
@@ -158,16 +160,22 @@ def run(url: str | None, profile: str = "full") -> int:
     def stop(_number: int, _frame: Any) -> None:
         raise _Stop
 
+    # Before the handlers: a bad maestro.env must not leave them installed.
+    bridge = Bridge(url or backend_url_from(), profile)
     names = ("SIGINT", "SIGTERM") + (("SIGBREAK",) if sys.platform == "win32" else ())
     previous = {}
     for name in names:
         number = getattr(signal, name, None)
         if number is not None:
             previous[number] = signal.signal(number, stop)
-    bridge = Bridge(url or backend_url_from(), profile)
     try:
         return bridge.serve()
-    except (_Stop, BrokenPipeError):  # the client went away
+    except _Stop:
+        return 0
+    except BrokenPipeError:  # the client went away
+        # Python's own final stdout flush would fail again (exit 120): point it at devnull.
+        with contextlib.suppress(OSError, ValueError):
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
         return 0
     finally:
         for number, handler in previous.items():

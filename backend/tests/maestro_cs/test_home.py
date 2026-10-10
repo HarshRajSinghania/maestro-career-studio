@@ -330,3 +330,10 @@ def test_a_file_setting_beats_the_shell_in_any_capitalisation(tmp_path):
     env = _backend(tmp_path, settings={"fast_model": "b"}, environ={"FAST_MODEL": "a"})
     variants = {k: v for k, v in env.items() if k.upper() == "FAST_MODEL"}
     assert variants == {"fast_model": "b"}
+
+
+def test_read_env_file_bad_encoding_is_a_sentence(tmp_path):
+    path = tmp_path / "maestro.env"
+    path.write_bytes(b"A=\xff\xfe\n")
+    with pytest.raises(HomeError, match="Cannot read .*UTF-8"):
+        H.read_env_file(path)
