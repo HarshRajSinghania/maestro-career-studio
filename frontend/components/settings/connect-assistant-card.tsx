@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { CopyButton } from "@/components/copy-button";
-import { NewTabCue } from "@/components/new-tab-link";
+import { NewTabLink } from "@/components/new-tab-link";
 import { SettingCard } from "@/components/settings/setting-card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -30,6 +30,7 @@ const PROFILES = [
 export function ConnectAssistantCard() {
   const [profile, setProfile] = useState<ConnectProfile["name"]>("full");
   const profileId = useId();
+  const toolSetHintId = useId();
   const query = useQuery({
     queryKey: ["connect", profile],
     queryFn: () => getConnectInfo(profile),
@@ -38,31 +39,36 @@ export function ConnectAssistantCard() {
   return (
     <SettingCard
       id="connect-assistant"
-      title="Connect your assistant"
+      title="Connect an agent app"
       description={
         <div className="grid gap-4">
-          <p>Choose your assistant below. Keep Maestro CS running on this computer while you use it.</p>
-          <div className="flex items-center gap-3 text-foreground">
-            <label htmlFor={profileId}>Profile</label>
-            <Select
-              value={profile}
-              onValueChange={(next) => {
-                if (PROFILES.some((p) => p.name === next)) setProfile(next as ConnectProfile["name"]);
-              }}
-            >
-              <SelectTrigger id={profileId}>
-                <SelectValue>{PROFILES.find((p) => p.name === profile)?.label}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {PROFILES.map(({ name, label }) => (
-                  <SelectItem key={name} value={name}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <p>Choose your agent app below. Keep Maestro CS running on this computer while you use it.</p>
+          <div className="grid gap-1.5">
+            <div className="flex items-center gap-3 text-foreground">
+              <label htmlFor={profileId}>Tool set</label>
+              <Select
+                value={profile}
+                onValueChange={(next) => {
+                  if (PROFILES.some((p) => p.name === next)) setProfile(next as ConnectProfile["name"]);
+                }}
+              >
+                <SelectTrigger id={profileId} aria-describedby={toolSetHintId}>
+                  <SelectValue>{PROFILES.find((p) => p.name === profile)?.label}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {PROFILES.map(({ name, label }) => (
+                    <SelectItem key={name} value={name}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <p id={toolSetHintId} className="text-body-small">
+              Full gives the agent every tool. The others give it a smaller set for one job.
+            </p>
           </div>
         </div>
       }
-      errorTitle="Couldn't load assistant connections."
+      errorTitle="Couldn't load agent app connections."
       query={query}
     >
       {(data) => (
@@ -122,9 +128,9 @@ function ConnectClientRow({
               </Button>
               <p id={bundleHintId} className="text-muted-foreground text-body-small">
                 The bundle is not on this install. See{" "}
-                <a href={CONNECT_AGENT_GUIDE_URL} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-4">
-                  the guide<NewTabCue />
-                </a>.
+                <NewTabLink href={CONNECT_AGENT_GUIDE_URL} className="text-primary">
+                  the guide
+                </NewTabLink>.
               </p>
             </>
           )

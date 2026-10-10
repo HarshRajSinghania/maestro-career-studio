@@ -801,7 +801,7 @@ full suite.
 
 ---
 
-### Task 7: "Connect your assistant" in Settings › Connected agents
+### Task 7: "Connect an agent app" in Settings › Connected agents
 
 **Files:**
 - Create: `frontend/components/settings/connect-assistant-card.tsx`
@@ -942,7 +942,7 @@ with a comment that the `.mcpb` is the easier route; Codex example uses
 
 **Step 3 — `setup-mcp.sh`:** print a deprecation banner (`warn`) right after flag parsing:
 "setup-mcp.sh is deprecated and leaves in the next release. Connect by URL instead: open Settings
-› Connected agents › Connect your assistant, or run: claude mcp add --transport http
+› Connected agents › Connect an agent app, or run: claude mcp add --transport http
 maestro-career-studio http://localhost:8001/mcp". Replace the closing "Keep the transport STDIO"
 text with the true rule: never publish port 8001 or proxy `/mcp` beyond this computer. The script
 keeps working (`--print-only --skip-install` must still exit 0 — that is gate G9).
@@ -1028,7 +1028,7 @@ routes ~:21-128; "Keep the transport STDIO" ~:129-135; "How it works" diagram ~:
 
 - GETTING_STARTED §5 becomes three routes: **Claude Desktop** (download the bundle from Settings
   or the release; no Docker on the Claude side), **URL clients** (Claude Code, Codex, Cursor, VS
-  Code: the Connect your assistant card; the one-liners), **legacy stdio** (one release, pointer to
+  Code: the Connect an agent app card; the one-liners), **legacy stdio** (one release, pointer to
   setup-mcp.sh). Hand-config fallback shows the URL forms, not `docker exec`.
 - native-install / bot-setup: the always-on copy's agent connects to
   `http://127.0.0.1:8001/mcp` (the bot's own backend); the "start and stop the MCP server per run"
@@ -1060,7 +1060,7 @@ routes ~:21-128; "Keep the transport STDIO" ~:129-135; "How it works" diagram ~:
   - §12: one dated gotcha (≤ 3 lines) — "A sync MCP tool on the event loop deadlocks a single-worker
     uvicorn when it calls the same backend (2026-10-10 spike) → `offload_tools`; pinned by the loopback test."
   - §13: the `mcp-stdio-venv` row from Task 9.
-- CHANGELOG Unreleased: Added (`/mcp` + profiles, Connect your assistant, extension options page),
+- CHANGELOG Unreleased: Added (`/mcp` + profiles, Connect an agent app, extension options page),
   Changed (the `.mcpb` is a bridge — reinstall it; plugins connect by URL), Deprecated
   (`setup-mcp.sh`, stdio venv — gone next release).
 
@@ -1174,3 +1174,4 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 | 8 | Additional real SIGINT/SIGTERM tests run everywhere | Windows child termination does not deliver POSIX signals to Node handlers | Run these extra checks on POSIX; skip them on Windows while all required HTTP tests stay active | No Goal Card change; platform test adaptation |
 | 8 | Green full suite and task commit | The same 23 socket/ps failures and MCP loopback setup error as Task 7 recur; git writes are prohibited | Record 10,263 passed / 860 skipped / 23 failed / 1 error and every failure name in scratch; controller reruns with socket/process access and commits | Pinned behaviour never moves silently; execution/verification constraints |
 | 8 (controller) | implementer packs + live-tests | sandbox has no network/sockets | controller: node tests 15/15; packed with @anthropic-ai/mcpb@2.1.2 (22,172 → 20,342 bytes), server.json fileSha256 updated, check_mcpb_bundle OK; live bridge vs real backend (hunt): init, 21 tools, list_jobs, backend restart → transparent replay, backend down → JSON-RPC error + stderr sentence | — |
+| 7 (owner follow-up) | Decide whether the new card title requires a new anchor | The repo pins card ids to their tab, not to titles (`market` = Where you apply, `agent-hints` = Next-step hints for connected agents) | Keep `connect-assistant` and its pins/deep links stable; retitle to Connect an agent app, label the selector Tool set with the owner's explanation, and use NewTabLink for the guide | Pinned behaviour never moves silently; glossary and owner decisions |

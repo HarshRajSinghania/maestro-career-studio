@@ -500,7 +500,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   Hints use request `CURRENT_PROFILE`, else env (pins: `mcp_server/tests/test_profiles.py`, `test_server.py`, `test_http.py`).
   Enable ONE profile per chat (`full` carries KB writes); `MAESTRO_CS_*` has no legacy fallback. **Apply executor:** headed Chrome (`docs/entities/others.md`, "Attended executor"; apply playbook, "Unattended (full automation)").
   **Directory listing:** `plugins/maestro-career-studio/` (not `.mcpb`); policy `PRIVACY.md`.
-  Settings › Connected agents' **Connect your assistant** (`connect-assistant`) selects a profile and copies commands/URLs, opens install links or downloads the Claude Desktop bundle.
+  Settings › Connected agents' **Connect an agent app** (`connect-assistant`) selects a tool set and copies commands/URLs, opens install links or downloads the Claude Desktop bundle.
   `GET /api/setup/connect?profile=full` composes values from `MAESTRO_CS_PUBLIC_BACKEND_URL` (default localhost:8000; compose host port unless overridden); `/api/setup/connect/bundle` serves `MCPB_BUNDLE_PATH` (compose read-only mount; `tests/test_setup_connect.py`).
   The dependency-free Node ≥18 `.mcpb` bridges stdio↔HTTP: `MAESTRO_CS_BACKEND_URL` defaults to localhost:8001; `MAESTRO_CS_MCP_PROFILE` selects `/mcp` or `/mcp/{profile}`.
   Requests are ordered; a stale session replays initialize + initialized before one retry, preserving `clientInfo` (`mcpb/tests/bridge.test.js`).

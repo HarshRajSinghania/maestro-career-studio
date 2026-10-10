@@ -1397,7 +1397,7 @@
 - **Settings vs Profile — which page and tab does a new setting go on?**
   `/settings` is how the SYSTEM behaves, in tabs (`lib/settings-tabs.ts`):
   **AI & models** (API keys, models, AI instructions), **Tailoring** (Quick tailor
-  settings), **Connected agents** (the explainer, Connect your assistant,
+  settings), **Connected agents** (the explainer, Connect an agent app,
   next-step hints and Auto-apply limits), **Appearance** and **About**. `/profile` is who the
   CANDIDATE is: **About you** (Persona, Where you apply, Job preferences) and
   **Autofill**. A new card goes on the tab whose subject it shares and adds

@@ -89,7 +89,7 @@ Five branches, each merged and verified before the next starts (0 → A → B′
 | Branch | Delivers | Release |
 |---|---|---|
 | 0 `trim` | Less code, fewer dependencies, a faster suite; no behaviour change | folded into the next release |
-| A `mcp-http` | `/mcp` in the backend, the Node bridge `.mcpb`, Connect your assistant, Web Store readiness | v0.9.0 |
+| A `mcp-http` | `/mcp` in the backend, the Node bridge `.mcpb`, Connect an agent app, Web Store readiness | v0.9.0 |
 | B′ `uv-install` | `uv tool install maestro-career-studio` from PyPI; one `maestro` command (start/stop/status/logs/update/autostart/connect/mcp); no Docker, no system Node | v0.10.0 |
 | B `desktop-sidecar` | A frozen macOS backend and a Next standalone server, smoke-tested in CI | (internal) |
 | C `desktop-shell` | The Electron app, import, updater, signed release pipeline | first desktop release |
@@ -267,7 +267,7 @@ Docker wording goes. Tests against an in-test `node:http` fake. Release:
 re-pack, update `server.json` `fileSha256`, add a registry-republish step to
 RELEASING; `check_mcpb_bundle.py` keeps tracking its three files.
 
-### A4. Connect your assistant
+### A4. Connect an agent app
 
 - `GET /api/setup/connect?profile=` composes, server-side so pytest pins the
   formats: the Claude Code line (`claude mcp add --transport http
