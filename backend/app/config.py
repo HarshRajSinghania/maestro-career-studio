@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     embeddings_out_of_process: bool = False
     sync_key_file: Path | None = None
     sync_remote_url: str = ""
+    maestro_cs_public_backend_url: str = "http://localhost:8000"
+    mcpb_bundle_path: Path = Path("/app/mcpb/maestro-career-studio.mcpb")
     # Hostname a published sync listener may send (SYNC_PUBLIC_HOST), for example
     # <mac>.<tailnet>.ts.net. Empty leaves the host allowlist unchanged. The host
     # middleware reads this on each request; it is never added to allowed_hosts.

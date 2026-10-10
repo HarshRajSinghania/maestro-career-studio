@@ -1099,10 +1099,10 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 
 | Gate | Baseline (Task 0) | After |
 |---|---|---|
-| Full suite passed / skipped / wall | | 11,110 passed / 7 skipped (+1 known flaky sync replay test, pre-existing on main) |
+| Full suite passed / skipped / wall | | 11,110 passed / 7 skipped (+1 known flaky sync replay test, pre-existing on main); Task 6 sandbox: 10,255 passed / 860 skipped / 23 failed / 1 error in 70.82 s (same socket/ps failures as Task 5; all 11 connect cases pass) |
 | Same in a CI-shaped venv | | Task 3: pending controller (online fresh install prohibited here) |
 | ruff / check_system_md / check_mcpb_bundle / node --test mcpb | | Task 3: pass / pass (994/1000) / pass / 4 passed, 3 Docker-dependent skipped. Tasks 4–5: ruff and check_system_md pass (994/1000); bundle/bridge untouched. Task 5: shellcheck unavailable locally (CI/controller pending) |
-| slop backend / frontend / extension | | Tasks 3–5: backend pass; frontend and extension untouched |
+| slop backend / frontend / extension | | Tasks 3–6: backend pass; frontend and extension untouched |
 | frontend tsc / lint / build | | |
 | G4 end to end (88 tools, list_jobs, render, get PDF) | — | |
 | G5 Claude Desktop bridge + restart mid-chat (owner) | — | |
@@ -1114,6 +1114,7 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 | Backend RSS after one /mcp session (budget 200 MB) | | |
 | Task 4 loopback / disabled-offload proof | — | green 1 passed; red: offload_tools disabled → TimeoutError at 10 s (controller) |
 | Task 5 loopback proxy / native BACKEND_URL | — | RED: 7 failed / 3 passed (missing trust_env=False and native URL); GREEN: all 10 new regression cases pass. Complete two-file run: 105 passed / 2 skipped / 21 existing socket/ps failures |
+| Task 6 setup connect / bundle | — | RED: 11 failed (missing settings/routes); GREEN: 30 passed (11 connect + 19 setup-status); ruff/docs/backend slop pass (994/1000); Compose YAML parses; Docker config and official link-doc recheck pending controller |
 
 ## Deviation log (append-only)
 
@@ -1150,3 +1151,8 @@ mcpb upload, MCP Registry republish) is a separate owner step after merge — no
 | 5 | Four implementation/test files only | SYSTEM.md's header requires changed client and native environment conventions to be documented when they land | Update §7 and tighten §9 to keep 994/1000 lines; record gates here | No Goal Card change; documentation contract |
 | 5 | Green two-file and full-suite runs | Sandbox still blocks socket binds and `/bin/ps`; the 23 full-suite failures and loopback setup error exactly match Task 4 | Keep the tests intact; use the existing offline model cache and isolated scratch destinations, record logs in scratch, and have the controller rerun with socket/process access | Pinned behaviour never moves silently; verification constraint |
 | 5 | Commit after the task | Implementer instructions forbid git writes | Leave the verified regression fixes in the worktree for the controller to commit | No Goal Card change; execution constraint |
+| 6 | Check each profiled client value for literal `/mcp/hunt` | Cursor base64 and VS Code percent encoding hide the URL in the proposed assertion | Decode both links before checking their URL; cover every scoped profile and keep the supplied full-profile assertions | Pinned behaviour never moves silently |
+| 6 | Recheck Cursor and VS Code install links against current official docs before pinning | Implementer instructions prohibit network access | Implement the supplied link formats and pin decoded payloads; controller rechecks the official docs before committing | Pinned behaviour never moves silently; verification constraint |
+| 6 | Change only the task's six implementation/test files | SYSTEM.md's header requires new endpoints and configuration conventions to be documented when they land | Integrate `/api/setup/connect` and bundle configuration in §7; tighten that section to keep 994/1000 lines | No Goal Card change; documentation contract |
+| 6 | `docker compose config -q` and task commit | Implementer instructions prohibit Docker and all git writes | Parse YAML and check the public URL/mount offline; leave Compose interpolation validation and commit to the controller | No Goal Card change; execution constraint |
+| 6 | Green full suite | The same 23 socket/ps failures and MCP loopback bind error as Task 5 recur; Chrome execution is prohibited | Keep scratch data destinations and the offline model cache, leave Chrome unavailable, record 10,255 passed / 860 skipped / 23 failed / 1 error; controller reruns with socket/process/browser access | Pinned behaviour never moves silently; verification constraint |

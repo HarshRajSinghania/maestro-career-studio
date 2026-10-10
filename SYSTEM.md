@@ -465,14 +465,12 @@ this contract. Code citing "§4" lands here; the table says which file to open.
 
 ## 7. Agent surfaces
 
-- **MCP server** (`backend/mcp_server/`; its clients are **connected agents** on screen, Settings › Connected agents):
-  thin REST wrappers (`@_guard` → `ToolError`) via httpx (`BACKEND_URL`, default localhost:8000).
-  Loopback hosts bypass proxies; other hosts honor them (`mcp_server/tests/test_client_loopback.py`).
-  **The docstring is the API**: it describes what a tool does, records and requires, never instructs (directory
-  policy), and every tool carries `title` + four `ToolAnnotations` hints (`_read`/`_write`); both ratcheted in
-  `test_server.py`. Lists page with bounded defaults; a failed `next` lookup after a landed write is `next: null`
-  (`_best_effort_hint`). Facts must survive ~2048-dedented-char truncation or live in a param `Field(description=…)`
-  (`_EDIT_OPS_FIELD`; ratchet `test_registered_tool_docstrings_fit_client_truncation_budget`). Coverage: jobs (ingest/list/get/export;
+- **MCP server** (`backend/mcp_server/`; on screen **connected agents**, Settings › Connected agents): thin REST wrappers
+  (`@_guard` → `ToolError`) via httpx (`BACKEND_URL`, default localhost:8000). Loopback bypasses proxies; other hosts honor them (`mcp_server/tests/test_client_loopback.py`).
+  **The docstring is the API**: behavior, records and requirements, never instructions (directory policy).
+  `test_server.py` ratchets `title`, four `ToolAnnotations` (`_read`/`_write`) and ~2048-dedented-char docstrings;
+  overflow facts live in param `Field(description=…)` (`_EDIT_OPS_FIELD`). Lists page with bounded defaults;
+  `_best_effort_hint` returns `next: null` on a failed lookup after a landed write. Coverage: jobs (ingest/list/get/export;
   `get_job_search_brief` with verbatim work-auth, typed `job_preferences` and the `auto_apply` guardrail block;
   `find_job_by_url` posting-equality lookup; `store_extracted_jd` takes `source="agent"`; playbook in
   docs/agentic-job-search.md, capture-and-score only), the proposal-ledger family (consent-gated
@@ -501,8 +499,10 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   `/mcp/{profile}` = the named allowlist. Each FastAPI lifespan runs fresh stateful JSON sessions; `http.py` offloads to
   its own eight-worker limiter, keeping module functions sync. Stdio filters `MAESTRO_CS_MCP_PROFILE` (default `full`; §13 `mcp-stdio-venv`).
   Hints use request `CURRENT_PROFILE`, else env (pins: `mcp_server/tests/test_profiles.py`, `test_server.py`, `test_http.py`).
-  Enable ONE profile per chat (`full` carries the KB writes); `MAESTRO_CS_*` has no legacy fallback. **Apply executor:** headed Chrome; reference: `docs/entities/others.md`, "Attended executor", and the apply playbook's "Unattended (full automation)".
-  **Directory listing** uses `plugins/maestro-career-studio/` (not `.mcpb`); policy `PRIVACY.md`.
+  Enable ONE profile per chat (`full` carries KB writes); `MAESTRO_CS_*` has no legacy fallback. **Apply executor:** headed Chrome (`docs/entities/others.md`, "Attended executor"; apply playbook, "Unattended (full automation)").
+  **Directory listing:** `plugins/maestro-career-studio/` (not `.mcpb`); policy `PRIVACY.md`.
+  `GET /api/setup/connect?profile=full` composes client commands, links and profile URLs from `MAESTRO_CS_PUBLIC_BACKEND_URL` (default localhost:8000; compose host port).
+  `/api/setup/connect/bundle` downloads `MCPB_BUNDLE_PATH` (read-only mount); availability/errors pinned in `tests/test_setup_connect.py`.
 - **Guided tailoring workflow** (`mcp_server/workflow.py`): wrapped tools carry a `next` envelope
   (`state`/`blocking`/`offer`/`ask_user`/`options`/`call`) that walks §5's arc — score all bases → recommend →
   quick|custom → tailor → render → apply readiness — unnarrated. `workflow.py` is PURE (no httpx/DB/LLM), a

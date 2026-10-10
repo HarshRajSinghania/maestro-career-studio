@@ -33,6 +33,7 @@ services:
       # the empty string as unset (same pattern as OPENAI_BASE_URL below), so
       # without this line a value set in .env never reaches the container.
       SQLITE_JOURNAL_MODE: ${SQLITE_JOURNAL_MODE:-}
+      MAESTRO_CS_PUBLIC_BACKEND_URL: http://localhost:${BACKEND_HOST_PORT:-8001}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # Empty = the OpenAI API. Set to an OpenAI-compatible endpoint (Ollama,
@@ -95,6 +96,7 @@ services:
       - ./exports:/app/exports
       - ./base_resumes:/app/base_resumes
       - ./kb_documents:/app/kb_documents
+      - ./mcpb:/app/mcpb:ro
       # Host side of the upload staging area above. Without this the staged PDF
       # exists only in the container and the browser fails to OPEN it — a silent
       # dead end rather than an error.
