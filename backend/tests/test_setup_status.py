@@ -1,23 +1,8 @@
-import pytest
-from fastapi.testclient import TestClient
-
 from app.models.base_resume import BaseResume
 from app.models.career_kb import KBEntity
 from app.models.setting import Setting
 from app.schemas.job_preferences import FavoredRole, JobPreferences
 from app.services import job_preferences, persona, text_settings
-
-
-@pytest.fixture
-def client(db_session):
-    from app.db import get_db
-    from app.main import app
-
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
 
 
 def _status(client):

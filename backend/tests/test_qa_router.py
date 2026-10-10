@@ -41,7 +41,7 @@ def _application(db_session):
     return application
 
 
-def test_post_qa_runs_questions_for_application(db_session, monkeypatch):
+def test_post_qa_runs_questions_for_application(db_session, monkeypatch, client):
     application = _application(db_session)
     monkeypatch.setattr(
         qa.qa_service,
@@ -49,14 +49,10 @@ def test_post_qa_runs_questions_for_application(db_session, monkeypatch):
         lambda application_id, questions, session=None: ["Answer one"],
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/qa",
-            json={"application_id": str(application.id), "questions": ["Question one?"]},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/qa",
+        json={"application_id": str(application.id), "questions": ["Question one?"]},
+    )
 
     assert response.status_code == 200
     assert response.json() == {
@@ -65,26 +61,22 @@ def test_post_qa_runs_questions_for_application(db_session, monkeypatch):
     }
 
 
-def test_post_qa_rejects_cold_message_payload(db_session):
+def test_post_qa_rejects_cold_message_payload(db_session, client):
     # Cold message was removed 2026-07-21; QARequest forbids unknown fields so
     # stale callers fail loud with 422 instead of silently generating nothing.
     application = _application(db_session)
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/qa",
-            json={
-                "application_id": str(application.id),
-                "cold_message": {"instructions": "DM the recruiter"},
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/qa",
+        json={
+            "application_id": str(application.id),
+            "cold_message": {"instructions": "DM the recruiter"},
+        },
+    )
 
     assert response.status_code == 422
 
 
-def test_post_qa_runs_cover_letter_for_job(db_session, monkeypatch):
+def test_post_qa_runs_cover_letter_for_job(db_session, monkeypatch, client):
     application = _application(db_session)
     monkeypatch.setattr(
         qa.qa_service,
@@ -92,20 +84,16 @@ def test_post_qa_runs_cover_letter_for_job(db_session, monkeypatch):
         lambda job_id, tone, session=None, base_slug=None: f"Cover letter: {tone}",
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/qa",
-            json={"job_id": str(application.job_id), "cover_letter": {"tone": "formal"}},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/qa",
+        json={"job_id": str(application.job_id), "cover_letter": {"tone": "formal"}},
+    )
 
     assert response.status_code == 200
     assert response.json()["cover_letter"] == "Cover letter: formal"
 
 
-def test_post_qa_threads_the_named_base_to_the_job_answer(db_session, monkeypatch):
+def test_post_qa_threads_the_named_base_to_the_job_answer(db_session, monkeypatch, client):
     """`base` is a request key, so the route has to carry it — a schema field
     the handler drops is the half-wired API this repo pins against."""
     application = _application(db_session)
@@ -117,21 +105,17 @@ def test_post_qa_threads_the_named_base_to_the_job_answer(db_session, monkeypatc
 
     monkeypatch.setattr(qa.qa_service, "answer_questions_for_job", fake_answers)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/qa",
-            json={"job_id": str(application.job_id), "questions": ["Why us?"],
-                  "base": "data_scientist"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/qa",
+        json={"job_id": str(application.job_id), "questions": ["Why us?"],
+              "base": "data_scientist"},
+    )
 
     assert response.status_code == 200
     assert seen["base"] == "data_scientist"
 
 
-def test_post_qa_threads_the_named_base_to_the_job_cover_letter_too(db_session, monkeypatch):
+def test_post_qa_threads_the_named_base_to_the_job_cover_letter_too(db_session, monkeypatch, client):
     """The twin of the test above, and it earns its place rather than mirroring
     it for symmetry's sake.
 
@@ -150,21 +134,17 @@ def test_post_qa_threads_the_named_base_to_the_job_cover_letter_too(db_session, 
 
     monkeypatch.setattr(qa.qa_service, "generate_cover_letter_for_job", fake_cover)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/qa",
-            json={"job_id": str(application.job_id), "cover_letter": {"tone": "warm"},
-                  "base": "data_scientist"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/qa",
+        json={"job_id": str(application.job_id), "cover_letter": {"tone": "warm"},
+              "base": "data_scientist"},
+    )
 
     assert response.status_code == 200
     assert seen["base"] == "data_scientist"
 
 
-def test_post_qa_answers_an_unreadable_base_with_a_reason_not_a_500(db_session, monkeypatch):
+def test_post_qa_answers_an_unreadable_base_with_a_reason_not_a_500(db_session, monkeypatch, client):
     """The guard's outward face.
 
     What shipped was a bare `FileNotFoundError` out of the disk read — an
@@ -179,33 +159,25 @@ def test_post_qa_answers_an_unreadable_base_with_a_reason_not_a_500(db_session, 
 
     monkeypatch.setattr(qa.qa_service, "answer_questions_for_job", refuse)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/qa",
-            json={"job_id": str(application.job_id), "questions": ["Why us?"],
-                  "base": "ghost"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/qa",
+        json={"job_id": str(application.job_id), "questions": ["Why us?"],
+              "base": "ghost"},
+    )
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Base resume 'ghost' has no data file"
 
 
-def test_post_qa_requires_target_and_work(db_session):
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        no_target = TestClient(app).post("/api/qa", json={"questions": ["Q?"]})
-        no_work = TestClient(app).post("/api/qa", json={"job_id": "00000000-0000-0000-0000-000000000000"})
-    finally:
-        app.dependency_overrides.clear()
+def test_post_qa_requires_target_and_work(db_session, client):
+    no_target = client.post("/api/qa", json={"questions": ["Q?"]})
+    no_work = client.post("/api/qa", json={"job_id": "00000000-0000-0000-0000-000000000000"})
 
     assert no_target.status_code == 400
     assert no_work.status_code == 400
 
 
-def test_delete_qa_entry(db_session):
+def test_delete_qa_entry(db_session, client):
     application = _application(db_session)
     entry = QAEntry(
         application_id=application.id,
@@ -218,17 +190,13 @@ def test_delete_qa_entry(db_session):
     db_session.commit()
     db_session.refresh(entry)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).delete(f"/api/qa/{entry.id}")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.delete(f"/api/qa/{entry.id}")
 
     assert response.status_code == 204
     assert db_session.get(QAEntry, entry.id) is None
 
 
-def test_patch_qa_entry_updates_answer_and_clears_pdf(db_session, tmp_path):
+def test_patch_qa_entry_updates_answer_and_clears_pdf(db_session, tmp_path, client):
     application = _application(db_session)
     pdf_file = tmp_path / "cover_letter.pdf"
     pdf_file.write_bytes(b"%PDF old")
@@ -243,14 +211,10 @@ def test_patch_qa_entry_updates_answer_and_clears_pdf(db_session, tmp_path):
     db_session.commit()
     db_session.refresh(entry)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            f"/api/qa/{entry.id}",
-            json={"answer": "edited cover letter"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        f"/api/qa/{entry.id}",
+        json={"answer": "edited cover letter"},
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -261,7 +225,7 @@ def test_patch_qa_entry_updates_answer_and_clears_pdf(db_session, tmp_path):
 
 def test_render_cover_letter_writes_pdf_and_sets_path(
     db_session, tmp_path, monkeypatch
-):
+, client):
     application = _application(db_session)
     entry = QAEntry(
         application_id=application.id,
@@ -294,11 +258,7 @@ def test_render_cover_letter_writes_pdf_and_sets_path(
 
     monkeypatch.setattr(qa.pdf_render, "compile_cover_letter_pdf", fake_compile)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(f"/api/qa/{entry.id}/render")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(f"/api/qa/{entry.id}/render")
 
     assert response.status_code == 200
     body = response.json()
@@ -312,7 +272,7 @@ def test_render_cover_letter_writes_pdf_and_sets_path(
     assert Path(application.artifact_dir).name.endswith(f"_{application.id.hex[:8]}")
 
 
-def test_get_cover_letter_pdf_streams_file(db_session, tmp_path):
+def test_get_cover_letter_pdf_streams_file(db_session, tmp_path, client):
     application = _application(db_session)
     pdf_file = tmp_path / "260501_Quill_Riley_DataAnalyst_TechCorp_CoverLetter.pdf"
     pdf_file.write_bytes(b"%PDF test")
@@ -327,11 +287,7 @@ def test_get_cover_letter_pdf_streams_file(db_session, tmp_path):
     db_session.commit()
     db_session.refresh(entry)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get(f"/api/qa/{entry.id}/pdf")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get(f"/api/qa/{entry.id}/pdf")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
@@ -342,7 +298,7 @@ def test_get_cover_letter_pdf_streams_file(db_session, tmp_path):
     assert response.content.startswith(b"%PDF")
 
 
-def test_get_cover_letter_pdf_404_when_missing(db_session):
+def test_get_cover_letter_pdf_404_when_missing(db_session, client):
     application = _application(db_session)
     entry = QAEntry(
         application_id=application.id,
@@ -354,18 +310,14 @@ def test_get_cover_letter_pdf_404_when_missing(db_session):
     db_session.commit()
     db_session.refresh(entry)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get(f"/api/qa/{entry.id}/pdf")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get(f"/api/qa/{entry.id}/pdf")
 
     assert response.status_code == 404
 
 
 def test_generate_cover_letter_replaces_prior_entry_and_pdf(
     db_session, tmp_path, monkeypatch
-):
+, client):
     application = _application(db_session)
     old_pdf = tmp_path / "cover_letter.pdf"
     old_pdf.write_bytes(b"old")
@@ -394,17 +346,13 @@ def test_generate_cover_letter_replaces_prior_entry_and_pdf(
 
     monkeypatch.setattr(qa.qa_service, "generate_cover_letter", fake_generate)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/qa",
-            json={
-                "application_id": str(application.id),
-                "cover_letter": {"tone": "balanced"},
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/qa",
+        json={
+            "application_id": str(application.id),
+            "cover_letter": {"tone": "balanced"},
+        },
+    )
 
     assert response.status_code == 200
     assert not old_pdf.exists()
@@ -525,7 +473,7 @@ def test_a_failed_generation_keeps_the_saved_letter_and_its_pdf(
     assert old_pdf.read_bytes() == b"old"
 
 
-def test_regenerate_qa_entry_overwrites_answer(db_session, monkeypatch):
+def test_regenerate_qa_entry_overwrites_answer(db_session, monkeypatch, client):
     application = _application(db_session)
     entry = QAEntry(
         application_id=application.id,
@@ -547,17 +495,13 @@ def test_regenerate_qa_entry_overwrites_answer(db_session, monkeypatch):
 
     monkeypatch.setattr(qa.qa_service, "regenerate_entry", fake_regen)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(f"/api/qa/{entry.id}/regenerate")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(f"/api/qa/{entry.id}/regenerate")
 
     assert response.status_code == 200
     assert response.json()["answer"] == "new"
 
 
-def test_regenerate_qa_entry_unsupported_kind_returns_400(db_session):
+def test_regenerate_qa_entry_unsupported_kind_returns_400(db_session, client):
     # Retired/unknown kinds (cold_message removed 2026-07-21) must fail as a
     # handled 4xx that names the kind — not a 500. Runs the real service so the
     # router's ValueError→400 mapping is exercised end to end; customized_json
@@ -591,29 +535,21 @@ def test_regenerate_qa_entry_unsupported_kind_returns_400(db_session):
     db_session.commit()
     db_session.refresh(entry)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(f"/api/qa/{entry.id}/regenerate")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(f"/api/qa/{entry.id}/regenerate")
 
     assert response.status_code == 400
     assert "cold_message" in response.json()["detail"]
 
 
-def test_regenerate_qa_entry_missing_returns_404(db_session):
+def test_regenerate_qa_entry_missing_returns_404(db_session, client):
     # A genuinely missing entry stays a 404 — only the unsupported-kind case
     # became a 400.
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(f"/api/qa/{uuid.uuid4()}/regenerate")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(f"/api/qa/{uuid.uuid4()}/regenerate")
 
     assert response.status_code == 404
 
 
-def test_get_qa_lists_entries(db_session):
+def test_get_qa_lists_entries(db_session, client):
     application = _application(db_session)
     db_session.add(
         QAEntry(
@@ -626,11 +562,7 @@ def test_get_qa_lists_entries(db_session):
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get(f"/api/qa?application_id={application.id}")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get(f"/api/qa?application_id={application.id}")
 
     assert response.status_code == 200
     body = response.json()
@@ -639,7 +571,7 @@ def test_get_qa_lists_entries(db_session):
     assert body[0]["answer"] == "Answer."
 
 
-def test_post_qa_answers_an_unknown_application_id_with_404_not_500(db_session):
+def test_post_qa_answers_an_unknown_application_id_with_404_not_500(db_session, client):
     """A wrong id is "not found", not "the server broke".
 
     `answer_questions` raises a plain `ValueError` for an id that resolves to no
@@ -650,14 +582,10 @@ def test_post_qa_answers_an_unknown_application_id_with_404_not_500(db_session):
     """
     missing = uuid.uuid4()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/qa",
-            json={"application_id": str(missing), "questions": ["Why us?"]},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/qa",
+        json={"application_id": str(missing), "questions": ["Why us?"]},
+    )
 
     assert response.status_code == 404
     assert str(missing) in response.json()["detail"]
@@ -683,7 +611,7 @@ def _cover_letter_entry(db_session, application) -> QAEntry:
 
 def test_render_cover_letter_follows_the_resume_engine_without_tex(
     db_session, tmp_path, monkeypatch
-):
+, client):
     _no_tex(monkeypatch)
     _seed_rows(db_session)
 
@@ -695,11 +623,7 @@ def test_render_cover_letter_follows_the_resume_engine_without_tex(
         "load_base_resume",
         lambda slug, session=None: {"contact": {"name": "Jane Doe", "email": "jane@example.com"}},
     )
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(f"/api/qa/{entry.id}/render")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(f"/api/qa/{entry.id}/render")
     assert response.status_code == 200, response.text
     body = response.json()
     assert Path(body["pdf_path"]).exists()
@@ -708,7 +632,7 @@ def test_render_cover_letter_follows_the_resume_engine_without_tex(
 
 def test_render_cover_letter_without_tex_or_typst_is_400_and_allocates_nothing(
     db_session, tmp_path, monkeypatch
-):
+, client):
     """The resolver runs BEFORE application_artifacts.get_dir, so a 400 never
     leaves an empty artifact directory (or a persisted artifact_dir) behind."""
     _no_tex(monkeypatch)
@@ -722,11 +646,7 @@ def test_render_cover_letter_without_tex_or_typst_is_400_and_allocates_nothing(
         "load_base_resume",
         lambda slug, session=None: {"contact": {"name": "Jane Doe", "email": "jane@example.com"}},
     )
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(f"/api/qa/{entry.id}/render")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(f"/api/qa/{entry.id}/render")
     assert response.status_code == 400, response.text
     assert "needs TeX, a tool" in response.json()["detail"]
     assert not any(tmp_path.iterdir())

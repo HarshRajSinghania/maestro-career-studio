@@ -1,20 +1,10 @@
 from datetime import UTC, datetime
 
-from fastapi.testclient import TestClient
 
-from app.db import get_db
-from app.main import app
 from app.models.application import Application
 from app.models.ats_score import AtsScore
 from app.models.job import Job
 from app.services import explore_gaps, gap_analysis
-
-
-def _override_db(db_session):
-    def _inner():
-        yield db_session
-
-    return _inner
 
 
 def _seed_job(
@@ -162,7 +152,7 @@ def _tailored_row(job_id, target_id, composite, *, application_id=None, created_
 # ---------------------------------------------------------------------------
 
 
-def test_gap_frequency_ranks_by_distinct_jobs(db_session):
+def test_gap_frequency_ranks_by_distinct_jobs(db_session, client):
     job1 = _seed_job(db_session, raw_hash="gf-1", role_category="data_engineer")
     job2 = _seed_job(db_session, raw_hash="gf-2", role_category="data_engineer")
     db_session.add_all(
@@ -190,11 +180,7 @@ def test_gap_frequency_ranks_by_distinct_jobs(db_session):
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/gap-frequency")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/gap-frequency")
 
     assert response.status_code == 200
     rows = response.json()
@@ -275,7 +261,7 @@ def test_gap_frequency_flags_low_sample_below_five_jobs(db_session):
     assert by_skill["spark"]["low_sample"] is True
 
 
-def test_gap_frequency_counts_only_best_base_per_job(db_session):
+def test_gap_frequency_counts_only_best_base_per_job(db_session, client):
     # score_all_bases writes one base row per (job, base slug), so a weak
     # secondary base can gap on skills the resume you would actually send
     # covers. Only the best-scoring base per job may feed the ranking.
@@ -307,11 +293,7 @@ def test_gap_frequency_counts_only_best_base_per_job(db_session):
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/gap-frequency")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/gap-frequency")
 
     assert response.status_code == 200
     by_skill = {r["skill"]: r for r in response.json()}
@@ -323,7 +305,7 @@ def test_gap_frequency_counts_only_best_base_per_job(db_session):
     assert by_skill["kubernetes"]["avg_potential_points"] == 3.0
 
 
-def test_gap_frequency_best_base_tie_breaks_deterministically(db_session):
+def test_gap_frequency_best_base_tie_breaks_deterministically(db_session, client):
     # Equal composites must not make the winner depend on row order, or the
     # panel would flip between reruns; lowest target_id wins. Two jobs with
     # OPPOSITE insertion orders — a one-job test would still pass under both
@@ -363,18 +345,14 @@ def test_gap_frequency_best_base_tie_breaks_deterministically(db_session):
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/gap-frequency")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/gap-frequency")
 
     assert response.status_code == 200
     # "alpha" wins both jobs regardless of which row the scan saw first
     assert {r["skill"] for r in response.json()} == {"spark", "dbt"}
 
 
-def test_gap_frequency_excludes_requirement_kind(db_session):
+def test_gap_frequency_excludes_requirement_kind(db_session, client):
     # weak_coverage gaps carry a whole JD sentence as jd_skill; ranking them
     # alongside skill names pollutes the list and eats top-N slots.
     jd_line = "Own the end-to-end ML lifecycle in production"
@@ -392,11 +370,7 @@ def test_gap_frequency_excludes_requirement_kind(db_session):
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/gap-frequency")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/gap-frequency")
 
     assert response.status_code == 200
     skills = {r["skill"] for r in response.json()}
@@ -404,7 +378,7 @@ def test_gap_frequency_excludes_requirement_kind(db_session):
     assert jd_line not in skills
 
 
-def test_gap_frequency_excludes_hygiene_wording(db_session):
+def test_gap_frequency_excludes_hygiene_wording(db_session, client):
     # A hygiene mirror_wording gap means the resume ALREADY matches the skill at
     # full keyword credit, so there is no headroom to report — listing it under
     # "what you keep lacking" contradicts the Gaps panel's wording footnote,
@@ -430,11 +404,7 @@ def test_gap_frequency_excludes_hygiene_wording(db_session):
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/gap-frequency")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/gap-frequency")
 
     assert response.status_code == 200
     skills = {r["skill"] for r in response.json()}
@@ -443,7 +413,7 @@ def test_gap_frequency_excludes_hygiene_wording(db_session):
     assert "kubernetes" not in skills
 
 
-def test_gap_frequency_keeps_adds_credit_wording(db_session):
+def test_gap_frequency_keeps_adds_credit_wording(db_session, client):
     # The hygiene sibling: below full keyword credit, the literal JD token earns
     # real credit, so an adds_credit mirror_wording gap IS effective demand.
     job = _seed_job(db_session, raw_hash="gf-adds", role_category="data_engineer")
@@ -466,11 +436,7 @@ def test_gap_frequency_keeps_adds_credit_wording(db_session):
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/gap-frequency")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/gap-frequency")
 
     assert response.status_code == 200
     by_skill = {r["skill"]: r for r in response.json()}
@@ -479,7 +445,7 @@ def test_gap_frequency_keeps_adds_credit_wording(db_session):
     assert by_skill["kubernetes"]["category"] == "mirror_wording"
 
 
-def test_gap_frequency_hygiene_occurrences_do_not_inflate_aggregates(db_session):
+def test_gap_frequency_hygiene_occurrences_do_not_inflate_aggregates(db_session, client):
     # Same skill, two hygiene jobs and one effective job. The hygiene pair
     # OUTVOTES the effective occurrence on every most-common axis and carries a
     # much larger potential_points, so each assertion below fails if the skip is
@@ -528,11 +494,7 @@ def test_gap_frequency_hygiene_occurrences_do_not_inflate_aggregates(db_session)
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/gap-frequency")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/gap-frequency")
 
     assert response.status_code == 200
     row = {r["skill"]: r for r in response.json()}["kubernetes"]
@@ -542,7 +504,7 @@ def test_gap_frequency_hygiene_occurrences_do_not_inflate_aggregates(db_session)
     assert row["requirement_level"] == "required"
 
 
-def test_gap_frequency_role_filter_narrows(db_session):
+def test_gap_frequency_role_filter_narrows(db_session, client):
     job1 = _seed_job(db_session, raw_hash="gf-role-de", role_category="data_engineer")
     job2 = _seed_job(db_session, raw_hash="gf-role-ds", role_category="data_scientist")
     db_session.add_all(
@@ -563,13 +525,9 @@ def test_gap_frequency_role_filter_narrows(db_session):
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get(
-            "/api/explore/gap-frequency?role_category=data_engineer"
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get(
+        "/api/explore/gap-frequency?role_category=data_engineer"
+    )
 
     assert response.status_code == 200
     skills = {r["skill"] for r in response.json()}
@@ -582,7 +540,7 @@ def test_gap_frequency_role_filter_narrows(db_session):
 # ---------------------------------------------------------------------------
 
 
-def test_ats_over_time_buckets_weekly_by_phase_and_role(db_session):
+def test_ats_over_time_buckets_weekly_by_phase_and_role(db_session, client):
     ds1 = _seed_job(db_session, raw_hash="aot-ds1", role_category="data_scientist")
     ds2 = _seed_job(db_session, raw_hash="aot-ds2", role_category="data_scientist")
     de1 = _seed_job(db_session, raw_hash="aot-de1", role_category="data_engineer")
@@ -601,11 +559,7 @@ def test_ats_over_time_buckets_weekly_by_phase_and_role(db_session):
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/ats-over-time")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/ats-over-time")
 
     assert response.status_code == 200
     rows = response.json()
@@ -672,7 +626,7 @@ def test_ats_over_time_averages_exactly_at_a_rounding_tie(db_session):
 # ---------------------------------------------------------------------------
 
 
-def test_tailoring_lift_joins_base_and_tailored(db_session):
+def test_tailoring_lift_joins_base_and_tailored(db_session, client):
     job = _seed_job(db_session, raw_hash="tl-de", role_category="data_engineer")
     app_row = Application(job_id=job.id, base_resume="de_track")
     db_session.add(app_row)
@@ -692,11 +646,7 @@ def test_tailoring_lift_joins_base_and_tailored(db_session):
     db_session.add(_base_row(job2.id, "ds_track", 50.0))
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/tailoring-lift")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/tailoring-lift")
 
     assert response.status_code == 200
     rows = {r["role_category"]: r for r in response.json()}
@@ -711,7 +661,7 @@ def test_tailoring_lift_joins_base_and_tailored(db_session):
     assert "data_scientist" not in rows
 
 
-def test_tailoring_lift_uses_latest_tailored_row_per_application(db_session):
+def test_tailoring_lift_uses_latest_tailored_row_per_application(db_session, client):
     # Re-tailoring appends a new tailored row under the SAME application_id.
     # Only the latest (created_at desc, id desc) may count — never both.
     job = _seed_job(db_session, raw_hash="tl-latest", role_category="data_engineer")
@@ -739,11 +689,7 @@ def test_tailoring_lift_uses_latest_tailored_row_per_application(db_session):
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/tailoring-lift")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/tailoring-lift")
 
     assert response.status_code == 200
     rows = {r["role_category"]: r for r in response.json()}

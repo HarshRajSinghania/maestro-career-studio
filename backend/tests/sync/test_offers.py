@@ -3,11 +3,8 @@
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.config import settings
-from app.db import get_db
-from app.main import app
 from app.models.application_proposal import ApplicationProposal
 from app.models.job import Job
 from app.schemas.auto_apply import AutoApplySettings
@@ -90,15 +87,6 @@ def test_only_queueing_offers(db_session, sync_on, to):
     proposals.transition(db_session, proposal, to, consent=CONSENT)
     db_session.refresh(job)
     assert job.handover is None
-
-
-@pytest.fixture
-def client(db_session):
-    def override():
-        yield db_session
-    app.dependency_overrides[get_db] = override
-    yield TestClient(app)
-    app.dependency_overrides.pop(get_db, None)
 
 
 def _switch(client, on):

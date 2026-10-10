@@ -3,11 +3,8 @@
 from uuid import UUID
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.db import get_db
-from app.main import app
 from app.models.base_resume import BaseResume
 from app.models.career_kb import KBEntity, KBPoint
 from app.models.setting import Setting
@@ -31,15 +28,6 @@ def _resume(**sections):
     }
     base.update(sections)
     return base
-
-
-@pytest.fixture
-def client(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
 
 
 @pytest.fixture

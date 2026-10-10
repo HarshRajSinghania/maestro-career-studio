@@ -1,19 +1,3 @@
-import pytest
-from fastapi.testclient import TestClient
-
-
-@pytest.fixture
-def client(db_session):
-    from app.db import get_db
-    from app.main import app
-
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
-
-
 def test_version_reports_dev_when_unset(client, monkeypatch):
     monkeypatch.delenv("APP_VERSION", raising=False)
     body = client.get("/api/version").json()

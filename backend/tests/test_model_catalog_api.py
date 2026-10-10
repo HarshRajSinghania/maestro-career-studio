@@ -1,80 +1,56 @@
 """Router coverage for model catalog sync / add / remove."""
 
-from fastapi.testclient import TestClient
 
-from app.db import get_db
-from app.main import app
 from app.routers import settings
 from app.services import llm
 
 
-def _override_db(db_session):
-    def _inner():
-        yield db_session
-
-    return _inner
-
-
-def test_openai_info_includes_source_on_options(db_session):
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        body = TestClient(app).get("/api/settings/openai").json()
-    finally:
-        app.dependency_overrides.clear()
+def test_openai_info_includes_source_on_options(db_session, client):
+    body = client.get("/api/settings/openai").json()
 
     assert all(opt["source"] == "seed" for opt in body["model_options"])
     assert "gemini-3.7-flash" in {opt["id"] for opt in body["model_options"]}
 
 
-def test_add_and_remove_catalog_model(db_session):
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        added = client.post(
-            "/api/settings/openai/models",
-            json={"id": "gpt-4.5-preview", "provider": "openai", "label": "4.5"},
-        )
-        assert added.status_code == 200
-        ids = {opt["id"] for opt in added.json()["model_options"]}
-        assert "gpt-4.5-preview" in ids
-        extra = next(
-            opt for opt in added.json()["model_options"] if opt["id"] == "gpt-4.5-preview"
-        )
-        assert extra["source"] == "extra"
+def test_add_and_remove_catalog_model(db_session, client):
+    added = client.post(
+        "/api/settings/openai/models",
+        json={"id": "gpt-4.5-preview", "provider": "openai", "label": "4.5"},
+    )
+    assert added.status_code == 200
+    ids = {opt["id"] for opt in added.json()["model_options"]}
+    assert "gpt-4.5-preview" in ids
+    extra = next(
+        opt for opt in added.json()["model_options"] if opt["id"] == "gpt-4.5-preview"
+    )
+    assert extra["source"] == "extra"
 
-        removed = client.delete("/api/settings/openai/models/gpt-4.5-preview")
-        assert removed.status_code == 200
-        assert "gpt-4.5-preview" not in {
-            opt["id"] for opt in removed.json()["model_options"]
-        }
-    finally:
-        app.dependency_overrides.clear()
+    removed = client.delete("/api/settings/openai/models/gpt-4.5-preview")
+    assert removed.status_code == 200
+    assert "gpt-4.5-preview" not in {
+        opt["id"] for opt in removed.json()["model_options"]
+    }
 
 
-def test_remove_in_use_returns_400(db_session):
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        client.post(
-            "/api/settings/openai/models",
-            json={"id": "gpt-custom", "provider": "openai"},
-        )
-        client.put(
-            "/api/settings/openai",
-            json={
-                "fast_model": "gpt-custom",
-                "smart_model": "gpt-5.6-luna",
-                "chat_model": "gpt-5.6-luna",
-            },
-        )
-        resp = client.delete("/api/settings/openai/models/gpt-custom")
-        assert resp.status_code == 400
-        assert "is your Fast, Smart or Assistant model" in resp.json()["detail"]
-    finally:
-        app.dependency_overrides.clear()
+def test_remove_in_use_returns_400(db_session, client):
+    client.post(
+        "/api/settings/openai/models",
+        json={"id": "gpt-custom", "provider": "openai"},
+    )
+    client.put(
+        "/api/settings/openai",
+        json={
+            "fast_model": "gpt-custom",
+            "smart_model": "gpt-5.6-luna",
+            "chat_model": "gpt-5.6-luna",
+        },
+    )
+    resp = client.delete("/api/settings/openai/models/gpt-custom")
+    assert resp.status_code == 400
+    assert "is your Fast, Smart or Assistant model" in resp.json()["detail"]
 
 
-def test_sync_openai_marks_in_catalog(db_session, monkeypatch):
+def test_sync_openai_marks_in_catalog(db_session, monkeypatch, client):
     def fake_list():
         return [
             {"id": "gpt-5.6-luna", "label": "gpt-5.6-luna", "provider": "openai"},
@@ -88,14 +64,10 @@ def test_sync_openai_marks_in_catalog(db_session, monkeypatch):
     # helper filters. Override after filter by patching the router import.
     monkeypatch.setattr(settings.llm, "list_openai_models", fake_list)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        resp = TestClient(app).post(
-            "/api/settings/openai/sync",
-            json={"provider": "openai"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    resp = client.post(
+        "/api/settings/openai/sync",
+        json={"provider": "openai"},
+    )
 
     assert resp.status_code == 200
     by_id = {row["id"]: row for row in resp.json()["models"]}
@@ -103,19 +75,15 @@ def test_sync_openai_marks_in_catalog(db_session, monkeypatch):
     assert by_id["gpt-brand-new"]["in_catalog"] is False
 
 
-def test_sync_gemini_502_on_provider_error(db_session, monkeypatch):
+def test_sync_gemini_502_on_provider_error(db_session, monkeypatch, client):
     def boom():
         raise llm.LLMProviderError("no key")
 
     monkeypatch.setattr(settings.llm, "list_gemini_models", boom)
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        resp = TestClient(app).post(
-            "/api/settings/openai/sync",
-            json={"provider": "gemini"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    resp = client.post(
+        "/api/settings/openai/sync",
+        json={"provider": "gemini"},
+    )
 
     assert resp.status_code == 502
     assert "no key" in resp.json()["detail"]

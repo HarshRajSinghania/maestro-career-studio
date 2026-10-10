@@ -2,7 +2,6 @@
 
 from typing import Any
 import pytest
-from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import select
 
@@ -11,18 +10,6 @@ from app.schemas.career_kb import KBEntityCreate, KBEntityPatch
 from app.schemas.resume import ResumeData, TITLE_COLLISION_MESSAGE
 from app.services import career_kb, kb_consolidation
 from app.services.extra_section_presets import PRESETS
-
-
-@pytest.fixture
-def client(db_session):
-    from app.db import get_db
-    from app.main import app
-
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
 
 
 @pytest.fixture

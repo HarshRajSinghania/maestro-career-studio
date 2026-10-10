@@ -3,12 +3,9 @@
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import event, select
 
 from app.config import settings
-from app.db import get_db
-from app.main import app
 from app.models.application import Application
 from app.models.application_proposal import ApplicationProposal
 from app.models.job import Job
@@ -18,18 +15,6 @@ from app.services.sync import status
 OFF = {"owned_here": True, "owner": None, "handover": None, "pending_requests": 0,
        "can_keep_here": False}
 QUEUED = {"queued": True, "detail": "Sent at the next sync."}
-
-
-@pytest.fixture
-def client(db_session):
-    def override():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.pop(get_db, None)
 
 
 def _job(db, owner=None, handover=None):

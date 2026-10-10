@@ -107,7 +107,7 @@ def _all_gaps(gaps_json):
     return [gap for category in gaps_json["categories"] for gap in category["gaps"]]
 
 
-def test_create_session_with_enrichment(db_session, tmp_path, monkeypatch):
+def test_create_session_with_enrichment(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     calls = _mock_enrichment(
@@ -124,11 +124,7 @@ def test_create_session_with_enrichment(db_session, tmp_path, monkeypatch):
         },
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _create(TestClient(app), job, slug)
-    finally:
-        app.dependency_overrides.clear()
+    response = _create(client, job, slug)
 
     assert response.status_code == 200
     body = response.json()
@@ -225,16 +221,12 @@ def test_create_session_stamps_candidates_and_prestores_autos(
             assert "llm_library_proposals" not in gap, gap
 
 
-def test_create_session_enrich_false_skips_llm(db_session, tmp_path, monkeypatch):
+def test_create_session_enrich_false_skips_llm(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     calls = _mock_enrichment(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _create(TestClient(app), job, slug, enrich=False)
-    finally:
-        app.dependency_overrides.clear()
+    response = _create(client, job, slug, enrich=False)
 
     assert response.status_code == 200
     assert calls == []
@@ -251,16 +243,12 @@ def test_create_session_enrich_false_skips_llm(db_session, tmp_path, monkeypatch
     assert sources == {"wording_auto", "library_auto"}
 
 
-def test_create_session_enrichment_failure_still_creates(db_session, tmp_path, monkeypatch):
+def test_create_session_enrichment_failure_still_creates(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_enrichment(monkeypatch, error=RuntimeError("llm down"))
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _create(TestClient(app), job, slug)
-    finally:
-        app.dependency_overrides.clear()
+    response = _create(client, job, slug)
 
     assert response.status_code == 200
     body = response.json()
@@ -337,48 +325,36 @@ def test_create_session_scores_once_and_persists_that_run(db_session, tmp_path, 
     assert created.gaps_json["base_composite"] == float(base_row.composite)
 
 
-def test_create_session_422_for_job_without_skills(db_session, tmp_path, monkeypatch):
+def test_create_session_422_for_job_without_skills(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session, extracted_json={"title": "X", "skills": []})
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _create(TestClient(app), job, slug, enrich=False)
-    finally:
-        app.dependency_overrides.clear()
+    response = _create(client, job, slug, enrich=False)
 
     assert response.status_code == 422
     assert "skills" in response.json()["detail"]
 
 
-def test_create_session_422_for_unknown_job(db_session, tmp_path, monkeypatch):
+def test_create_session_422_for_unknown_job(db_session, tmp_path, monkeypatch, client):
     _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/tailoring-sessions",
-            json={"job_id": str(uuid4()), "base_resume": "data_scientist", "enrich": False},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/tailoring-sessions",
+        json={"job_id": str(uuid4()), "base_resume": "data_scientist", "enrich": False},
+    )
 
     assert response.status_code == 422
     assert "Job not found" in response.json()["detail"]
 
 
-def test_create_session_422_for_unknown_slug(db_session, tmp_path, monkeypatch):
+def test_create_session_422_for_unknown_slug(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/tailoring-sessions",
-            json={"job_id": str(job.id), "base_resume": "no_such_slug", "enrich": False},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/tailoring-sessions",
+        json={"job_id": str(job.id), "base_resume": "no_such_slug", "enrich": False},
+    )
 
     assert response.status_code == 422
 
@@ -404,7 +380,7 @@ def _seed_health_report(
     db_session.commit()
 
 
-def test_create_session_blocked_by_failing_fatal_gate(db_session, tmp_path, monkeypatch):
+def test_create_session_blocked_by_failing_fatal_gate(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     version = resume_versions.record_version(
@@ -430,11 +406,7 @@ def test_create_session_blocked_by_failing_fatal_gate(db_session, tmp_path, monk
         resume_version_number=version.version_number,
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _create(TestClient(app), job, slug, enrich=False)
-    finally:
-        app.dependency_overrides.clear()
+    response = _create(client, job, slug, enrich=False)
 
     assert response.status_code == 409
     # The failing gate by TODAY's label (the fixture stores the pre-rewording
@@ -450,7 +422,7 @@ def test_create_session_blocked_by_failing_fatal_gate(db_session, tmp_path, monk
 
 def test_create_session_ignores_stale_failing_fatal_report_with_warning(
     db_session, tmp_path, monkeypatch
-):
+, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     first = resume_versions.record_version(
@@ -484,11 +456,7 @@ def test_create_session_ignores_stale_failing_fatal_report_with_warning(
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _create(TestClient(app), job, slug, enrich=False)
-    finally:
-        app.dependency_overrides.clear()
+    response = _create(client, job, slug, enrich=False)
 
     assert response.status_code == 200
     assert response.json()["health_warning"] == (
@@ -497,7 +465,7 @@ def test_create_session_ignores_stale_failing_fatal_report_with_warning(
     )
 
 
-def test_create_session_waived_fatal_gate_not_blocked(db_session, tmp_path, monkeypatch):
+def test_create_session_waived_fatal_gate_not_blocked(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     # same fatal gate, but WAIVED — a waived gate never blocks.
@@ -519,11 +487,7 @@ def test_create_session_waived_fatal_gate_not_blocked(db_session, tmp_path, monk
         },
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _create(TestClient(app), job, slug, enrich=False)
-    finally:
-        app.dependency_overrides.clear()
+    response = _create(client, job, slug, enrich=False)
 
     assert response.status_code == 200
     body = response.json()
@@ -534,7 +498,7 @@ def test_create_session_waived_fatal_gate_not_blocked(db_session, tmp_path, monk
 
 def test_create_session_unblocked_by_a_waiver_row_the_stored_report_predates(
     db_session, tmp_path, monkeypatch
-):
+, client):
     """The waiver TABLE is the authority, not the snapshot beside it.
 
     `POST /gates/{id}/waive` writes a `HealthGateWaiver` row and nothing else —
@@ -571,11 +535,7 @@ def test_create_session_unblocked_by_a_waiver_row_the_stored_report_predates(
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _create(TestClient(app), job, slug, enrich=False)
-    finally:
-        app.dependency_overrides.clear()
+    response = _create(client, job, slug, enrich=False)
 
     assert response.status_code == 200
     assert response.json()["status"] == "open"
@@ -583,7 +543,7 @@ def test_create_session_unblocked_by_a_waiver_row_the_stored_report_predates(
 
 def test_create_session_stays_blocked_when_the_waiver_names_another_gate(
     db_session, tmp_path, monkeypatch
-):
+, client):
     """A waiver is per-gate: waiving S1 must not release S2."""
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
@@ -605,11 +565,7 @@ def test_create_session_stays_blocked_when_the_waiver_names_another_gate(
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _create(TestClient(app), job, slug, enrich=False)
-    finally:
-        app.dependency_overrides.clear()
+    response = _create(client, job, slug, enrich=False)
 
     assert response.status_code == 409
     assert "Email is readable" in response.json()["detail"]
@@ -617,7 +573,7 @@ def test_create_session_stays_blocked_when_the_waiver_names_another_gate(
 
 def test_create_session_waiver_does_not_travel_to_another_base_resume(
     db_session, tmp_path, monkeypatch
-):
+, client):
     """A waiver belongs to the resume it was filed against.
 
     Reading waivers by gate id alone (or by kind alone) would let one waived
@@ -647,26 +603,18 @@ def test_create_session_waiver_does_not_travel_to_another_base_resume(
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _create(TestClient(app), job, slug, enrich=False)
-    finally:
-        app.dependency_overrides.clear()
+    response = _create(client, job, slug, enrich=False)
 
     assert response.status_code == 409
     assert "PDF text is readable" in response.json()["detail"]
 
 
-def test_create_session_warns_when_health_under_55(db_session, tmp_path, monkeypatch):
+def test_create_session_warns_when_health_under_55(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _seed_health_report(db_session, slug, {"score": 40, "grade": "D", "gates": []})
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _create(TestClient(app), job, slug, enrich=False)
-    finally:
-        app.dependency_overrides.clear()
+    response = _create(client, job, slug, enrich=False)
 
     assert response.status_code == 200
     body = response.json()
@@ -675,7 +623,7 @@ def test_create_session_warns_when_health_under_55(db_session, tmp_path, monkeyp
     assert "40" in body["health_warning"]
 
 
-def test_create_session_healthy_report_no_warning(db_session, tmp_path, monkeypatch):
+def test_create_session_healthy_report_no_warning(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _seed_health_report(
@@ -693,11 +641,7 @@ def test_create_session_healthy_report_no_warning(db_session, tmp_path, monkeypa
         },
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _create(TestClient(app), job, slug, enrich=False)
-    finally:
-        app.dependency_overrides.clear()
+    response = _create(client, job, slug, enrich=False)
 
     assert response.status_code == 200
     body = response.json()
@@ -705,16 +649,12 @@ def test_create_session_healthy_report_no_warning(db_session, tmp_path, monkeypa
     assert body["health_warning"] is None
 
 
-def test_create_session_no_health_report_proceeds_silently(db_session, tmp_path, monkeypatch):
+def test_create_session_no_health_report_proceeds_silently(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     # no ResumeLintReport seeded — health is opt-in
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _create(TestClient(app), job, slug, enrich=False)
-    finally:
-        app.dependency_overrides.clear()
+    response = _create(client, job, slug, enrich=False)
 
     assert response.status_code == 200
     body = response.json()
@@ -722,18 +662,13 @@ def test_create_session_no_health_report_proceeds_silently(db_session, tmp_path,
     assert body["health_warning"] is None
 
 
-def test_get_session_and_404(db_session, tmp_path, monkeypatch):
+def test_get_session_and_404(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        found = client.get(f"/api/tailoring-sessions/{created['id']}")
-        missing = client.get(f"/api/tailoring-sessions/{uuid4()}")
-    finally:
-        app.dependency_overrides.clear()
+    created = _create(client, job, slug, enrich=False).json()
+    found = client.get(f"/api/tailoring-sessions/{created['id']}")
+    missing = client.get(f"/api/tailoring-sessions/{uuid4()}")
 
     assert found.status_code == 200
     assert found.json()["id"] == created["id"]
@@ -741,7 +676,7 @@ def test_get_session_and_404(db_session, tmp_path, monkeypatch):
     assert missing.status_code == 404
 
 
-def test_list_sessions_newest_first(db_session, tmp_path, monkeypatch):
+def test_list_sessions_newest_first(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     other_job = Job(raw_text="jd2", raw_text_hash="router-ts-hash-2", extracted_json=SAMPLE_JD)
@@ -749,57 +684,47 @@ def test_list_sessions_newest_first(db_session, tmp_path, monkeypatch):
     db_session.commit()
     db_session.refresh(other_job)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        first = _create(client, job, slug, enrich=False).json()
-        second = _create(client, job, slug, enrich=False).json()
-        _create(client, other_job, slug, enrich=False)
-        listing = client.get(f"/api/tailoring-sessions?job_id={job.id}")
-    finally:
-        app.dependency_overrides.clear()
+    first = _create(client, job, slug, enrich=False).json()
+    second = _create(client, job, slug, enrich=False).json()
+    _create(client, other_job, slug, enrich=False)
+    listing = client.get(f"/api/tailoring-sessions?job_id={job.id}")
 
     assert listing.status_code == 200
     body = listing.json()
     assert [item["id"] for item in body] == [second["id"], first["id"]]
 
 
-def test_patch_merges_resolutions_by_gap_id(db_session, tmp_path, monkeypatch):
+def test_patch_merges_resolutions_by_gap_id(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        session_id = created["id"]
-        gap_ids = [gap["gap_id"] for gap in _all_gaps(created["gaps_json"])]
-        assert "skill:salesforce" in gap_ids
-        other_gap_id = next(gap_id for gap_id in gap_ids if gap_id != "skill:salesforce")
+    created = _create_clean(client, job, slug)
+    session_id = created["id"]
+    gap_ids = [gap["gap_id"] for gap in _all_gaps(created["gaps_json"])]
+    assert "skill:salesforce" in gap_ids
+    other_gap_id = next(gap_id for gap_id in gap_ids if gap_id != "skill:salesforce")
 
-        first = client.patch(
-            f"/api/tailoring-sessions/{session_id}",
-            json={
-                "resolutions": [
-                    {
-                        "gap_id": "skill:salesforce",
-                        "action": "user_input",
-                        "payload": {"answer": "Owned Salesforce data pipelines at DataCo."},
-                    }
-                ]
-            },
-        )
-        second = client.patch(
-            f"/api/tailoring-sessions/{session_id}",
-            json={
-                "resolutions": [
-                    {"gap_id": "skill:salesforce", "action": "skip"},
-                    {"gap_id": other_gap_id, "action": "skip"},
-                ]
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    first = client.patch(
+        f"/api/tailoring-sessions/{session_id}",
+        json={
+            "resolutions": [
+                {
+                    "gap_id": "skill:salesforce",
+                    "action": "user_input",
+                    "payload": {"answer": "Owned Salesforce data pipelines at DataCo."},
+                }
+            ]
+        },
+    )
+    second = client.patch(
+        f"/api/tailoring-sessions/{session_id}",
+        json={
+            "resolutions": [
+                {"gap_id": "skill:salesforce", "action": "skip"},
+                {"gap_id": other_gap_id, "action": "skip"},
+            ]
+        },
+    )
 
     assert first.status_code == 200
     assert first.json()["resolutions_json"] == [
@@ -818,29 +743,24 @@ def test_patch_merges_resolutions_by_gap_id(db_session, tmp_path, monkeypatch):
     assert by_gap[other_gap_id]["action"] == "skip"
 
 
-def test_patch_duplicate_gap_id_in_one_batch_last_wins(db_session, tmp_path, monkeypatch):
+def test_patch_duplicate_gap_id_in_one_batch_last_wins(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        response = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={
-                "resolutions": [
-                    {
-                        "gap_id": "skill:salesforce",
-                        "action": "user_input",
-                        "payload": {"answer": "first"},
-                    },
-                    {"gap_id": "skill:salesforce", "action": "skip"},
-                ]
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    created = _create_clean(client, job, slug)
+    response = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={
+            "resolutions": [
+                {
+                    "gap_id": "skill:salesforce",
+                    "action": "user_input",
+                    "payload": {"answer": "first"},
+                },
+                {"gap_id": "skill:salesforce", "action": "skip"},
+            ]
+        },
+    )
 
     assert response.status_code == 200
     assert response.json()["resolutions_json"] == [
@@ -848,72 +768,62 @@ def test_patch_duplicate_gap_id_in_one_batch_last_wins(db_session, tmp_path, mon
     ]
 
 
-def test_patch_empty_batch_is_a_noop(db_session, tmp_path, monkeypatch):
+def test_patch_empty_batch_is_a_noop(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        first = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={"resolutions": [{"gap_id": "skill:salesforce", "action": "skip"}]},
-        )
-        empty = client.patch(
-            f"/api/tailoring-sessions/{created['id']}", json={"resolutions": []}
-        )
-    finally:
-        app.dependency_overrides.clear()
+    created = _create(client, job, slug, enrich=False).json()
+    first = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={"resolutions": [{"gap_id": "skill:salesforce", "action": "skip"}]},
+    )
+    empty = client.patch(
+        f"/api/tailoring-sessions/{created['id']}", json={"resolutions": []}
+    )
 
     assert first.status_code == 200
     assert empty.status_code == 200
     assert empty.json()["resolutions_json"] == first.json()["resolutions_json"]
 
 
-def test_patch_replace_true_removes_omitted_entries(db_session, tmp_path, monkeypatch):
+def test_patch_replace_true_removes_omitted_entries(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        session_id = created["id"]
-        gap_ids = [gap["gap_id"] for gap in _all_gaps(created["gaps_json"])]
-        other_gap_id = next(gap_id for gap_id in gap_ids if gap_id != "skill:salesforce")
+    created = _create_clean(client, job, slug)
+    session_id = created["id"]
+    gap_ids = [gap["gap_id"] for gap in _all_gaps(created["gaps_json"])]
+    other_gap_id = next(gap_id for gap_id in gap_ids if gap_id != "skill:salesforce")
 
-        first = client.patch(
-            f"/api/tailoring-sessions/{session_id}",
-            json={
-                "resolutions": [
-                    {"gap_id": "skill:salesforce", "action": "skip"},
-                    {"gap_id": other_gap_id, "action": "skip"},
-                ]
-            },
-        )
-        # replace=True with only one entry (sent twice — dedup, last wins):
-        # the omitted gap_id is deleted, not merged around.
-        replaced = client.patch(
-            f"/api/tailoring-sessions/{session_id}",
-            json={
-                "resolutions": [
-                    {
-                        "gap_id": "skill:salesforce",
-                        "action": "user_input",
-                        "payload": {"text": "first"},
-                    },
-                    {
-                        "gap_id": "skill:salesforce",
-                        "action": "user_input",
-                        "payload": {"text": "Owned Salesforce pipelines at DataCo."},
-                    },
-                ],
-                "replace": True,
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    first = client.patch(
+        f"/api/tailoring-sessions/{session_id}",
+        json={
+            "resolutions": [
+                {"gap_id": "skill:salesforce", "action": "skip"},
+                {"gap_id": other_gap_id, "action": "skip"},
+            ]
+        },
+    )
+    # replace=True with only one entry (sent twice — dedup, last wins):
+    # the omitted gap_id is deleted, not merged around.
+    replaced = client.patch(
+        f"/api/tailoring-sessions/{session_id}",
+        json={
+            "resolutions": [
+                {
+                    "gap_id": "skill:salesforce",
+                    "action": "user_input",
+                    "payload": {"text": "first"},
+                },
+                {
+                    "gap_id": "skill:salesforce",
+                    "action": "user_input",
+                    "payload": {"text": "Owned Salesforce pipelines at DataCo."},
+                },
+            ],
+            "replace": True,
+        },
+    )
 
     assert first.status_code == 200
     assert len(first.json()["resolutions_json"]) == 2
@@ -927,24 +837,19 @@ def test_patch_replace_true_removes_omitted_entries(db_session, tmp_path, monkey
     ]
 
 
-def test_patch_replace_true_empty_list_clears_all(db_session, tmp_path, monkeypatch):
+def test_patch_replace_true_empty_list_clears_all(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        first = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={"resolutions": [{"gap_id": "skill:salesforce", "action": "skip"}]},
-        )
-        cleared = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={"resolutions": [], "replace": True},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    created = _create_clean(client, job, slug)
+    first = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={"resolutions": [{"gap_id": "skill:salesforce", "action": "skip"}]},
+    )
+    cleared = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={"resolutions": [], "replace": True},
+    )
 
     assert first.status_code == 200
     assert len(first.json()["resolutions_json"]) == 1
@@ -952,28 +857,23 @@ def test_patch_replace_true_empty_list_clears_all(db_session, tmp_path, monkeypa
     assert cleared.json()["resolutions_json"] == []
 
 
-def test_patch_replace_rejected_batch_saves_nothing(db_session, tmp_path, monkeypatch):
+def test_patch_replace_rejected_batch_saves_nothing(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        first = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={"resolutions": [{"gap_id": "skill:salesforce", "action": "skip"}]},
-        )
-        rejected = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={
-                "resolutions": [{"gap_id": "skill:nonexistent", "action": "skip"}],
-                "replace": True,
-            },
-        )
-        after = client.get(f"/api/tailoring-sessions/{created['id']}")
-    finally:
-        app.dependency_overrides.clear()
+    created = _create(client, job, slug, enrich=False).json()
+    first = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={"resolutions": [{"gap_id": "skill:salesforce", "action": "skip"}]},
+    )
+    rejected = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={
+            "resolutions": [{"gap_id": "skill:nonexistent", "action": "skip"}],
+            "replace": True,
+        },
+    )
+    after = client.get(f"/api/tailoring-sessions/{created['id']}")
 
     assert first.status_code == 200
     assert rejected.status_code == 400
@@ -982,93 +882,78 @@ def test_patch_replace_rejected_batch_saves_nothing(db_session, tmp_path, monkey
     assert after.json()["resolutions_json"] == first.json()["resolutions_json"]
 
 
-def test_patch_unknown_gap_id_returns_400(db_session, tmp_path, monkeypatch):
+def test_patch_unknown_gap_id_returns_400(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        response = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={"resolutions": [{"gap_id": "skill:nonexistent", "action": "skip"}]},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    created = _create(client, job, slug, enrich=False).json()
+    response = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={"resolutions": [{"gap_id": "skill:nonexistent", "action": "skip"}]},
+    )
 
     assert response.status_code == 400
     assert "Unknown gap_id" in response.json()["detail"]
 
 
-def test_patch_illegal_action_returns_400(db_session, tmp_path, monkeypatch):
+def test_patch_illegal_action_returns_400(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        # a mirror_wording gap only allows add_keyword/skip; attach_project
-        # (offered only for missing skills) is not allowed here.
-        response = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={"resolutions": [{"gap_id": "skill:aws", "action": "attach_project"}]},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    created = _create(client, job, slug, enrich=False).json()
+    # a mirror_wording gap only allows add_keyword/skip; attach_project
+    # (offered only for missing skills) is not allowed here.
+    response = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={"resolutions": [{"gap_id": "skill:aws", "action": "attach_project"}]},
+    )
 
     assert response.status_code == 400
     assert "not allowed" in response.json()["detail"]
 
 
-def test_patch_unverified_add_keyword_must_target_skills(db_session, tmp_path, monkeypatch):
+def test_patch_unverified_add_keyword_must_target_skills(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        sid = created["id"]
-        # missing skill (salesforce, fix_hint=="absent"): add_keyword into experience
-        # is blocked server-side regardless of the caller (honesty invariant).
-        rejected = client.patch(
-            f"/api/tailoring-sessions/{sid}",
-            json={
-                "resolutions": [
-                    {
-                        "gap_id": "skill:salesforce",
-                        "action": "add_keyword",
-                        "payload": {
-                            "placement_target": {"section": "experience", "index_or_category": 0},
-                            "wording": "Salesforce",
+    created = _create_clean(client, job, slug)
+    sid = created["id"]
+    # missing skill (salesforce, fix_hint=="absent"): add_keyword into experience
+    # is blocked server-side regardless of the caller (honesty invariant).
+    rejected = client.patch(
+        f"/api/tailoring-sessions/{sid}",
+        json={
+            "resolutions": [
+                {
+                    "gap_id": "skill:salesforce",
+                    "action": "add_keyword",
+                    "payload": {
+                        "placement_target": {"section": "experience", "index_or_category": 0},
+                        "wording": "Salesforce",
+                    },
+                }
+            ]
+        },
+    )
+    # the same add_keyword into skills is accepted and saved.
+    accepted = client.patch(
+        f"/api/tailoring-sessions/{sid}",
+        json={
+            "resolutions": [
+                {
+                    "gap_id": "skill:salesforce",
+                    "action": "add_keyword",
+                    "payload": {
+                        "placement_target": {
+                            "section": "skills",
+                            "index_or_category": "Additional Skills",
                         },
-                    }
-                ]
-            },
-        )
-        # the same add_keyword into skills is accepted and saved.
-        accepted = client.patch(
-            f"/api/tailoring-sessions/{sid}",
-            json={
-                "resolutions": [
-                    {
-                        "gap_id": "skill:salesforce",
-                        "action": "add_keyword",
-                        "payload": {
-                            "placement_target": {
-                                "section": "skills",
-                                "index_or_category": "Additional Skills",
-                            },
-                            "wording": "Salesforce",
-                        },
-                    }
-                ]
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+                        "wording": "Salesforce",
+                    },
+                }
+            ]
+        },
+    )
 
     assert rejected.status_code == 400
     assert "skills section" in rejected.json()["detail"]
@@ -1524,32 +1409,27 @@ def test_surviving_keywords_skip_retry(db_session, tmp_path, monkeypatch):
 
 def test_patch_add_keyword_experience_index_out_of_range_returns_400(
     db_session, tmp_path, monkeypatch
-):
+, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        # index 2 is the DISABLED HiddenCo entry -> not an enabled placement target
-        response = _patch(
-            client,
-            created["id"],
-            [
-                {
-                    "gap_id": "skill:tableau",
-                    "action": "add_keyword",
-                    "payload": {
-                        "placement_target": {"section": "experience", "index_or_category": 2},
-                        "wording": "Tableau",
-                    },
-                }
-            ],
-        )
-        after = client.get(f"/api/tailoring-sessions/{created['id']}")
-    finally:
-        app.dependency_overrides.clear()
+    created = _create_clean(client, job, slug)
+    # index 2 is the DISABLED HiddenCo entry -> not an enabled placement target
+    response = _patch(
+        client,
+        created["id"],
+        [
+            {
+                "gap_id": "skill:tableau",
+                "action": "add_keyword",
+                "payload": {
+                    "placement_target": {"section": "experience", "index_or_category": 2},
+                    "wording": "Tableau",
+                },
+            }
+        ],
+    )
+    after = client.get(f"/api/tailoring-sessions/{created['id']}")
 
     assert response.status_code == 400
     assert "not an enabled experience entry" in response.json()["detail"]
@@ -1559,33 +1439,28 @@ def test_patch_add_keyword_experience_index_out_of_range_returns_400(
 
 def test_patch_add_keyword_skills_unknown_category_returns_400(
     db_session, tmp_path, monkeypatch
-):
+, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        response = _patch(
-            client,
-            created["id"],
-            [
-                {
-                    "gap_id": "skill:tableau",
-                    "action": "add_keyword",
-                    "payload": {
-                        "placement_target": {
-                            "section": "skills",
-                            "index_or_category": "Nonexistent Category",
-                        },
-                        "wording": "Tableau",
+    created = _create(client, job, slug, enrich=False).json()
+    response = _patch(
+        client,
+        created["id"],
+        [
+            {
+                "gap_id": "skill:tableau",
+                "action": "add_keyword",
+                "payload": {
+                    "placement_target": {
+                        "section": "skills",
+                        "index_or_category": "Nonexistent Category",
                     },
-                }
-            ],
-        )
-    finally:
-        app.dependency_overrides.clear()
+                    "wording": "Tableau",
+                },
+            }
+        ],
+    )
 
     assert response.status_code == 400
     assert "skills category" in response.json()["detail"]
@@ -1593,33 +1468,28 @@ def test_patch_add_keyword_skills_unknown_category_returns_400(
 
 def test_patch_add_keyword_skills_additional_skills_accepted(
     db_session, tmp_path, monkeypatch
-):
+, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        response = _patch(
-            client,
-            created["id"],
-            [
-                {
-                    "gap_id": "skill:tableau",
-                    "action": "add_keyword",
-                    "payload": {
-                        "placement_target": {
-                            "section": "skills",
-                            "index_or_category": "Additional Skills",
-                        },
-                        "wording": "Tableau",
+    created = _create_clean(client, job, slug)
+    response = _patch(
+        client,
+        created["id"],
+        [
+            {
+                "gap_id": "skill:tableau",
+                "action": "add_keyword",
+                "payload": {
+                    "placement_target": {
+                        "section": "skills",
+                        "index_or_category": "Additional Skills",
                     },
-                }
-            ],
-        )
-    finally:
-        app.dependency_overrides.clear()
+                    "wording": "Tableau",
+                },
+            }
+        ],
+    )
 
     assert response.status_code == 200
     saved = response.json()["resolutions_json"]
@@ -1627,31 +1497,26 @@ def test_patch_add_keyword_skills_additional_skills_accepted(
     assert saved[0]["payload"]["placement_target"]["index_or_category"] == "Additional Skills"
 
 
-def test_patch_add_keyword_experience_valid_index_accepted(db_session, tmp_path, monkeypatch):
+def test_patch_add_keyword_experience_valid_index_accepted(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        # index 1 (OldCo) is a valid ENABLED experience entry
-        response = _patch(
-            client,
-            created["id"],
-            [
-                {
-                    "gap_id": "skill:tableau",
-                    "action": "add_keyword",
-                    "payload": {
-                        "placement_target": {"section": "experience", "index_or_category": 1},
-                        "wording": "Tableau",
-                    },
-                }
-            ],
-        )
-    finally:
-        app.dependency_overrides.clear()
+    created = _create_clean(client, job, slug)
+    # index 1 (OldCo) is a valid ENABLED experience entry
+    response = _patch(
+        client,
+        created["id"],
+        [
+            {
+                "gap_id": "skill:tableau",
+                "action": "add_keyword",
+                "payload": {
+                    "placement_target": {"section": "experience", "index_or_category": 1},
+                    "wording": "Tableau",
+                },
+            }
+        ],
+    )
 
     assert response.status_code == 200
     saved = response.json()["resolutions_json"]
@@ -1662,56 +1527,46 @@ def test_patch_add_keyword_experience_valid_index_accepted(db_session, tmp_path,
     }
 
 
-def test_patch_attach_project_unknown_project_returns_400(db_session, tmp_path, monkeypatch):
+def test_patch_attach_project_unknown_project_returns_400(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        response = _patch(
-            client,
-            created["id"],
-            [
-                {
-                    "gap_id": "skill:salesforce",
-                    "action": "attach_project",
-                    "payload": {"project_name": "Ghost Project"},
-                }
-            ],
-        )
-        after = client.get(f"/api/tailoring-sessions/{created['id']}")
-    finally:
-        app.dependency_overrides.clear()
+    created = _create_clean(client, job, slug)
+    response = _patch(
+        client,
+        created["id"],
+        [
+            {
+                "gap_id": "skill:salesforce",
+                "action": "attach_project",
+                "payload": {"project_name": "Ghost Project"},
+            }
+        ],
+    )
+    after = client.get(f"/api/tailoring-sessions/{created['id']}")
 
     assert response.status_code == 400
     assert "enabled project" in response.json()["detail"]
     assert after.json()["resolutions_json"] == []
 
 
-def test_patch_attach_project_valid_name_accepted(db_session, tmp_path, monkeypatch):
+def test_patch_attach_project_valid_name_accepted(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        # case-insensitive match against the enabled project "RAG Search"
-        response = _patch(
-            client,
-            created["id"],
-            [
-                {
-                    "gap_id": "skill:salesforce",
-                    "action": "attach_project",
-                    "payload": {"project_name": "rag search"},
-                }
-            ],
-        )
-    finally:
-        app.dependency_overrides.clear()
+    created = _create_clean(client, job, slug)
+    # case-insensitive match against the enabled project "RAG Search"
+    response = _patch(
+        client,
+        created["id"],
+        [
+            {
+                "gap_id": "skill:salesforce",
+                "action": "attach_project",
+                "payload": {"project_name": "rag search"},
+            }
+        ],
+    )
 
     assert response.status_code == 200
     saved = response.json()["resolutions_json"]
@@ -1720,62 +1575,48 @@ def test_patch_attach_project_valid_name_accepted(db_session, tmp_path, monkeypa
     assert saved[0]["payload"]["project_name"] == "rag search"
 
 
-def test_patch_rejected_batch_saves_nothing(db_session, tmp_path, monkeypatch):
+def test_patch_rejected_batch_saves_nothing(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        response = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={
-                "resolutions": [
-                    {"gap_id": "skill:salesforce", "action": "skip"},
-                    {"gap_id": "skill:nonexistent", "action": "skip"},
-                ]
-            },
-        )
-        after = client.get(f"/api/tailoring-sessions/{created['id']}")
-    finally:
-        app.dependency_overrides.clear()
+    created = _create_clean(client, job, slug)
+    response = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={
+            "resolutions": [
+                {"gap_id": "skill:salesforce", "action": "skip"},
+                {"gap_id": "skill:nonexistent", "action": "skip"},
+            ]
+        },
+    )
+    after = client.get(f"/api/tailoring-sessions/{created['id']}")
 
     assert response.status_code == 400
     assert after.json()["resolutions_json"] == []
 
 
-def test_patch_non_open_session_returns_409(db_session, tmp_path, monkeypatch):
+def test_patch_non_open_session_returns_409(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        row = db_session.get(TailoringSession, UUID(created["id"]))
-        row.status = "tailored"
-        db_session.commit()
-        response = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={"resolutions": [{"gap_id": "skill:salesforce", "action": "skip"}]},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    created = _create(client, job, slug, enrich=False).json()
+    row = db_session.get(TailoringSession, UUID(created["id"]))
+    row.status = "tailored"
+    db_session.commit()
+    response = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={"resolutions": [{"gap_id": "skill:salesforce", "action": "skip"}]},
+    )
 
     assert response.status_code == 409
     assert "This gap analysis is closed." in response.json()["detail"]
 
 
-def test_patch_unknown_session_returns_404(db_session):
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            f"/api/tailoring-sessions/{uuid4()}",
-            json={"resolutions": [{"gap_id": "skill:salesforce", "action": "skip"}]},
-        )
-    finally:
-        app.dependency_overrides.clear()
+def test_patch_unknown_session_returns_404(db_session, client):
+    response = client.patch(
+        f"/api/tailoring-sessions/{uuid4()}",
+        json={"resolutions": [{"gap_id": "skill:salesforce", "action": "skip"}]},
+    )
 
     assert response.status_code == 404
 
@@ -1847,36 +1688,31 @@ def test_tailor_request_apply_profile_defaults_false():
     assert TailorRequest(apply_profile=True).apply_profile is True
 
 
-def test_apply_profile_fills_only_unresolved_gaps(db_session, tmp_path, monkeypatch):
+def test_apply_profile_fills_only_unresolved_gaps(db_session, tmp_path, monkeypatch, client):
     """Quick tailor fills holes: a hand resolution and a pre-stored auto both
     survive verbatim, and every remaining gap gets a decision."""
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_tailor_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        # The SAMPLE fixtures pre-store a wording_auto for AWS at creation.
-        auto = next(
-            item for item in created["resolutions_json"]
-            if item["payload"].get("provenance", {}).get("source") == "wording_auto"
-        )
-        # One hand-made resolution the profile must not touch.
-        hand = {
-            "gap_id": "skill:salesforce",
-            "action": "user_input",
-            "payload": {"text": "Owned Salesforce CRM pipelines at DataCo since 2023."},
-        }
-        assert _patch(client, created["id"], [hand]).status_code == 200
+    created = _create(client, job, slug, enrich=False).json()
+    # The SAMPLE fixtures pre-store a wording_auto for AWS at creation.
+    auto = next(
+        item for item in created["resolutions_json"]
+        if item["payload"].get("provenance", {}).get("source") == "wording_auto"
+    )
+    # One hand-made resolution the profile must not touch.
+    hand = {
+        "gap_id": "skill:salesforce",
+        "action": "user_input",
+        "payload": {"text": "Owned Salesforce CRM pipelines at DataCo since 2023."},
+    }
+    assert _patch(client, created["id"], [hand]).status_code == 200
 
-        response = client.post(
-            f"/api/tailoring-sessions/{created['id']}/tailor",
-            json={"apply_profile": True},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        f"/api/tailoring-sessions/{created['id']}/tailor",
+        json={"apply_profile": True},
+    )
 
     assert response.status_code == 200
     saved = response.json()["session"]["resolutions_json"]
@@ -1890,37 +1726,32 @@ def test_apply_profile_fills_only_unresolved_gaps(db_session, tmp_path, monkeypa
     assert gap_ids <= set(by_id)
 
 
-def test_apply_profile_does_not_reopen_a_stored_skip(db_session, tmp_path, monkeypatch):
+def test_apply_profile_does_not_reopen_a_stored_skip(db_session, tmp_path, monkeypatch, client):
     """A stored skip is a decision already made; the planner must not re-plan it
     into an add. This is why the filter is membership, not truthiness."""
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_tailor_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        skipped = {"gap_id": "skill:salesforce", "action": "skip", "payload": {}}
-        keep = {
-            "gap_id": "skill:docker",
-            "action": "add_keyword",
-            "payload": {
-                "placement_target": {
-                    "section": "skills",
-                    "index_or_category": "Additional Skills",
-                },
-                "wording": "Docker",
+    created = _create(client, job, slug, enrich=False).json()
+    skipped = {"gap_id": "skill:salesforce", "action": "skip", "payload": {}}
+    keep = {
+        "gap_id": "skill:docker",
+        "action": "add_keyword",
+        "payload": {
+            "placement_target": {
+                "section": "skills",
+                "index_or_category": "Additional Skills",
             },
-        }
-        assert _patch(client, created["id"], [skipped, keep]).status_code == 200
+            "wording": "Docker",
+        },
+    }
+    assert _patch(client, created["id"], [skipped, keep]).status_code == 200
 
-        response = client.post(
-            f"/api/tailoring-sessions/{created['id']}/tailor",
-            json={"apply_profile": True},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        f"/api/tailoring-sessions/{created['id']}/tailor",
+        json={"apply_profile": True},
+    )
 
     assert response.status_code == 200
     saved = response.json()["session"]["resolutions_json"]
@@ -1928,23 +1759,18 @@ def test_apply_profile_does_not_reopen_a_stored_skip(db_session, tmp_path, monke
     assert by_id["skill:salesforce"]["action"] == "skip"
 
 
-def test_apply_profile_absent_skill_still_lands_in_skills(db_session, tmp_path, monkeypatch):
+def test_apply_profile_absent_skill_still_lands_in_skills(db_session, tmp_path, monkeypatch, client):
     """The honesty invariant holds through this path: the fill goes through
     save_resolutions, which re-enforces skills-only for absent skills."""
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_tailor_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        response = client.post(
-            f"/api/tailoring-sessions/{created['id']}/tailor",
-            json={"apply_profile": True},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    created = _create(client, job, slug, enrich=False).json()
+    response = client.post(
+        f"/api/tailoring-sessions/{created['id']}/tailor",
+        json={"apply_profile": True},
+    )
 
     assert response.status_code == 200
     saved = response.json()["session"]["resolutions_json"]
@@ -1955,7 +1781,7 @@ def test_apply_profile_absent_skill_still_lands_in_skills(db_session, tmp_path, 
 
 def test_apply_profile_uses_standing_instruction_only_as_fallback(
     db_session, tmp_path, monkeypatch
-):
+, client):
     """The standing instruction reaches tailor() when the session has no note of
     its own, and NEVER overrides one that does — the gap page's textarea wins."""
     job = _seed_job(db_session)
@@ -1966,30 +1792,25 @@ def test_apply_profile_uses_standing_instruction_only_as_fallback(
         lambda session=None: {**quick_tailor.DEFAULTS, "instruction": "Keep it to one page."},
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        # (a) no session note -> the standing instruction is used
-        created = _create(client, job, slug, enrich=False).json()
-        client.post(
-            f"/api/tailoring-sessions/{created['id']}/tailor",
-            json={"apply_profile": True},
-        )
-        assert any("Keep it to one page." in str(c) for c in calls)
+    # (a) no session note -> the standing instruction is used
+    created = _create(client, job, slug, enrich=False).json()
+    client.post(
+        f"/api/tailoring-sessions/{created['id']}/tailor",
+        json={"apply_profile": True},
+    )
+    assert any("Keep it to one page." in str(c) for c in calls)
 
-        # (b) a session note wins over the standing instruction
-        calls.clear()
-        second = _create(client, job, slug, enrich=False).json()
-        client.patch(
-            f"/api/tailoring-sessions/{second['id']}",
-            json={"resolutions": [], "user_prompt": "Lead with the fintech project."},
-        )
-        client.post(
-            f"/api/tailoring-sessions/{second['id']}/tailor",
-            json={"apply_profile": True},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    # (b) a session note wins over the standing instruction
+    calls.clear()
+    second = _create(client, job, slug, enrich=False).json()
+    client.patch(
+        f"/api/tailoring-sessions/{second['id']}",
+        json={"resolutions": [], "user_prompt": "Lead with the fintech project."},
+    )
+    client.post(
+        f"/api/tailoring-sessions/{second['id']}/tailor",
+        json={"apply_profile": True},
+    )
 
     assert any("Lead with the fintech project." in str(c) for c in calls)
     assert not any("Keep it to one page." in str(c) for c in calls)
@@ -1997,28 +1818,23 @@ def test_apply_profile_uses_standing_instruction_only_as_fallback(
 
 def test_tailor_without_apply_profile_leaves_resolutions_alone(
     db_session, tmp_path, monkeypatch
-):
+, client):
     """The flag is opt-in: the normal Tailor button path is untouched."""
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_tailor_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug, [SALESFORCE_RESOLUTION])
-        before = client.get(f"/api/tailoring-sessions/{created['id']}").json()[
-            "resolutions_json"
-        ]
-        response = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug, [SALESFORCE_RESOLUTION])
+    before = client.get(f"/api/tailoring-sessions/{created['id']}").json()[
+        "resolutions_json"
+    ]
+    response = _tailor(client, created["id"])
 
     assert response.status_code == 200
     assert response.json()["session"]["resolutions_json"] == before
 
 
-def test_apply_profile_with_nothing_actionable_400s(db_session, tmp_path, monkeypatch):
+def test_apply_profile_with_nothing_actionable_400s(db_session, tmp_path, monkeypatch, client):
     """Profile off + nothing addressed + no self-nominable evidence: the fill
     plans only skips, so tailor() raises its existing guard. The UI maps this
     to 'use base resume as-is'.
@@ -2045,16 +1861,11 @@ def test_apply_profile_with_nothing_actionable_400s(db_session, tmp_path, monkey
         },
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        response = client.post(
-            f"/api/tailoring-sessions/{created['id']}/tailor",
-            json={"apply_profile": True},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    created = _create_clean(client, job, slug)
+    response = client.post(
+        f"/api/tailoring-sessions/{created['id']}/tailor",
+        json={"apply_profile": True},
+    )
 
     assert response.status_code == 400
     assert response.json()["detail"] == "No actionable resolutions to tailor"
@@ -2066,7 +1877,7 @@ def test_apply_profile_with_nothing_actionable_400s(db_session, tmp_path, monkey
 # read what was planned and author its own ops (SYSTEM.md §11 item 13).
 
 
-def test_apply_profile_fills_resolutions_without_tailoring(db_session, tmp_path, monkeypatch):
+def test_apply_profile_fills_resolutions_without_tailoring(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     # Proves the route stops at the fill: a stray call into tailor() (LLM ops,
@@ -2078,18 +1889,13 @@ def test_apply_profile_fills_resolutions_without_tailoring(db_session, tmp_path,
         lambda *a, **k: pytest.fail("apply-profile must not tailor"),
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        # _create_clean wipes the pre-stored autos so resolutions_json starts at
-        # [] — a no-op fill would leave it empty, so the non-empty assertion
-        # below is a real delta, not an artifact of pre-seeded state.
-        created = _create_clean(client, job, slug)
-        assert created["resolutions_json"] == []
+    # _create_clean wipes the pre-stored autos so resolutions_json starts at
+    # [] — a no-op fill would leave it empty, so the non-empty assertion
+    # below is a real delta, not an artifact of pre-seeded state.
+    created = _create_clean(client, job, slug)
+    assert created["resolutions_json"] == []
 
-        response = client.post(f"/api/tailoring-sessions/{created['id']}/apply-profile")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(f"/api/tailoring-sessions/{created['id']}/apply-profile")
 
     assert response.status_code == 200
     body = response.json()
@@ -2103,7 +1909,7 @@ def test_apply_profile_fills_resolutions_without_tailoring(db_session, tmp_path,
     assert planned, "profile planned nothing actionable"
 
 
-def test_apply_profile_maps_plain_value_errors_to_400(db_session, tmp_path, monkeypatch):
+def test_apply_profile_maps_plain_value_errors_to_400(db_session, tmp_path, monkeypatch, client):
     """A plain ValueError out of the fill is a bad-session 400, not a 500.
 
     save_resolutions raises bare ValueErrors for an unknown gap_id, a
@@ -2120,13 +1926,8 @@ def test_apply_profile_maps_plain_value_errors_to_400(db_session, tmp_path, monk
         lambda *a, **k: (_ for _ in ()).throw(ValueError("base resume not found: ghost")),
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        response = client.post(f"/api/tailoring-sessions/{created['id']}/apply-profile")
-    finally:
-        app.dependency_overrides.clear()
+    created = _create_clean(client, job, slug)
+    response = client.post(f"/api/tailoring-sessions/{created['id']}/apply-profile")
 
     assert response.status_code == 400
     assert "ghost" in response.json()["detail"]
@@ -2134,41 +1935,31 @@ def test_apply_profile_maps_plain_value_errors_to_400(db_session, tmp_path, monk
 
 def test_apply_profile_409s_on_a_closed_session_and_404s_on_a_missing_one(
     db_session, tmp_path, monkeypatch
-):
+, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        closed = client.post(f"/api/tailoring-sessions/{created['id']}/close")
-        assert closed.status_code == 200
+    created = _create_clean(client, job, slug)
+    closed = client.post(f"/api/tailoring-sessions/{created['id']}/close")
+    assert closed.status_code == 200
 
-        on_closed = client.post(f"/api/tailoring-sessions/{created['id']}/apply-profile")
-        # Same call shape against an id that was never created: must land on the
-        # 404 branch, not fall through to the same 409 the closed session hits.
-        on_missing = client.post(f"/api/tailoring-sessions/{uuid4()}/apply-profile")
-    finally:
-        app.dependency_overrides.clear()
+    on_closed = client.post(f"/api/tailoring-sessions/{created['id']}/apply-profile")
+    # Same call shape against an id that was never created: must land on the
+    # 404 branch, not fall through to the same 409 the closed session hits.
+    on_missing = client.post(f"/api/tailoring-sessions/{uuid4()}/apply-profile")
 
     assert on_closed.status_code == 409
     assert "This gap analysis is closed." in on_closed.json()["detail"]
     assert on_missing.status_code == 404
 
 
-def test_tailor_happy_path(db_session, tmp_path, monkeypatch):
+def test_tailor_happy_path(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     calls = _mock_tailor_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
-        response = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
+    response = _tailor(client, created["id"])
 
     assert response.status_code == 200
     body = response.json()
@@ -2212,7 +2003,7 @@ def test_tailor_happy_path(db_session, tmp_path, monkeypatch):
     assert calls[0]["model"] == settings.smart_model
 
 
-def test_tailor_unverified_skill_add_keyword_lands_in_skills(db_session, tmp_path, monkeypatch):
+def test_tailor_unverified_skill_add_keyword_lands_in_skills(db_session, tmp_path, monkeypatch, client):
     """Missing-skill add_keyword (skills placement) -> add_skill_item op -> the skill
     lands in customized_json.skills, in a category the base resume did not have."""
     job = _seed_job(db_session)
@@ -2235,15 +2026,10 @@ def test_tailor_unverified_skill_add_keyword_lands_in_skills(db_session, tmp_pat
         },
     }
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        # A2 makes add_keyword a legal action for a missing skill, so save_resolutions
-        # accepts this batch (the create->resolve->tailor path works end to end).
-        created = _open_session(client, job, slug, resolutions=[unverified_resolution])
-        response = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    # A2 makes add_keyword a legal action for a missing skill, so save_resolutions
+    # accepts this batch (the create->resolve->tailor path works end to end).
+    created = _open_session(client, job, slug, resolutions=[unverified_resolution])
+    response = _tailor(client, created["id"])
 
     assert response.status_code == 200
     body = response.json()
@@ -2260,18 +2046,13 @@ def test_tailor_unverified_skill_add_keyword_lands_in_skills(db_session, tmp_pat
     assert application.customized_json["experience"] == SAMPLE_RESUME["experience"]
 
 
-def test_tailor_user_prompt_reaches_prompt_and_application(db_session, tmp_path, monkeypatch):
+def test_tailor_user_prompt_reaches_prompt_and_application(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     calls = _mock_tailor_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
-        response = _tailor(client, created["id"], body={"user_prompt": "Keep bullets terse."})
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
+    response = _tailor(client, created["id"], body={"user_prompt": "Keep bullets terse."})
 
     assert response.status_code == 200
     assert "Keep bullets terse." in calls[0]["prompt"]
@@ -2317,44 +2098,39 @@ def test_tailor_without_anchors_sends_no_anchor_line(db_session, tmp_path, monke
     assert "RESUME ANCHORS" not in prompt
 
 
-def test_tailor_prompt_excludes_skipped_gaps_from_mandate(db_session, tmp_path, monkeypatch):
+def test_tailor_prompt_excludes_skipped_gaps_from_mandate(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     calls = _mock_tailor_llm(monkeypatch)
 
     tableau_wording = "Tableau dashboards consumed by 40+ execs"
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        gaps_by_id = {gap["gap_id"]: gap for gap in _all_gaps(created["gaps_json"])}
-        # fixture pair guarantees: Docker missing (skippable), Tableau stale (add_keyword)
-        assert "add_keyword" in gaps_by_id["skill:tableau"]["actions"]
-        patched = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={
-                "resolutions": [
-                    SALESFORCE_RESOLUTION,
-                    {
-                        "gap_id": "skill:tableau",
-                        "action": "add_keyword",
-                        "payload": {
-                            "placement_target": {
-                                "section": "skills",
-                                "index_or_category": "Tools",
-                            },
-                            "wording": tableau_wording,
+    created = _create(client, job, slug, enrich=False).json()
+    gaps_by_id = {gap["gap_id"]: gap for gap in _all_gaps(created["gaps_json"])}
+    # fixture pair guarantees: Docker missing (skippable), Tableau stale (add_keyword)
+    assert "add_keyword" in gaps_by_id["skill:tableau"]["actions"]
+    patched = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={
+            "resolutions": [
+                SALESFORCE_RESOLUTION,
+                {
+                    "gap_id": "skill:tableau",
+                    "action": "add_keyword",
+                    "payload": {
+                        "placement_target": {
+                            "section": "skills",
+                            "index_or_category": "Tools",
                         },
+                        "wording": tableau_wording,
                     },
-                    {"gap_id": "skill:docker", "action": "skip"},
-                ]
-            },
-        )
-        assert patched.status_code == 200
-        response = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+                },
+                {"gap_id": "skill:docker", "action": "skip"},
+            ]
+        },
+    )
+    assert patched.status_code == 200
+    response = _tailor(client, created["id"])
 
     assert response.status_code == 200
     prompt = calls[0]["prompt"]
@@ -2397,7 +2173,7 @@ def _mock_session_render(monkeypatch, error=None):
     return calls
 
 
-def test_tailor_renders_the_pdf(db_session, tmp_path, monkeypatch):
+def test_tailor_renders_the_pdf(db_session, tmp_path, monkeypatch, client):
     """The in-app tailor renders, like the one-shot path already did. Without
     it a tailored draft reached the studio with no PDF, so seeing it meant
     pressing Save on an unedited draft purely to trigger a compile."""
@@ -2406,13 +2182,8 @@ def test_tailor_renders_the_pdf(db_session, tmp_path, monkeypatch):
     _mock_tailor_llm(monkeypatch)
     renders = _mock_session_render(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
-        response = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
+    response = _tailor(client, created["id"])
 
     body = response.json()
     assert body["pdf_ready"] is True
@@ -2420,7 +2191,7 @@ def test_tailor_renders_the_pdf(db_session, tmp_path, monkeypatch):
     assert renders == [UUID(body["session"]["application_id"])]
 
 
-def test_tailor_render_failure_only_degrades(db_session, tmp_path, monkeypatch):
+def test_tailor_render_failure_only_degrades(db_session, tmp_path, monkeypatch, client):
     """Same policy as the one-shot path: the tailor is already committed, so a
     render failure reports pdf_ready=False rather than failing the request."""
     job = _seed_job(db_session)
@@ -2428,13 +2199,8 @@ def test_tailor_render_failure_only_degrades(db_session, tmp_path, monkeypatch):
     _mock_tailor_llm(monkeypatch)
     _mock_session_render(monkeypatch, error=RuntimeError("typst exploded"))
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
-        response = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
+    response = _tailor(client, created["id"])
 
     assert response.status_code == 200
     body = response.json()
@@ -2444,7 +2210,7 @@ def test_tailor_render_failure_only_degrades(db_session, tmp_path, monkeypatch):
     assert db_session.get(Application, UUID(body["session"]["application_id"])) is not None
 
 
-def test_tailor_renders_even_when_compare_fails(db_session, tmp_path, monkeypatch):
+def test_tailor_renders_even_when_compare_fails(db_session, tmp_path, monkeypatch, client):
     """A compare failure must not also cost the PDF. The compare branch used to
     return early, which would have skipped the render entirely — this is the
     test that pins why it no longer does."""
@@ -2458,13 +2224,8 @@ def test_tailor_renders_even_when_compare_fails(db_session, tmp_path, monkeypatc
 
     monkeypatch.setattr(tailoring_session.ats_score, "compare", boom)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
-        response = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
+    response = _tailor(client, created["id"])
 
     body = response.json()
     assert body["compare"] is None
@@ -2474,7 +2235,7 @@ def test_tailor_renders_even_when_compare_fails(db_session, tmp_path, monkeypatc
     assert renders == [UUID(body["session"]["application_id"])]
 
 
-def test_tailor_compare_failure_still_reports_success(db_session, tmp_path, monkeypatch):
+def test_tailor_compare_failure_still_reports_success(db_session, tmp_path, monkeypatch, client):
     """A post-commit compare failure must not mask the successful tailor: the
     session is already committed 'tailored' with an application, so the response
     is 200 with compare=None and an explanatory compare_error."""
@@ -2487,13 +2248,8 @@ def test_tailor_compare_failure_still_reports_success(db_session, tmp_path, monk
 
     monkeypatch.setattr(tailoring_session.ats_score, "compare", boom)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
-        response = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
+    response = _tailor(client, created["id"])
 
     assert response.status_code == 200
     body = response.json()
@@ -2508,18 +2264,13 @@ def test_tailor_compare_failure_still_reports_success(db_session, tmp_path, monk
     assert db_session.get(Application, UUID(body["session"]["application_id"])) is not None
 
 
-def test_tailor_invalid_ops_from_llm_leaves_nothing(db_session, tmp_path, monkeypatch):
+def test_tailor_invalid_ops_from_llm_leaves_nothing(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_tailor_llm(monkeypatch, response={"ops": [{"kind": "garbage_op", "value": 1}]})
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
-        response = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
+    response = _tailor(client, created["id"])
 
     assert response.status_code == 400
     assert "invalid edit ops" in response.json()["detail"]
@@ -2536,7 +2287,7 @@ def test_tailor_invalid_ops_from_llm_leaves_nothing(db_session, tmp_path, monkey
     )
 
 
-def test_tailor_out_of_range_ops_leave_nothing(db_session, tmp_path, monkeypatch):
+def test_tailor_out_of_range_ops_leave_nothing(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_tailor_llm(
@@ -2554,13 +2305,8 @@ def test_tailor_out_of_range_ops_leave_nothing(db_session, tmp_path, monkeypatch
         },
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
-        response = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
+    response = _tailor(client, created["id"])
 
     assert response.status_code == 400
     assert "invalid edit ops" in response.json()["detail"]
@@ -2569,7 +2315,7 @@ def test_tailor_out_of_range_ops_leave_nothing(db_session, tmp_path, monkeypatch
     assert db_session.scalars(select(Application)).first() is None
 
 
-def test_tailor_provider_failure_returns_502(db_session, tmp_path, monkeypatch):
+def test_tailor_provider_failure_returns_502(db_session, tmp_path, monkeypatch, client):
     """A provider outage/quota failure is a gateway error, not an opaque 500.
 
     llm.py normalizes every provider failure to LLMProviderError precisely so the
@@ -2586,13 +2332,8 @@ def test_tailor_provider_failure_returns_502(db_session, tmp_path, monkeypatch):
         ),
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
-        response = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
+    response = _tailor(client, created["id"])
 
     assert response.status_code == 502
     assert "insufficient_quota" in response.json()["detail"]
@@ -2603,7 +2344,7 @@ def test_tailor_provider_failure_returns_502(db_session, tmp_path, monkeypatch):
     assert db_session.scalars(select(Application)).first() is None
 
 
-def test_tailor_non_provider_runtime_error_is_not_a_502(db_session, tmp_path, monkeypatch):
+def test_tailor_non_provider_runtime_error_is_not_a_502(db_session, tmp_path, monkeypatch, client):
     """The 502 handler is scoped to LLMProviderError, not to RuntimeError.
 
     pdf_render and typst_compiler raise plain RuntimeErrors for local render
@@ -2614,14 +2355,9 @@ def test_tailor_non_provider_runtime_error_is_not_a_502(db_session, tmp_path, mo
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_tailor_llm(monkeypatch, error=RuntimeError("not a provider failure"))
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
-        with pytest.raises(RuntimeError, match="not a provider failure"):
-            _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
+    with pytest.raises(RuntimeError, match="not a provider failure"):
+        _tailor(client, created["id"])
 
 
 def test_tailor_llm_failure_leaves_session_open(db_session, tmp_path, monkeypatch):
@@ -2714,19 +2450,14 @@ def test_tailor_engine_failure_inside_score_target_persists_nothing(
     )
 
 
-def test_tailor_second_call_returns_409(db_session, tmp_path, monkeypatch):
+def test_tailor_second_call_returns_409(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_tailor_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
-        first = _tailor(client, created["id"])
-        second = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
+    first = _tailor(client, created["id"])
+    second = _tailor(client, created["id"])
 
     assert first.status_code == 200
     assert second.status_code == 409
@@ -2735,24 +2466,19 @@ def test_tailor_second_call_returns_409(db_session, tmp_path, monkeypatch):
     assert len(list(db_session.scalars(select(Application)))) == 1
 
 
-def test_tailor_without_actionable_resolutions_returns_400(db_session, tmp_path, monkeypatch):
+def test_tailor_without_actionable_resolutions_returns_400(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     calls = _mock_tailor_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug)  # no resolutions at all
-        empty = _tailor(client, created["id"])
-        patched = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={"resolutions": [{"gap_id": "skill:salesforce", "action": "skip"}]},
-        )
-        assert patched.status_code == 200
-        all_skips = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug)  # no resolutions at all
+    empty = _tailor(client, created["id"])
+    patched = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={"resolutions": [{"gap_id": "skill:salesforce", "action": "skip"}]},
+    )
+    assert patched.status_code == 200
+    all_skips = _tailor(client, created["id"])
 
     assert empty.status_code == 400
     assert all_skips.status_code == 400
@@ -2761,12 +2487,8 @@ def test_tailor_without_actionable_resolutions_returns_400(db_session, tmp_path,
     assert db_session.get(TailoringSession, UUID(created["id"])).status == "open"
 
 
-def test_tailor_unknown_session_returns_404(db_session):
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(f"/api/tailoring-sessions/{uuid4()}/tailor")
-    finally:
-        app.dependency_overrides.clear()
+def test_tailor_unknown_session_returns_404(db_session, client):
+    response = client.post(f"/api/tailoring-sessions/{uuid4()}/tailor")
 
     assert response.status_code == 404
 
@@ -2774,16 +2496,11 @@ def test_tailor_unknown_session_returns_404(db_session):
 # --- per-session user_prompt persistence (D2) --------------------------------
 
 
-def test_read_exposes_user_prompt_default_none(db_session, tmp_path, monkeypatch):
+def test_read_exposes_user_prompt_default_none(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-    finally:
-        app.dependency_overrides.clear()
+    created = _create(client, job, slug, enrich=False).json()
 
     # the field is present in TailoringSessionRead so the UI can prefill; it
     # defaults to None on a fresh session
@@ -2791,21 +2508,16 @@ def test_read_exposes_user_prompt_default_none(db_session, tmp_path, monkeypatch
     assert created["user_prompt"] is None
 
 
-def test_patch_persists_user_prompt(db_session, tmp_path, monkeypatch):
+def test_patch_persists_user_prompt(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        patched = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={"resolutions": [], "user_prompt": "focus on Airflow"},
-        )
-        fetched = client.get(f"/api/tailoring-sessions/{created['id']}")
-    finally:
-        app.dependency_overrides.clear()
+    created = _create(client, job, slug, enrich=False).json()
+    patched = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={"resolutions": [], "user_prompt": "focus on Airflow"},
+    )
+    fetched = client.get(f"/api/tailoring-sessions/{created['id']}")
 
     assert patched.status_code == 200
     assert patched.json()["user_prompt"] == "focus on Airflow"
@@ -2813,74 +2525,59 @@ def test_patch_persists_user_prompt(db_session, tmp_path, monkeypatch):
     assert fetched.json()["user_prompt"] == "focus on Airflow"
 
 
-def test_patch_empty_user_prompt_clears_it(db_session, tmp_path, monkeypatch):
+def test_patch_empty_user_prompt_clears_it(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={"resolutions": [], "user_prompt": "focus on Airflow"},
-        )
-        cleared = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={"resolutions": [], "user_prompt": ""},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    created = _create(client, job, slug, enrich=False).json()
+    client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={"resolutions": [], "user_prompt": "focus on Airflow"},
+    )
+    cleared = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={"resolutions": [], "user_prompt": ""},
+    )
 
     assert cleared.status_code == 200
     # an empty string clears the stored prompt back to None
     assert cleared.json()["user_prompt"] is None
 
 
-def test_patch_omitting_user_prompt_leaves_it_unchanged(db_session, tmp_path, monkeypatch):
+def test_patch_omitting_user_prompt_leaves_it_unchanged(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={"resolutions": [], "user_prompt": "focus on Airflow"},
-        )
-        # a resolutions-only PATCH (no user_prompt key) must not wipe it
-        unchanged = client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={"resolutions": [{"gap_id": "skill:salesforce", "action": "skip"}]},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    created = _create(client, job, slug, enrich=False).json()
+    client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={"resolutions": [], "user_prompt": "focus on Airflow"},
+    )
+    # a resolutions-only PATCH (no user_prompt key) must not wipe it
+    unchanged = client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={"resolutions": [{"gap_id": "skill:salesforce", "action": "skip"}]},
+    )
 
     assert unchanged.status_code == 200
     assert unchanged.json()["user_prompt"] == "focus on Airflow"
 
 
-def test_tailor_falls_back_to_stored_user_prompt(db_session, tmp_path, monkeypatch):
+def test_tailor_falls_back_to_stored_user_prompt(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     calls = _mock_tailor_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={
-                "resolutions": [SALESFORCE_RESOLUTION],
-                "user_prompt": "Prioritize Airflow orchestration.",
-            },
-        )
-        # no user_prompt in the tailor request -> the stored session value is used
-        response = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    created = _create(client, job, slug, enrich=False).json()
+    client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={
+            "resolutions": [SALESFORCE_RESOLUTION],
+            "user_prompt": "Prioritize Airflow orchestration.",
+        },
+    )
+    # no user_prompt in the tailor request -> the stored session value is used
+    response = _tailor(client, created["id"])
 
     assert response.status_code == 200
     assert "Prioritize Airflow orchestration." in calls[0]["prompt"]
@@ -2890,27 +2587,22 @@ def test_tailor_falls_back_to_stored_user_prompt(db_session, tmp_path, monkeypat
     assert application.user_prompt == "Prioritize Airflow orchestration."
 
 
-def test_tailor_request_user_prompt_overrides_stored(db_session, tmp_path, monkeypatch):
+def test_tailor_request_user_prompt_overrides_stored(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     calls = _mock_tailor_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create(client, job, slug, enrich=False).json()
-        client.patch(
-            f"/api/tailoring-sessions/{created['id']}",
-            json={
-                "resolutions": [SALESFORCE_RESOLUTION],
-                "user_prompt": "Stored fallback prompt.",
-            },
-        )
-        response = _tailor(
-            client, created["id"], body={"user_prompt": "Explicit request wins."}
-        )
-    finally:
-        app.dependency_overrides.clear()
+    created = _create(client, job, slug, enrich=False).json()
+    client.patch(
+        f"/api/tailoring-sessions/{created['id']}",
+        json={
+            "resolutions": [SALESFORCE_RESOLUTION],
+            "user_prompt": "Stored fallback prompt.",
+        },
+    )
+    response = _tailor(
+        client, created["id"], body={"user_prompt": "Explicit request wins."}
+    )
 
     assert response.status_code == 200
     # the explicit request value wins; the stored fallback is not used
@@ -2951,7 +2643,7 @@ def _applications_for(db_session, job, slug):
 
 def test_tailor_reuses_existing_application_preserving_state(
     db_session, tmp_path, monkeypatch
-):
+, client):
     """A second tailoring pass for the same job+base updates the existing
     application in place: same row, refreshed customized_json, but status, notes,
     Q&A, and other tracking fields survive and stale artifacts are unlinked."""
@@ -2959,48 +2651,43 @@ def test_tailor_reuses_existing_application_preserving_state(
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_tailor_llm(monkeypatch)  # first pass: default TAILOR_OPS
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        first_session = _open_session(
-            client, job, slug, resolutions=[SALESFORCE_RESOLUTION]
-        )
-        first = _tailor(client, first_session["id"])
-        assert first.status_code == 200
-        application_id = UUID(first.json()["session"]["application_id"])
+    first_session = _open_session(
+        client, job, slug, resolutions=[SALESFORCE_RESOLUTION]
+    )
+    first = _tailor(client, first_session["id"])
+    assert first.status_code == 200
+    application_id = UUID(first.json()["session"]["application_id"])
 
-        # Simulate real post-tailor state on the application: applied status, a
-        # note, a Q&A entry, and rendered artifacts on disk.
-        application = db_session.get(Application, application_id)
-        application.status = "applied"
-        application.notes = "Reached out to referrer."
-        art_dir = tmp_path / "artifacts"
-        art_dir.mkdir()
-        pdf_path = art_dir / "resume.pdf"
-        tex_path = art_dir / "resume.tex"
-        pdf_path.write_text("%PDF fake")
-        tex_path.write_text("fake tex")
-        application.pdf_path = str(pdf_path)
-        application.tex_path = str(tex_path)
-        db_session.add(
-            QAEntry(
-                application_id=application_id,
-                kind="behavioral",
-                prompt="Tell me about a time...",
-                answer="At DataCo I owned the pipeline.",
-            )
+    # Simulate real post-tailor state on the application: applied status, a
+    # note, a Q&A entry, and rendered artifacts on disk.
+    application = db_session.get(Application, application_id)
+    application.status = "applied"
+    application.notes = "Reached out to referrer."
+    art_dir = tmp_path / "artifacts"
+    art_dir.mkdir()
+    pdf_path = art_dir / "resume.pdf"
+    tex_path = art_dir / "resume.tex"
+    pdf_path.write_text("%PDF fake")
+    tex_path.write_text("fake tex")
+    application.pdf_path = str(pdf_path)
+    application.tex_path = str(tex_path)
+    db_session.add(
+        QAEntry(
+            application_id=application_id,
+            kind="behavioral",
+            prompt="Tell me about a time...",
+            answer="At DataCo I owned the pipeline.",
         )
-        db_session.commit()
+    )
+    db_session.commit()
 
-        # Second pass over the SAME job + base, with distinctive ops so we can
-        # prove customized_json is the new one.
-        _mock_tailor_llm(monkeypatch, response=SECOND_TAILOR_OPS)
-        second_session = _open_session(
-            client, job, slug, resolutions=[SALESFORCE_RESOLUTION]
-        )
-        second = _tailor(client, second_session["id"])
-    finally:
-        app.dependency_overrides.clear()
+    # Second pass over the SAME job + base, with distinctive ops so we can
+    # prove customized_json is the new one.
+    _mock_tailor_llm(monkeypatch, response=SECOND_TAILOR_OPS)
+    second_session = _open_session(
+        client, job, slug, resolutions=[SALESFORCE_RESOLUTION]
+    )
+    second = _tailor(client, second_session["id"])
 
     assert second.status_code == 200
     # (a) the SAME application is reused — no orphaned duplicate row
@@ -3031,19 +2718,14 @@ def test_tailor_reuses_existing_application_preserving_state(
     assert not tex_path.exists()
 
 
-def test_tailor_first_time_inserts_single_application(db_session, tmp_path, monkeypatch):
+def test_tailor_first_time_inserts_single_application(db_session, tmp_path, monkeypatch, client):
     """A job+base with no prior application still inserts exactly one row."""
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_tailor_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
-        response = _tailor(client, created["id"])
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
+    response = _tailor(client, created["id"])
 
     assert response.status_code == 200
     apps = _applications_for(db_session, job, slug)
@@ -3250,32 +2932,27 @@ def _forbid_llm(monkeypatch):
     monkeypatch.setattr(tailoring_session.llm, "call_openai", fake_call_openai)
 
 
-def test_tailor_http_with_caller_ops_bypasses_llm(db_session, tmp_path, monkeypatch):
+def test_tailor_http_with_caller_ops_bypasses_llm(db_session, tmp_path, monkeypatch, client):
     """POST tailor with an `ops` array applies them directly, skipping the LLM and
     the actionable-resolutions guard (the session carries no resolutions at all)."""
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _forbid_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug)  # no resolutions
-        response = _tailor(
-            client,
-            created["id"],
-            body={
-                "ops": [
-                    {
-                        "kind": "add_skill_item",
-                        "category": "Languages",
-                        "item": "Salesforce",
-                    }
-                ]
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug)  # no resolutions
+    response = _tailor(
+        client,
+        created["id"],
+        body={
+            "ops": [
+                {
+                    "kind": "add_skill_item",
+                    "category": "Languages",
+                    "item": "Salesforce",
+                }
+            ]
+        },
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -3293,35 +2970,30 @@ def test_tailor_http_with_caller_ops_bypasses_llm(db_session, tmp_path, monkeypa
     assert tailored[0].application_id == application.id
 
 
-def test_tailor_http_invalid_caller_ops_returns_400(db_session, tmp_path, monkeypatch):
+def test_tailor_http_invalid_caller_ops_returns_400(db_session, tmp_path, monkeypatch, client):
     """Schema-valid but un-appliable ops (experience index out of range) map to a
     clean 400 through the same error mapping the LLM path uses; nothing persists."""
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _forbid_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug)
-        response = _tailor(
-            client,
-            created["id"],
-            body={
-                "ops": [
-                    {
-                        "kind": "replace_bullet",
-                        "section": "experience",
-                        "index": 99,
-                        "bullet_index": 0,
-                        "value": "x",
-                    }
-                ]
-            },
-        )
-        after = client.get(f"/api/tailoring-sessions/{created['id']}")
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug)
+    response = _tailor(
+        client,
+        created["id"],
+        body={
+            "ops": [
+                {
+                    "kind": "replace_bullet",
+                    "section": "experience",
+                    "index": 99,
+                    "bullet_index": 0,
+                    "value": "x",
+                }
+            ]
+        },
+    )
+    after = client.get(f"/api/tailoring-sessions/{created['id']}")
 
     assert response.status_code == 400
     assert "invalid edit ops" in response.json()["detail"]
@@ -3329,20 +3001,15 @@ def test_tailor_http_invalid_caller_ops_returns_400(db_session, tmp_path, monkey
     assert db_session.scalars(select(Application)).first() is None
 
 
-def test_tailor_http_without_ops_uses_llm(db_session, tmp_path, monkeypatch):
+def test_tailor_http_without_ops_uses_llm(db_session, tmp_path, monkeypatch, client):
     """The no-ops HTTP path is unchanged: it still builds the prompt and calls the
     LLM to produce the edit ops."""
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     calls = _mock_tailor_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
-        response = _tailor(client, created["id"])  # no ops in the body
-    finally:
-        app.dependency_overrides.clear()
+    created = _open_session(client, job, slug, resolutions=[SALESFORCE_RESOLUTION])
+    response = _tailor(client, created["id"])  # no ops in the body
 
     assert response.status_code == 200
     assert response.json()["session"]["status"] == "tailored"
@@ -3406,7 +3073,7 @@ def _resume_with_volunteer(*, section_enabled=True):
 
 def test_patch_user_input_valid_extra_placement_target_accepted(
     db_session, tmp_path, monkeypatch
-):
+, client):
     # F#4: user_input resolutions can carry a placement_target (phase-2 chips
     # include custom sections). A VALID extras target is accepted, and the
     # add_keyword-only honesty guard does NOT apply — even an engine-absent skill's
@@ -3416,30 +3083,25 @@ def test_patch_user_input_valid_extra_placement_target_accepted(
         db_session, tmp_path, monkeypatch, slug="ui_extra", resume_json=_resume_with_volunteer()
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        accepted = _patch(
-            client,
-            created["id"],
-            [
-                {
-                    "gap_id": "skill:salesforce",
-                    "action": "user_input",
-                    "payload": {
-                        "placement_target": {
-                            "section": "extra",
-                            "section_key": "volunteer",
-                            "index_or_category": 0,
-                        },
-                        "text": "Led a Salesforce-based volunteer CRM rollout.",
+    created = _create_clean(client, job, slug)
+    accepted = _patch(
+        client,
+        created["id"],
+        [
+            {
+                "gap_id": "skill:salesforce",
+                "action": "user_input",
+                "payload": {
+                    "placement_target": {
+                        "section": "extra",
+                        "section_key": "volunteer",
+                        "index_or_category": 0,
                     },
-                }
-            ],
-        )
-    finally:
-        app.dependency_overrides.clear()
+                    "text": "Led a Salesforce-based volunteer CRM rollout.",
+                },
+            }
+        ],
+    )
 
     assert accepted.status_code == 200
     saved = accepted.json()["resolutions_json"]
@@ -3449,7 +3111,7 @@ def test_patch_user_input_valid_extra_placement_target_accepted(
 
 def test_patch_user_input_bogus_extra_placement_target_rejected(
     db_session, tmp_path, monkeypatch
-):
+, client):
     # F#4: a user_input placement_target that does not resolve to a live custom
     # section (here: the section is disabled) is rejected 400 — the target space is
     # validated regardless of action, guarding MCP/API callers.
@@ -3462,31 +3124,26 @@ def test_patch_user_input_bogus_extra_placement_target_rejected(
         resume_json=_resume_with_volunteer(section_enabled=False),
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        rejected = _patch(
-            client,
-            created["id"],
-            [
-                {
-                    "gap_id": "skill:salesforce",
-                    "action": "user_input",
-                    "payload": {
-                        "placement_target": {
-                            "section": "extra",
-                            "section_key": "volunteer",
-                            "index_or_category": 0,
-                        },
-                        "text": "irrelevant",
+    created = _create_clean(client, job, slug)
+    rejected = _patch(
+        client,
+        created["id"],
+        [
+            {
+                "gap_id": "skill:salesforce",
+                "action": "user_input",
+                "payload": {
+                    "placement_target": {
+                        "section": "extra",
+                        "section_key": "volunteer",
+                        "index_or_category": 0,
                     },
-                }
-            ],
-        )
-        after = client.get(f"/api/tailoring-sessions/{created['id']}")
-    finally:
-        app.dependency_overrides.clear()
+                    "text": "irrelevant",
+                },
+            }
+        ],
+    )
+    after = client.get(f"/api/tailoring-sessions/{created['id']}")
 
     assert rejected.status_code == 400
     assert "extra section" in rejected.json()["detail"]
@@ -3495,7 +3152,7 @@ def test_patch_user_input_bogus_extra_placement_target_rejected(
 
 def test_patch_absent_add_keyword_extra_target_rejected_by_honesty(
     db_session, tmp_path, monkeypatch
-):
+, client):
     # F#7: the full save path rejects an add_keyword on an engine-ABSENT skill
     # whose placement_target points at a custom section — the honesty invariant
     # (unverified adds go to skills only) fires for extras exactly as for core
@@ -3509,31 +3166,26 @@ def test_patch_absent_add_keyword_extra_target_rejected_by_honesty(
         resume_json=_resume_with_volunteer(),
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        created = _create_clean(client, job, slug)
-        rejected = _patch(
-            client,
-            created["id"],
-            [
-                {
-                    "gap_id": "skill:salesforce",  # absent -> fix_hint == "absent"
-                    "action": "add_keyword",
-                    "payload": {
-                        "placement_target": {
-                            "section": "extra",
-                            "section_key": "volunteer",
-                            "index_or_category": 0,
-                        },
-                        "wording": "Salesforce",
+    created = _create_clean(client, job, slug)
+    rejected = _patch(
+        client,
+        created["id"],
+        [
+            {
+                "gap_id": "skill:salesforce",  # absent -> fix_hint == "absent"
+                "action": "add_keyword",
+                "payload": {
+                    "placement_target": {
+                        "section": "extra",
+                        "section_key": "volunteer",
+                        "index_or_category": 0,
                     },
-                }
-            ],
-        )
-        after = client.get(f"/api/tailoring-sessions/{created['id']}")
-    finally:
-        app.dependency_overrides.clear()
+                    "wording": "Salesforce",
+                },
+            }
+        ],
+    )
+    after = client.get(f"/api/tailoring-sessions/{created['id']}")
 
     assert rejected.status_code == 400
     assert "skills section" in rejected.json()["detail"]

@@ -6,11 +6,8 @@ from uuid import UUID
 
 from tests.pdf_fixtures import write_blank_pdf
 import pytest
-from fastapi.testclient import TestClient
 
 from app.config import settings as app_settings
-from app.db import get_db
-from app.main import app
 from app.models.application import Application
 from app.models.job import Job
 from app.models.template import Template
@@ -77,13 +74,6 @@ def _seed_render_templates(db_session) -> None:
     db_session.commit()
 
 
-def _override_db(db_session):
-    def _inner():
-        yield db_session
-
-    return _inner
-
-
 def _job(db_session, *, role_category="data_scientist"):
     job = Job(
         raw_text="Need Python",
@@ -100,37 +90,28 @@ def _job(db_session, *, role_category="data_scientist"):
     return job
 
 
-def test_plain_create_application_endpoint_removed(db_session):
+def test_plain_create_application_endpoint_removed(db_session, client):
     """The legacy AI create path (POST /api/applications) is gone; only
     /from-base remains."""
     job = _job(db_session)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/applications",
-            json={"job_id": str(job.id), "base_resume": "data_scientist"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/applications",
+        json={"job_id": str(job.id), "base_resume": "data_scientist"},
+    )
 
     assert response.status_code == 405
 
 
-def test_list_and_detail_applications(db_session):
+def test_list_and_detail_applications(db_session, client):
     job = _job(db_session, role_category="ai_ml_engineer")
     application = Application(job_id=job.id, base_resume="ai_ml_engineer", status="draft")
     db_session.add(application)
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        list_response = client.get("/api/applications?status=draft&role_category=ai_ml_engineer")
-        detail_response = client.get(f"/api/applications/{application.id}")
-    finally:
-        app.dependency_overrides.clear()
+    list_response = client.get("/api/applications?status=draft&role_category=ai_ml_engineer")
+    detail_response = client.get(f"/api/applications/{application.id}")
 
     assert list_response.status_code == 200
     assert list_response.json()[0]["id"] == str(application.id)
@@ -138,7 +119,7 @@ def test_list_and_detail_applications(db_session):
     assert detail_response.json()["job"]["title"] == "Data Scientist"
 
 
-def test_list_applications_ignores_removed_not_applied_param(db_session):
+def test_list_applications_ignores_removed_not_applied_param(db_session, client):
     """The not_applied filter was removed (dead after the tracker rewrite —
     saved jobs come from /api/jobs?without_application). An old caller passing
     it gets the unfiltered list instead of an error."""
@@ -153,42 +134,34 @@ def test_list_applications_ignores_removed_not_applied_param(db_session):
     db_session.add_all([pending, submitted])
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/applications?not_applied=true")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/applications?not_applied=true")
 
     assert response.status_code == 200
     ids = {row["id"] for row in response.json()}
     assert {str(pending.id), str(submitted.id)} <= ids
 
 
-def test_patch_application_updates_fields(db_session):
+def test_patch_application_updates_fields(db_session, client):
     job = _job(db_session)
     application = Application(job_id=job.id, base_resume="hybrid", status="draft")
     db_session.add(application)
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            f"/api/applications/{application.id}",
-            json={
-                "status": "interviewing",
-                "notes": "Applied through portal",
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        f"/api/applications/{application.id}",
+        json={
+            "status": "interviewing",
+            "notes": "Applied through portal",
+        },
+    )
 
     assert response.status_code == 200
     assert response.json()["status"] == "interviewing"
     assert response.json()["notes"] == "Applied through portal"
 
 
-def test_patch_application_rejects_unknown_status(db_session):
+def test_patch_application_rejects_unknown_status(db_session, client):
     """Status is a backend-owned vocabulary now (audit C3): PATCH must reject
     anything the tracker can't display or filter."""
     job = _job(db_session)
@@ -197,20 +170,16 @@ def test_patch_application_rejects_unknown_status(db_session):
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            f"/api/applications/{application.id}",
-            json={"status": "submitted"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        f"/api/applications/{application.id}",
+        json={"status": "submitted"},
+    )
 
     assert response.status_code == 422
     assert "submitted" in str(response.json()["detail"])
 
 
-def test_render_application_uses_generic_role_in_filename(db_session, tmp_path, monkeypatch):
+def test_render_application_uses_generic_role_in_filename(db_session, tmp_path, monkeypatch, client):
     job = _job(db_session)
     job.title = "Junior LLM Data Scientist"
     db_session.commit()
@@ -251,11 +220,7 @@ def test_render_application_uses_generic_role_in_filename(db_session, tmp_path, 
 
     monkeypatch.setattr(pdf_render, "compile_pdf", fake_compile_pdf)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(f"/api/applications/{application.id}/render")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(f"/api/applications/{application.id}/render")
 
     assert response.status_code == 200
     assert response.json()["pdf_path"].endswith(
@@ -263,7 +228,7 @@ def test_render_application_uses_generic_role_in_filename(db_session, tmp_path, 
     )
 
 
-def test_render_application_generates_files_and_updates_paths(db_session, tmp_path, monkeypatch):
+def test_render_application_generates_files_and_updates_paths(db_session, tmp_path, monkeypatch, client):
     job = _job(db_session)
     application = Application(
         job_id=job.id,
@@ -302,11 +267,7 @@ def test_render_application_generates_files_and_updates_paths(db_session, tmp_pa
 
     monkeypatch.setattr(pdf_render, "compile_pdf", fake_compile_pdf)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(f"/api/applications/{application.id}/render")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(f"/api/applications/{application.id}/render")
 
     assert response.status_code == 200
     body = response.json()
@@ -327,7 +288,7 @@ def test_render_application_generates_files_and_updates_paths(db_session, tmp_pa
     assert Path(application.pdf_path).parent == artifact
 
 
-def test_render_application_typst_writes_typ_and_pdf(db_session, tmp_path, monkeypatch):
+def test_render_application_typst_writes_typ_and_pdf(db_session, tmp_path, monkeypatch, client):
     pytest.importorskip("typst")
     from app.services import template_registry as reg
     from tests.test_pdf_render_typst import EXTRAS_TYP
@@ -355,13 +316,9 @@ def test_render_application_typst_writes_typ_and_pdf(db_session, tmp_path, monke
 
     monkeypatch.setattr(app_settings, "applications_dir", tmp_path)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            f"/api/applications/{application.id}/render?template_id=typst-router"
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        f"/api/applications/{application.id}/render?template_id=typst-router"
+    )
 
     assert response.status_code == 200, response.text
     db_session.refresh(application)
@@ -370,7 +327,7 @@ def test_render_application_typst_writes_typ_and_pdf(db_session, tmp_path, monke
     assert Path(application.pdf_path).exists()
 
 
-def test_render_falls_back_for_unknown_template(db_session, tmp_path, monkeypatch):
+def test_render_falls_back_for_unknown_template(db_session, tmp_path, monkeypatch, client):
     # Render stays tolerant of a stale/deleted persisted template_id: falls back
     # to the default template rather than 404-ing the render endpoint.
     if shutil.which("pdflatex") is None:
@@ -396,20 +353,16 @@ def test_render_falls_back_for_unknown_template(db_session, tmp_path, monkeypatc
         lambda slug, session=None: SAMPLE_RESUME,
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            f"/api/applications/{application.id}/render?template_id=nope"
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        f"/api/applications/{application.id}/render?template_id=nope"
+    )
 
     assert response.status_code == 200
 
 
 def test_render_application_reports_explicit_resolved_template(
     db_session, tmp_path, monkeypatch
-):
+, client):
     job = _job(db_session)
     application = Application(
         job_id=job.id,
@@ -425,14 +378,10 @@ def test_render_application_reports_explicit_resolved_template(
     _stub_render_compilers(monkeypatch)
     _seed_render_templates(db_session)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            f"/api/applications/{application.id}/render"
-            "?template_id=observed_template"
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        f"/api/applications/{application.id}/render"
+        "?template_id=observed_template"
+    )
 
     assert response.status_code == 200, response.text
     assert response.json()["resolved_template_id"] == "observed_template"
@@ -442,7 +391,7 @@ def test_render_application_reports_explicit_resolved_template(
 
 def test_render_application_reports_explicit_template_fallback(
     db_session, tmp_path, monkeypatch
-):
+, client):
     job = _job(db_session)
     application = Application(
         job_id=job.id,
@@ -458,14 +407,10 @@ def test_render_application_reports_explicit_template_fallback(
     _stub_render_compilers(monkeypatch)
     _seed_render_templates(db_session)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            f"/api/applications/{application.id}/render"
-            "?template_id=bogus_template"
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        f"/api/applications/{application.id}/render"
+        "?template_id=bogus_template"
+    )
 
     assert response.status_code == 200, response.text
     assert response.json()["resolved_template_id"] == "default"
@@ -473,7 +418,7 @@ def test_render_application_reports_explicit_template_fallback(
     assert response.json()["template_fallback"] is True
 
 
-def test_render_400_failure_persists_render_error(db_session, tmp_path, monkeypatch):
+def test_render_400_failure_persists_render_error(db_session, tmp_path, monkeypatch, client):
     # A render failure that maps to 400 (a broken base resume raising ValueError)
     # must still persist application.render_error so quick-tailor's pdf_ready=false
     # leaves a readable reason — same as the 500 path (fix B2).
@@ -495,11 +440,7 @@ def test_render_400_failure_persists_render_error(db_session, tmp_path, monkeypa
 
     monkeypatch.setattr(applications.base_resume_data, "load_base_resume", boom)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(f"/api/applications/{application.id}/render")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(f"/api/applications/{application.id}/render")
 
     assert response.status_code == 400
     assert response.json()["detail"] == "base resume is broken"
@@ -507,7 +448,7 @@ def test_render_400_failure_persists_render_error(db_session, tmp_path, monkeypa
     assert db_session.get(Application, application.id).render_error == "base resume is broken"
 
 
-def test_get_application_pdf_streams_file(db_session, tmp_path):
+def test_get_application_pdf_streams_file(db_session, tmp_path, client):
     job = _job(db_session)
     pdf_path = tmp_path / "260501_Quill_Riley_DataAnalyst_TechCorp_Resume.pdf"
     pdf_path.write_bytes(b"%PDF test")
@@ -521,11 +462,7 @@ def test_get_application_pdf_streams_file(db_session, tmp_path):
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get(f"/api/applications/{application.id}/pdf")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get(f"/api/applications/{application.id}/pdf")
 
     assert response.status_code == 200
     assert response.content == b"%PDF test"
@@ -535,7 +472,7 @@ def test_get_application_pdf_streams_file(db_session, tmp_path):
     )
 
 
-def test_delete_application_removes_files_and_row(db_session, tmp_path):
+def test_delete_application_removes_files_and_row(db_session, tmp_path, client):
     job = _job(db_session)
     out_dir = tmp_path / "Acme_Role"
     out_dir.mkdir()
@@ -555,12 +492,8 @@ def test_delete_application_removes_files_and_row(db_session, tmp_path):
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).delete(f"/api/applications/{application.id}")
-        get_response = TestClient(app).get(f"/api/applications/{application.id}")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.delete(f"/api/applications/{application.id}")
+    get_response = client.get(f"/api/applications/{application.id}")
 
     assert response.status_code == 204
     assert get_response.status_code == 404
@@ -569,7 +502,7 @@ def test_delete_application_removes_files_and_row(db_session, tmp_path):
     assert not out_dir.exists()
 
 
-def test_patch_application_sets_referral_id(db_session):
+def test_patch_application_sets_referral_id(db_session, client):
     from app.models.referral import Referral
 
     job = _job(db_session, role_category="data_engineer")
@@ -581,21 +514,16 @@ def test_patch_application_sets_referral_id(db_session):
     db_session.refresh(application)
     db_session.refresh(referral)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        response = client.patch(
-            f"/api/applications/{application.id}",
-            json={"referral_id": str(referral.id)},
-        )
-        assert response.status_code == 200
-        body = response.json()
-        assert body["referral_id"] == str(referral.id)
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        f"/api/applications/{application.id}",
+        json={"referral_id": str(referral.id)},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["referral_id"] == str(referral.id)
 
 
-def test_patch_application_clears_referral_id(db_session):
+def test_patch_application_clears_referral_id(db_session, client):
     from app.models.referral import Referral
 
     job = _job(db_session, role_category="data_engineer")
@@ -610,20 +538,15 @@ def test_patch_application_clears_referral_id(db_session):
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        response = client.patch(
-            f"/api/applications/{application.id}",
-            json={"referral_id": None},
-        )
-        assert response.status_code == 200
-        assert response.json()["referral_id"] is None
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        f"/api/applications/{application.id}",
+        json={"referral_id": None},
+    )
+    assert response.status_code == 200
+    assert response.json()["referral_id"] is None
 
 
-def test_materialize_resume_sets_customized_without_pdf(db_session, monkeypatch):
+def test_materialize_resume_sets_customized_without_pdf(db_session, monkeypatch, client):
     job = _job(db_session)
     application = Application(
         job_id=job.id,
@@ -650,13 +573,9 @@ def test_materialize_resume_sets_customized_without_pdf(db_session, monkeypatch)
         lambda slug, session=None: dict(base),
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            f"/api/applications/{application.id}/materialize-resume"
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        f"/api/applications/{application.id}/materialize-resume"
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -665,7 +584,7 @@ def test_materialize_resume_sets_customized_without_pdf(db_session, monkeypatch)
     assert body["pdf_path"] is None
 
 
-def test_patch_customized_json_unlinks_pdf(db_session, tmp_path):
+def test_patch_customized_json_unlinks_pdf(db_session, tmp_path, client):
     job = _job(db_session)
     pdf_path = tmp_path / "old.pdf"
     pdf_path.write_bytes(b"%PDF old")
@@ -680,24 +599,20 @@ def test_patch_customized_json_unlinks_pdf(db_session, tmp_path):
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            f"/api/applications/{application.id}",
-            json={
-                "customized_json": {
-                    "contact": {"name": "Riley Quill", "email": "x@y.com"},
-                    "summary": "Edited",
-                    "skills": [],
-                    "experience": [],
-                    "projects": [],
-                    "education": [],
-                    "certifications": [],
-                }
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        f"/api/applications/{application.id}",
+        json={
+            "customized_json": {
+                "contact": {"name": "Riley Quill", "email": "x@y.com"},
+                "summary": "Edited",
+                "skills": [],
+                "experience": [],
+                "projects": [],
+                "education": [],
+                "certifications": [],
+            }
+        },
+    )
 
     assert response.status_code == 200
     assert response.json()["customized_json"]["summary"] == "Edited"
@@ -707,7 +622,7 @@ def test_patch_customized_json_unlinks_pdf(db_session, tmp_path):
 
 def test_render_uses_saved_customized_json_without_recompute(
     db_session, tmp_path, monkeypatch
-):
+, client):
     job = _job(db_session)
     customized = {
         "contact": {"name": "Riley Quill", "email": "x@y.com"},
@@ -747,18 +662,14 @@ def test_render_uses_saved_customized_json_without_recompute(
 
     monkeypatch.setattr(pdf_render, "compile_pdf", fake_compile_pdf)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(f"/api/applications/{application.id}/render")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(f"/api/applications/{application.id}/render")
 
     assert response.status_code == 200
     db_session.refresh(application)
     assert application.customized_json["summary"] == "Saved draft only"
 
 
-def test_list_applications_slim_summary_and_pagination(db_session):
+def test_list_applications_slim_summary_and_pagination(db_session, client):
     job = _job(db_session, role_category="data_engineer")
     for i in range(3):
         db_session.add(
@@ -771,13 +682,8 @@ def test_list_applications_slim_summary_and_pagination(db_session):
         )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        full = client.get("/api/applications").json()
-        page = client.get("/api/applications?limit=2&offset=2").json()
-    finally:
-        app.dependency_overrides.clear()
+    full = client.get("/api/applications").json()
+    page = client.get("/api/applications?limit=2&offset=2").json()
 
     assert len(full) == 3
     row = full[0]
@@ -791,7 +697,7 @@ def test_list_applications_slim_summary_and_pagination(db_session):
     assert len(page) == 1
 
 
-def test_create_application_from_base_applies_ops_server_side(db_session, monkeypatch):
+def test_create_application_from_base_applies_ops_server_side(db_session, monkeypatch, client):
     job = _job(db_session)
     base = {
         "contact": {"name": "Riley Quill", "email": "a@example.com"},
@@ -810,26 +716,22 @@ def test_create_application_from_base_applies_ops_server_side(db_session, monkey
         lambda slug, session=None: __import__("copy").deepcopy(base),
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/applications/from-base",
-            json={
-                "job_id": str(job.id),
-                "base_resume": "data_scientist",
-                "ops": [
-                    {
-                        "kind": "replace_bullet",
-                        "section": "experience",
-                        "index": 0,
-                        "bullet_index": 0,
-                        "value": "Tailored bullet.",
-                    }
-                ],
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/applications/from-base",
+        json={
+            "job_id": str(job.id),
+            "base_resume": "data_scientist",
+            "ops": [
+                {
+                    "kind": "replace_bullet",
+                    "section": "experience",
+                    "index": 0,
+                    "bullet_index": 0,
+                    "value": "Tailored bullet.",
+                }
+            ],
+        },
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -841,7 +743,7 @@ def test_create_application_from_base_applies_ops_server_side(db_session, monkey
     assert cj["skills"][0]["items"] == ["Python"]
 
 
-def test_create_application_from_base_out_of_range_returns_400(db_session, monkeypatch):
+def test_create_application_from_base_out_of_range_returns_400(db_session, monkeypatch, client):
     job = _job(db_session)
     monkeypatch.setattr(
         applications.base_resume_data,
@@ -856,31 +758,27 @@ def test_create_application_from_base_out_of_range_returns_400(db_session, monke
         },
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/applications/from-base",
-            json={
-                "job_id": str(job.id),
-                "base_resume": "data_scientist",
-                "ops": [
-                    {
-                        "kind": "replace_bullet",
-                        "section": "experience",
-                        "index": 3,
-                        "bullet_index": 0,
-                        "value": "x",
-                    }
-                ],
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/applications/from-base",
+        json={
+            "job_id": str(job.id),
+            "base_resume": "data_scientist",
+            "ops": [
+                {
+                    "kind": "replace_bullet",
+                    "section": "experience",
+                    "index": 3,
+                    "bullet_index": 0,
+                    "value": "x",
+                }
+            ],
+        },
+    )
 
     assert response.status_code == 400
 
 
-def test_from_base_auto_scores(db_session, tmp_path, monkeypatch):
+def test_from_base_auto_scores(db_session, tmp_path, monkeypatch, client):
     import json
 
     from app.config import settings as app_settings
@@ -895,14 +793,10 @@ def test_from_base_auto_scores(db_session, tmp_path, monkeypatch):
     db_session.add(BaseResume(slug="data_scientist", data_json=SAMPLE_RESUME))
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/applications/from-base",
-            json={"job_id": str(job.id), "base_resume": "data_scientist", "ops": []},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/applications/from-base",
+        json={"job_id": str(job.id), "base_resume": "data_scientist", "ops": []},
+    )
 
     assert response.status_code == 200
     application_id = response.json()["id"]
@@ -919,7 +813,7 @@ def test_from_base_auto_scores(db_session, tmp_path, monkeypatch):
 
 def test_from_base_without_extracted_skills_creates_without_scores(
     db_session, tmp_path, monkeypatch
-):
+, client):
     import json
 
     from app.config import settings as app_settings
@@ -933,14 +827,10 @@ def test_from_base_without_extracted_skills_creates_without_scores(
     db_session.add(BaseResume(slug="data_scientist", data_json=SAMPLE_RESUME))
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/applications/from-base",
-            json={"job_id": str(job.id), "base_resume": "data_scientist", "ops": []},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/applications/from-base",
+        json={"job_id": str(job.id), "base_resume": "data_scientist", "ops": []},
+    )
 
     # Scoring failure must never fail creation.
     assert response.status_code == 200
@@ -948,7 +838,7 @@ def test_from_base_without_extracted_skills_creates_without_scores(
     assert db_session.query(AtsScore).filter(AtsScore.job_id == job.id).count() == 0
 
 
-def test_from_base_survives_unexpected_scoring_error(db_session, tmp_path, monkeypatch):
+def test_from_base_survives_unexpected_scoring_error(db_session, tmp_path, monkeypatch, client):
     import json
     from uuid import UUID
 
@@ -969,14 +859,10 @@ def test_from_base_survives_unexpected_scoring_error(db_session, tmp_path, monke
 
     monkeypatch.setattr(applications.ats_score, "score_target", _boom)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/applications/from-base",
-            json={"job_id": str(job.id), "base_resume": "data_scientist", "ops": []},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/applications/from-base",
+        json={"job_id": str(job.id), "base_resume": "data_scientist", "ops": []},
+    )
 
     # A non-ValueError raised after the application commit must not turn a
     # successful creation into a 500 (MCP callers would retry and duplicate).
@@ -986,42 +872,34 @@ def test_from_base_survives_unexpected_scoring_error(db_session, tmp_path, monke
     assert db_session.query(AtsScore).filter(AtsScore.job_id == job.id).count() == 0
 
 
-def test_create_application_from_base_unknown_job_returns_404(db_session, monkeypatch):
+def test_create_application_from_base_unknown_job_returns_404(db_session, monkeypatch, client):
     from uuid import uuid4
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/applications/from-base",
-            json={"job_id": str(uuid4()), "base_resume": "data_scientist", "ops": []},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/applications/from-base",
+        json={"job_id": str(uuid4()), "base_resume": "data_scientist", "ops": []},
+    )
     assert response.status_code == 404
 
 
-def test_patch_status_applied_sets_applied_at(db_session):
+def test_patch_status_applied_sets_applied_at(db_session, client):
     job = _job(db_session)
     application = Application(job_id=job.id, base_resume="hybrid", status="draft")
     db_session.add(application)
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            f"/api/applications/{application.id}",
-            json={"status": "applied"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        f"/api/applications/{application.id}",
+        json={"status": "applied"},
+    )
 
     assert response.status_code == 200
     assert response.json()["status"] == "applied"
     assert response.json()["applied_at"] is not None
 
 
-def test_patch_status_away_from_applied_clears_applied_at(db_session):
+def test_patch_status_away_from_applied_clears_applied_at(db_session, client):
     job = _job(db_session)
     application = Application(
         job_id=job.id,
@@ -1033,41 +911,33 @@ def test_patch_status_away_from_applied_clears_applied_at(db_session):
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            f"/api/applications/{application.id}",
-            json={"status": "draft"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        f"/api/applications/{application.id}",
+        json={"status": "draft"},
+    )
 
     assert response.status_code == 200
     assert response.json()["applied_at"] is None
 
 
-def test_patch_explicit_applied_at_not_overridden(db_session):
+def test_patch_explicit_applied_at_not_overridden(db_session, client):
     job = _job(db_session)
     application = Application(job_id=job.id, base_resume="hybrid", status="draft")
     db_session.add(application)
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            f"/api/applications/{application.id}",
-            json={"status": "applied", "applied_at": "2026-03-15T00:00:00Z"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        f"/api/applications/{application.id}",
+        json={"status": "applied", "applied_at": "2026-03-15T00:00:00Z"},
+    )
 
     assert response.status_code == 200
     # Explicit value wins; auto-stamp must not clobber it.
     assert response.json()["applied_at"].startswith("2026-03-15")
 
 
-def test_patch_status_applied_idempotent_preserves_original_applied_at(db_session):
+def test_patch_status_applied_idempotent_preserves_original_applied_at(db_session, client):
     job = _job(db_session)
     application = Application(
         job_id=job.id,
@@ -1079,14 +949,10 @@ def test_patch_status_applied_idempotent_preserves_original_applied_at(db_sessio
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            f"/api/applications/{application.id}",
-            json={"status": "applied"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        f"/api/applications/{application.id}",
+        json={"status": "applied"},
+    )
 
     assert response.status_code == 200
     # Re-applying an already-applied status must preserve the original
@@ -1094,7 +960,7 @@ def test_patch_status_applied_idempotent_preserves_original_applied_at(db_sessio
     assert response.json()["applied_at"].startswith("2020-01-01")
 
 
-def test_patch_naive_applied_at_is_rejected_at_the_boundary(db_session):
+def test_patch_naive_applied_at_is_rejected_at_the_boundary(db_session, client):
     # UTCDateTime refuses a naive datetime at flush, which would surface as a
     # 500. The request schema must refuse it first (422) so a client learns to
     # send an offset instead of getting a server error.
@@ -1104,14 +970,10 @@ def test_patch_naive_applied_at_is_rejected_at_the_boundary(db_session):
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            f"/api/applications/{application.id}",
-            json={"applied_at": "2026-08-18T14:32:11"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        f"/api/applications/{application.id}",
+        json={"applied_at": "2026-08-18T14:32:11"},
+    )
 
     assert response.status_code == 422
     assert any(
@@ -1119,21 +981,17 @@ def test_patch_naive_applied_at_is_rejected_at_the_boundary(db_session):
     )
 
 
-def test_patch_aware_applied_at_is_stored(db_session):
+def test_patch_aware_applied_at_is_stored(db_session, client):
     job = _job(db_session)
     application = Application(job_id=job.id, base_resume="hybrid", status="draft")
     db_session.add(application)
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            f"/api/applications/{application.id}",
-            json={"applied_at": "2026-08-18T14:32:11+00:00"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        f"/api/applications/{application.id}",
+        json={"applied_at": "2026-08-18T14:32:11+00:00"},
+    )
 
     assert response.status_code == 200
     assert response.json()["applied_at"].startswith("2026-08-18T14:32:11")
@@ -1141,7 +999,7 @@ def test_patch_aware_applied_at_is_stored(db_session):
     assert application.applied_at == datetime(2026, 8, 18, 14, 32, 11, tzinfo=UTC)
 
 
-def test_create_application_from_base_with_id_updates_in_place(db_session, monkeypatch):
+def test_create_application_from_base_with_id_updates_in_place(db_session, monkeypatch, client):
     job = _job(db_session)
     base = {
         "contact": {"name": "Riley Quill", "email": "a@example.com"},
@@ -1156,42 +1014,37 @@ def test_create_application_from_base_with_id_updates_in_place(db_session, monke
         applications.base_resume_data, "load_base_resume", lambda slug, session=None: __import__("copy").deepcopy(base)
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        res1 = client.post(
-            "/api/applications/from-base",
-            json={"job_id": str(job.id), "base_resume": "data_scientist", "ops": []},
-        )
-        assert res1.status_code == 200
-        app_id = res1.json()["id"]
+    res1 = client.post(
+        "/api/applications/from-base",
+        json={"job_id": str(job.id), "base_resume": "data_scientist", "ops": []},
+    )
+    assert res1.status_code == 200
+    app_id = res1.json()["id"]
 
-        res2 = client.post(
-            "/api/applications/from-base",
-            json={
-                "job_id": str(job.id),
-                "base_resume": "data_scientist",
-                "application_id": app_id,
-                "ops": [
-                    {
-                        "kind": "replace_summary",
-                        "value": "Updated in place.",
-                    }
-                ],
-            },
-        )
-        assert res2.status_code == 200
-        assert res2.json()["id"] == app_id
-        assert res2.json()["customized_json"]["summary"] == "Updated in place."
+    res2 = client.post(
+        "/api/applications/from-base",
+        json={
+            "job_id": str(job.id),
+            "base_resume": "data_scientist",
+            "application_id": app_id,
+            "ops": [
+                {
+                    "kind": "replace_summary",
+                    "value": "Updated in place.",
+                }
+            ],
+        },
+    )
+    assert res2.status_code == 200
+    assert res2.json()["id"] == app_id
+    assert res2.json()["customized_json"]["summary"] == "Updated in place."
 
-        # Verify no duplicate was created
-        all_apps = client.get("/api/applications").json()
-        assert len(all_apps) == 1
-    finally:
-        app.dependency_overrides.clear()
+    # Verify no duplicate was created
+    all_apps = client.get("/api/applications").json()
+    assert len(all_apps) == 1
 
 
-def test_patch_application_edits_updates_customized_json(db_session, monkeypatch):
+def test_patch_application_edits_updates_customized_json(db_session, monkeypatch, client):
     job = _job(db_session)
     base = {
         "contact": {"name": "Riley Quill", "email": "a@example.com"},
@@ -1206,38 +1059,33 @@ def test_patch_application_edits_updates_customized_json(db_session, monkeypatch
         applications.base_resume_data, "load_base_resume", lambda slug, session=None: __import__("copy").deepcopy(base)
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        res1 = client.post(
-            "/api/applications/from-base",
-            json={"job_id": str(job.id), "base_resume": "data_scientist", "ops": []},
-        )
-        app_id = res1.json()["id"]
+    res1 = client.post(
+        "/api/applications/from-base",
+        json={"job_id": str(job.id), "base_resume": "data_scientist", "ops": []},
+    )
+    app_id = res1.json()["id"]
 
-        res2 = client.patch(
-            f"/api/applications/{app_id}/edits",
-            json={
-                "ops": [
-                    {
-                        "kind": "replace_summary",
-                        "value": "Edited via patch endpoint.",
-                        "expected_content_hash": bullet_classify.content_hash(
-                            "Base summary."
-                        ),
-                    }
-                ]
-            },
-        )
-        assert res2.status_code == 200
-        assert res2.json()["customized_json"]["summary"] == "Edited via patch endpoint."
-    finally:
-        app.dependency_overrides.clear()
+    res2 = client.patch(
+        f"/api/applications/{app_id}/edits",
+        json={
+            "ops": [
+                {
+                    "kind": "replace_summary",
+                    "value": "Edited via patch endpoint.",
+                    "expected_content_hash": bullet_classify.content_hash(
+                        "Base summary."
+                    ),
+                }
+            ]
+        },
+    )
+    assert res2.status_code == 200
+    assert res2.json()["customized_json"]["summary"] == "Edited via patch endpoint."
 
 
 def test_patch_application_edits_hash_mismatch_returns_409_without_write(
     db_session, monkeypatch
-):
+, client):
     job = _job(db_session, role_category="content_hash_guard")
     base = {
         "contact": {"name": "Riley Quill", "email": "a@example.com"},
@@ -1254,27 +1102,22 @@ def test_patch_application_edits_hash_mismatch_returns_409_without_write(
         lambda slug, session=None: __import__("copy").deepcopy(base),
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        app_id = _app_from_base(client, job, base)
-        response = client.patch(
-            f"/api/applications/{app_id}/edits",
-            json={
-                "ops": [
-                    {"kind": "replace_summary", "value": "Interim summary."},
-                    {
-                        "kind": "replace_summary",
-                        "value": "Stale rewrite.",
-                        "expected_content_hash": bullet_classify.content_hash(
-                            "Report-time summary."
-                        ),
-                    },
-                ]
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    app_id = _app_from_base(client, job, base)
+    response = client.patch(
+        f"/api/applications/{app_id}/edits",
+        json={
+            "ops": [
+                {"kind": "replace_summary", "value": "Interim summary."},
+                {
+                    "kind": "replace_summary",
+                    "value": "Stale rewrite.",
+                    "expected_content_hash": bullet_classify.content_hash(
+                        "Report-time summary."
+                    ),
+                },
+            ]
+        },
+    )
 
     assert response.status_code == 409
     assert response.json()["detail"].startswith("content changed since analysis")
@@ -1292,7 +1135,7 @@ def _app_from_base(client, job, base):
     return res.json()["id"]
 
 
-def test_patch_application_extra_section_ops_round_trip(db_session, monkeypatch):
+def test_patch_application_extra_section_ops_round_trip(db_session, monkeypatch, client):
     import copy
 
     # Distinct role_category -> distinct jobs.raw_text_hash so this test never
@@ -1312,64 +1155,59 @@ def test_patch_application_extra_section_ops_round_trip(db_session, monkeypatch)
         "load_base_resume",
         lambda slug, session=None: copy.deepcopy(base),
     )
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        app_id = _app_from_base(client, job, base)
+    app_id = _app_from_base(client, job, base)
 
-        # all four ops end to end on the application's customized_json.
-        ok = client.patch(
-            f"/api/applications/{app_id}/edits",
-            json={"ops": [
-                {"kind": "add_extra_section",
-                 "value": {"key": "awards", "title": "Awards", "type": "bullets",
-                           "bullets": ["First place, 2025"]}},
-                {"kind": "add_extra_section",
-                 "value": {"key": "volunteer", "title": "Volunteer", "type": "entries",
-                           "entries": [{"heading": "Mentor", "date": "2024"}]}},
-                {"kind": "move_extra_section", "section_key": "volunteer", "to_index": 0},
-                {"kind": "replace_extra_section", "section_key": "awards",
-                 "value": {"key": "awards", "title": "Honors", "type": "bullets",
-                           "bullets": ["First place, 2025"]}},
-                {"kind": "remove_extra_section", "section_key": "volunteer"},
-            ]},
-        )
-        assert ok.status_code == 200
-        sections = ok.json()["customized_json"]["extra_sections"]
-        assert [s["key"] for s in sections] == ["awards"]
-        assert sections[0]["title"] == "Honors"
+    # all four ops end to end on the application's customized_json.
+    ok = client.patch(
+        f"/api/applications/{app_id}/edits",
+        json={"ops": [
+            {"kind": "add_extra_section",
+             "value": {"key": "awards", "title": "Awards", "type": "bullets",
+                       "bullets": ["First place, 2025"]}},
+            {"kind": "add_extra_section",
+             "value": {"key": "volunteer", "title": "Volunteer", "type": "entries",
+                       "entries": [{"heading": "Mentor", "date": "2024"}]}},
+            {"kind": "move_extra_section", "section_key": "volunteer", "to_index": 0},
+            {"kind": "replace_extra_section", "section_key": "awards",
+             "value": {"key": "awards", "title": "Honors", "type": "bullets",
+                       "bullets": ["First place, 2025"]}},
+            {"kind": "remove_extra_section", "section_key": "volunteer"},
+        ]},
+    )
+    assert ok.status_code == 200
+    sections = ok.json()["customized_json"]["extra_sections"]
+    assert [s["key"] for s in sections] == ["awards"]
+    assert sections[0]["title"] == "Honors"
 
-        # unknown key -> 400
-        bad = client.patch(
-            f"/api/applications/{app_id}/edits",
-            json={"ops": [{"kind": "remove_extra_section", "section_key": "nope"}]},
-        )
-        assert bad.status_code == 400
-        assert "no extra section with key" in bad.json()["detail"]
+    # unknown key -> 400
+    bad = client.patch(
+        f"/api/applications/{app_id}/edits",
+        json={"ops": [{"kind": "remove_extra_section", "section_key": "nope"}]},
+    )
+    assert bad.status_code == 400
+    assert "no extra section with key" in bad.json()["detail"]
 
-        # duplicate key on add -> 400
-        dup = client.patch(
-            f"/api/applications/{app_id}/edits",
-            json={"ops": [{"kind": "add_extra_section",
-                           "value": {"key": "awards", "title": "Dup", "type": "bullets",
-                                     "bullets": ["x"]}}]},
-        )
-        assert dup.status_code == 400
-        assert "duplicate" in dup.json()["detail"]
+    # duplicate key on add -> 400
+    dup = client.patch(
+        f"/api/applications/{app_id}/edits",
+        json={"ops": [{"kind": "add_extra_section",
+                       "value": {"key": "awards", "title": "Dup", "type": "bullets",
+                                 "bullets": ["x"]}}]},
+    )
+    assert dup.status_code == 400
+    assert "duplicate" in dup.json()["detail"]
 
-        # atomic failure: a valid op followed by a failing one persists nothing.
-        atomic = client.patch(
-            f"/api/applications/{app_id}/edits",
-            json={"ops": [
-                {"kind": "remove_extra_section", "section_key": "awards"},
-                {"kind": "move_extra_section", "section_key": "awards", "to_index": 9},
-            ]},
-        )
-        assert atomic.status_code == 400
-        after = client.get(f"/api/applications/{app_id}").json()
-        assert [s["key"] for s in after["customized_json"]["extra_sections"]] == ["awards"]
-    finally:
-        app.dependency_overrides.clear()
+    # atomic failure: a valid op followed by a failing one persists nothing.
+    atomic = client.patch(
+        f"/api/applications/{app_id}/edits",
+        json={"ops": [
+            {"kind": "remove_extra_section", "section_key": "awards"},
+            {"kind": "move_extra_section", "section_key": "awards", "to_index": 9},
+        ]},
+    )
+    assert atomic.status_code == 400
+    after = client.get(f"/api/applications/{app_id}").json()
+    assert [s["key"] for s in after["customized_json"]["extra_sections"]] == ["awards"]
 
 
 _FULL_RESUME = {
@@ -1383,7 +1221,7 @@ _FULL_RESUME = {
 }
 
 
-def test_application_formatting_inherits_and_overrides(db_session, tmp_path, monkeypatch):
+def test_application_formatting_inherits_and_overrides(db_session, tmp_path, monkeypatch, client):
     from app.models.base_resume import BaseResume
     from app.services import pdf_render as pdf_render_mod
 
@@ -1423,34 +1261,29 @@ def test_application_formatting_inherits_and_overrides(db_session, tmp_path, mon
 
     monkeypatch.setattr(pdf_render, "compile_pdf", fake_compile_pdf)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
 
-        # No application-level formatting -> inherits base's font_size 12.
-        r1 = client.post(f"/api/applications/{application.id}/render")
-        assert r1.status_code == 200
-        assert "12pt" in Path(r1.json()["tex_path"]).read_text(encoding="utf-8")
+    # No application-level formatting -> inherits base's font_size 12.
+    r1 = client.post(f"/api/applications/{application.id}/render")
+    assert r1.status_code == 200
+    assert "12pt" in Path(r1.json()["tex_path"]).read_text(encoding="utf-8")
 
-        # PATCH an override -> application formatting wins over base.
-        patch = client.patch(
-            f"/api/applications/{application.id}",
-            json={"formatting": {"font_size": 10}},
-        )
-        assert patch.status_code == 200
-        assert patch.json()["formatting"] == {"font_size": 10}
+    # PATCH an override -> application formatting wins over base.
+    patch = client.patch(
+        f"/api/applications/{application.id}",
+        json={"formatting": {"font_size": 10}},
+    )
+    assert patch.status_code == 200
+    assert patch.json()["formatting"] == {"font_size": 10}
 
-        r2 = client.post(f"/api/applications/{application.id}/render")
-        assert r2.status_code == 200
-        assert "10pt" in Path(r2.json()["tex_path"]).read_text(encoding="utf-8")
-    finally:
-        app.dependency_overrides.clear()
+    r2 = client.post(f"/api/applications/{application.id}/render")
+    assert r2.status_code == 200
+    assert "10pt" in Path(r2.json()["tex_path"]).read_text(encoding="utf-8")
 
     db_session.refresh(application)
     assert application.formatting_json == {"font_size": 10}
 
 
-def test_preview_manifest_and_page(db_session, tmp_path):
+def test_preview_manifest_and_page(db_session, tmp_path, client):
     job = _job(db_session)
     pdf_path = tmp_path / "app.pdf"
     _write_valid_pdf(pdf_path, pages=1)
@@ -1464,14 +1297,9 @@ def test_preview_manifest_and_page(db_session, tmp_path):
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        manifest = client.get(f"/api/applications/{application.id}/preview/pages")
-        page = client.get(f"/api/applications/{application.id}/preview/page/1")
-        missing = client.get(f"/api/applications/{application.id}/preview/page/99")
-    finally:
-        app.dependency_overrides.clear()
+    manifest = client.get(f"/api/applications/{application.id}/preview/pages")
+    page = client.get(f"/api/applications/{application.id}/preview/page/1")
+    missing = client.get(f"/api/applications/{application.id}/preview/page/99")
 
     assert manifest.status_code == 200
     body = manifest.json()
@@ -1482,26 +1310,21 @@ def test_preview_manifest_and_page(db_session, tmp_path):
     assert missing.status_code == 404
 
 
-def test_preview_404_before_first_render(db_session):
+def test_preview_404_before_first_render(db_session, client):
     job = _job(db_session)
     application = Application(job_id=job.id, base_resume="data_scientist", status="draft")
     db_session.add(application)
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        manifest = client.get(f"/api/applications/{application.id}/preview/pages")
-        page = client.get(f"/api/applications/{application.id}/preview/page/1")
-    finally:
-        app.dependency_overrides.clear()
+    manifest = client.get(f"/api/applications/{application.id}/preview/pages")
+    page = client.get(f"/api/applications/{application.id}/preview/page/1")
 
     assert manifest.status_code == 404
     assert page.status_code == 404
 
 
-def test_patch_persists_template_id(db_session):
+def test_patch_persists_template_id(db_session, client):
     """PATCH persists template_id and it round-trips on GET / in the response."""
     job = _job(db_session)
     application = Application(job_id=job.id, base_resume="data_scientist", status="draft")
@@ -1509,23 +1332,18 @@ def test_patch_persists_template_id(db_session):
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        resp = client.patch(
-            f"/api/applications/{application.id}", json={"template_id": "themed"}
-        )
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["template_id"] == "themed"
+    resp = client.patch(
+        f"/api/applications/{application.id}", json={"template_id": "themed"}
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["template_id"] == "themed"
 
-        got = client.get(f"/api/applications/{application.id}")
-        assert got.status_code == 200
-        assert got.json()["template_id"] == "themed"
-    finally:
-        app.dependency_overrides.clear()
+    got = client.get(f"/api/applications/{application.id}")
+    assert got.status_code == 200
+    assert got.json()["template_id"] == "themed"
 
 
-def test_render_application_uses_stored_template_id(db_session, tmp_path, monkeypatch):
+def test_render_application_uses_stored_template_id(db_session, tmp_path, monkeypatch, client):
     """render_application falls back to application.template_id when the query
     param is absent; an explicit query param still wins."""
     job = _job(db_session)
@@ -1572,22 +1390,17 @@ def test_render_application_uses_stored_template_id(db_session, tmp_path, monkey
 
     monkeypatch.setattr(pdf_render, "compile_pdf", fake_compile_pdf)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        # No query param -> use the stored template_id.
-        resp = client.post(f"/api/applications/{application.id}/render")
-        assert resp.status_code == 200, resp.text
-        assert captured["template_id"] == "stored_tmpl"
+    # No query param -> use the stored template_id.
+    resp = client.post(f"/api/applications/{application.id}/render")
+    assert resp.status_code == 200, resp.text
+    assert captured["template_id"] == "stored_tmpl"
 
-        # Explicit query param overrides the stored choice.
-        resp = client.post(
-            f"/api/applications/{application.id}/render?template_id=override_tmpl"
-        )
-        assert resp.status_code == 200, resp.text
-        assert captured["template_id"] == "override_tmpl"
-    finally:
-        app.dependency_overrides.clear()
+    # Explicit query param overrides the stored choice.
+    resp = client.post(
+        f"/api/applications/{application.id}/render?template_id=override_tmpl"
+    )
+    assert resp.status_code == 200, resp.text
+    assert captured["template_id"] == "override_tmpl"
 
 
 def _ready_no_extras_template(db_session, tid: str) -> None:
@@ -1610,7 +1423,7 @@ def _ready_no_extras_template(db_session, tid: str) -> None:
     db_session.commit()
 
 
-def test_render_incompatible_template_returns_400_not_500(db_session, tmp_path, monkeypatch):
+def test_render_incompatible_template_returns_400_not_500(db_session, tmp_path, monkeypatch, client):
     # F1: an extras-bearing resume rendered through a template that cannot render
     # custom sections must surface a clean, user-actionable 400 with the message
     # (TemplateMissingExtraSectionsError now subclasses ValueError) — never the
@@ -1639,11 +1452,7 @@ def test_render_incompatible_template_returns_400_not_500(db_session, tmp_path, 
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(f"/api/applications/{application.id}/render")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(f"/api/applications/{application.id}/render")
 
     assert response.status_code == 400, response.text
     detail = response.json()["detail"]
@@ -1651,21 +1460,16 @@ def test_render_incompatible_template_returns_400_not_500(db_session, tmp_path, 
     assert "(Awards)" in detail  # names the offending section by its title
 
 
-def test_list_applications_filters_by_source(db_session):
+def test_list_applications_filters_by_source(db_session, client):
     job = _job(db_session)
     app_user = Application(job_id=job.id, base_resume="hybrid", source="user")
     app_agent = Application(job_id=job.id, base_resume="hybrid", source="agent")
     db_session.add_all([app_user, app_agent])
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        res_agent = client.get("/api/applications?source=agent")
-        res_user = client.get("/api/applications?source=user")
-        res_invalid = client.get("/api/applications?source=invalid")
-    finally:
-        app.dependency_overrides.clear()
+    res_agent = client.get("/api/applications?source=agent")
+    res_user = client.get("/api/applications?source=user")
+    res_invalid = client.get("/api/applications?source=invalid")
 
     assert res_agent.status_code == 200
     assert len(res_agent.json()) == 1 and res_agent.json()[0]["id"] == str(app_agent.id)
@@ -1674,7 +1478,7 @@ def test_list_applications_filters_by_source(db_session):
     assert res_invalid.status_code == 422
 
 
-def test_list_applications_naive_created_filter_is_rejected_at_the_boundary(db_session):
+def test_list_applications_naive_created_filter_is_rejected_at_the_boundary(db_session, client):
     # created_at is UTCDateTime, which refuses a naive datetime at bind time
     # (a 500). The query boundary must refuse an offset-less value first, as
     # a 422 that names the parameter.
@@ -1682,13 +1486,8 @@ def test_list_applications_naive_created_filter_is_rejected_at_the_boundary(db_s
     db_session.add(Application(job_id=job.id, base_resume="hybrid"))
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        res_after = client.get("/api/applications?created_after=2026-08-18T14:32:11")
-        res_before = client.get("/api/applications?created_before=2026-08-18T14:32:11")
-    finally:
-        app.dependency_overrides.clear()
+    res_after = client.get("/api/applications?created_after=2026-08-18T14:32:11")
+    res_before = client.get("/api/applications?created_before=2026-08-18T14:32:11")
 
     assert res_after.status_code == 422
     assert any("created_after" in error["loc"] for error in res_after.json()["detail"])
@@ -1696,7 +1495,7 @@ def test_list_applications_naive_created_filter_is_rejected_at_the_boundary(db_s
     assert any("created_before" in error["loc"] for error in res_before.json()["detail"])
 
 
-def test_list_applications_aware_created_filters_are_applied(db_session):
+def test_list_applications_aware_created_filters_are_applied(db_session, client):
     job = _job(db_session)
     application = Application(job_id=job.id, base_resume="hybrid")
     db_session.add(application)
@@ -1705,13 +1504,8 @@ def test_list_applications_aware_created_filters_are_applied(db_session):
     # The row was created now, which is after this instant, so the same
     # value includes it as a lower bound and excludes it as an upper bound.
     instant = "2026-08-18T14:32:11%2B00:00"
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        res_after = client.get(f"/api/applications?created_after={instant}")
-        res_before = client.get(f"/api/applications?created_before={instant}")
-    finally:
-        app.dependency_overrides.clear()
+    res_after = client.get(f"/api/applications?created_after={instant}")
+    res_before = client.get(f"/api/applications?created_before={instant}")
 
     assert res_after.status_code == 200
     assert [row["id"] for row in res_after.json()] == [str(application.id)]
@@ -1719,7 +1513,7 @@ def test_list_applications_aware_created_filters_are_applied(db_session):
     assert res_before.json() == []
 
 
-def test_marking_applied_closes_open_proposals_for_the_job(db_session):
+def test_marking_applied_closes_open_proposals_for_the_job(db_session, client):
     # User override: they applied manually from the job workspace. Flipping the
     # StatusChip to applied must resolve the job's open proposal instead of
     # leaving it squatting in the triage/queued lanes (2026-08-01 request).
@@ -1737,13 +1531,9 @@ def test_marking_applied_closes_open_proposals_for_the_job(db_session):
     )
     svc.transition(db_session, prop, "accepted", consent={"channel": "frontend"})
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        resp = TestClient(app).patch(
-            f"/api/applications/{app_row.id}", json={"status": "applied"}
-        )
-    finally:
-        app.dependency_overrides.clear()
+    resp = client.patch(
+        f"/api/applications/{app_row.id}", json={"status": "applied"}
+    )
 
     assert resp.status_code == 200
     db_session.refresh(prop)
@@ -1753,7 +1543,7 @@ def test_marking_applied_closes_open_proposals_for_the_job(db_session):
         proposal_id=prop.id, action="rejected").count() == 1
 
 
-def test_marking_applied_releases_an_approved_proposals_cap_slot(db_session):
+def test_marking_applied_releases_an_approved_proposals_cap_slot(db_session, client):
     from app.services import proposals as svc
 
     job = _job(db_session)
@@ -1772,13 +1562,9 @@ def test_marking_applied_releases_an_approved_proposals_cap_slot(db_session):
     svc.transition(db_session, prop, "approved", consent={"channel": "chat"})
     assert prop.cap_reserved_at is not None
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        resp = TestClient(app).patch(
-            f"/api/applications/{app_row.id}", json={"status": "applied"}
-        )
-    finally:
-        app.dependency_overrides.clear()
+    resp = client.patch(
+        f"/api/applications/{app_row.id}", json={"status": "applied"}
+    )
 
     assert resp.status_code == 200
     db_session.refresh(prop)
@@ -1786,7 +1572,7 @@ def test_marking_applied_releases_an_approved_proposals_cap_slot(db_session):
     assert prop.cap_reserved_at is None  # slot freed for the agent lane
 
 
-def test_non_applied_status_changes_leave_proposals_open(db_session):
+def test_non_applied_status_changes_leave_proposals_open(db_session, client):
     from app.services import proposals as svc
 
     job = _job(db_session)
@@ -1799,33 +1585,25 @@ def test_non_applied_status_changes_leave_proposals_open(db_session):
         fit={"chosen_base": "hybrid"}, plan={},
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        # rejected/withdrawn on the APPLICATION don't imply you applied — the
-        # proposal stays open for the user to triage deliberately.
-        resp = TestClient(app).patch(
-            f"/api/applications/{app_row.id}", json={"status": "withdrawn"}
-        )
-    finally:
-        app.dependency_overrides.clear()
+    # rejected/withdrawn on the APPLICATION don't imply you applied — the
+    # proposal stays open for the user to triage deliberately.
+    resp = client.patch(
+        f"/api/applications/{app_row.id}", json={"status": "withdrawn"}
+    )
 
     assert resp.status_code == 200
     db_session.refresh(prop)
     assert prop.status == "pending_review"
 
 
-def test_list_applications_summary_includes_source(db_session):
+def test_list_applications_summary_includes_source(db_session, client):
     job = _job(db_session)
     app_row = Application(job_id=job.id, base_resume="hybrid", source="agent")
     db_session.add(app_row)
     db_session.commit()
     db_session.refresh(app_row)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        resp = TestClient(app).get("/api/applications")
-    finally:
-        app.dependency_overrides.clear()
+    resp = client.get("/api/applications")
 
     assert resp.status_code == 200
     row = next(r for r in resp.json() if r["id"] == str(app_row.id))
@@ -1835,19 +1613,15 @@ def test_list_applications_summary_includes_source(db_session):
 # --- GET /api/applications/{id}/resume-diff (Task 12) -----------------------
 
 
-def test_resume_diff_404_unknown_application(db_session):
+def test_resume_diff_404_unknown_application(db_session, client):
     from uuid import uuid4
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get(f"/api/applications/{uuid4()}/resume-diff")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get(f"/api/applications/{uuid4()}/resume-diff")
 
     assert response.status_code == 404
 
 
-def test_resume_diff_409_when_customized_json_empty(db_session):
+def test_resume_diff_409_when_customized_json_empty(db_session, client):
     job = _job(db_session)
     application = Application(
         job_id=job.id, base_resume="data_scientist", status="draft", customized_json=None
@@ -1856,18 +1630,14 @@ def test_resume_diff_409_when_customized_json_empty(db_session):
     db_session.commit()
     db_session.refresh(application)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get(f"/api/applications/{application.id}/resume-diff")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get(f"/api/applications/{application.id}/resume-diff")
 
     assert response.status_code == 409
     assert response.json()["detail"] == (
         "This application has no tailored resume yet. Tailor it first.")
 
 
-def test_resume_diff_happy_path_attributes_via_newest_session(db_session, monkeypatch):
+def test_resume_diff_happy_path_attributes_via_newest_session(db_session, monkeypatch, client):
     from copy import deepcopy
 
     from app.models.tailoring_session import TailoringSession
@@ -1941,11 +1711,7 @@ def test_resume_diff_happy_path_attributes_via_newest_session(db_session, monkey
         lambda slug, session=None: deepcopy(base),
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get(f"/api/applications/{application.id}/resume-diff")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get(f"/api/applications/{application.id}/resume-diff")
 
     assert response.status_code == 200, response.text
     body = response.json()
@@ -1955,7 +1721,7 @@ def test_resume_diff_happy_path_attributes_via_newest_session(db_session, monkey
     assert ("summary_changed", "llm") in kinds
 
 
-def test_resume_diff_no_session_defaults_all_llm(db_session, monkeypatch):
+def test_resume_diff_no_session_defaults_all_llm(db_session, monkeypatch, client):
     from copy import deepcopy
 
     base = {
@@ -1987,11 +1753,7 @@ def test_resume_diff_no_session_defaults_all_llm(db_session, monkeypatch):
         lambda slug, session=None: deepcopy(base),
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get(f"/api/applications/{application.id}/resume-diff")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get(f"/api/applications/{application.id}/resume-diff")
 
     assert response.status_code == 200, response.text
     body = response.json()
@@ -2003,7 +1765,7 @@ def test_resume_diff_no_session_defaults_all_llm(db_session, monkeypatch):
 
 def test_coherence_check_409_when_not_tailored_and_flags_pass_through(
     db_session, monkeypatch
-):
+, client):
     from app.services import coherence_check as coherence_service
 
     job = _job(db_session)
@@ -2014,27 +1776,22 @@ def test_coherence_check_409_when_not_tailored_and_flags_pass_through(
     db_session.commit()
     db_session.refresh(bare)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        assert client.post(f"/api/applications/{bare.id}/coherence-check").status_code == 409
+    assert client.post(f"/api/applications/{bare.id}/coherence-check").status_code == 409
 
-        monkeypatch.setattr(
-            coherence_service,
-            "run",
-            lambda base, customized, session, template_id=None: {
-                "flags": [{"issue": "tense"}]
-            },
-        )
-        monkeypatch.setattr(
-            "app.routers.applications.base_resume_data.load_base_resume",
-            lambda slug, session=None: {"projects": []},
-        )
-        bare.customized_json = {"projects": []}
-        db_session.commit()
-        response = client.post(f"/api/applications/{bare.id}/coherence-check")
-    finally:
-        app.dependency_overrides.clear()
+    monkeypatch.setattr(
+        coherence_service,
+        "run",
+        lambda base, customized, session, template_id=None: {
+            "flags": [{"issue": "tense"}]
+        },
+    )
+    monkeypatch.setattr(
+        "app.routers.applications.base_resume_data.load_base_resume",
+        lambda slug, session=None: {"projects": []},
+    )
+    bare.customized_json = {"projects": []}
+    db_session.commit()
+    response = client.post(f"/api/applications/{bare.id}/coherence-check")
 
     assert response.status_code == 200
     assert response.json() == {"flags": [{"issue": "tense"}]}
@@ -2058,15 +1815,10 @@ def _named_base_pair(db_session):
     return named
 
 
-def test_list_and_detail_name_the_base_resume(db_session):
+def test_list_and_detail_name_the_base_resume(db_session, client):
     named = _named_base_pair(db_session)
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        listed = client.get("/api/applications").json()
-        detail = client.get(f"/api/applications/{named.id}")
-    finally:
-        app.dependency_overrides.clear()
+    listed = client.get("/api/applications").json()
+    detail = client.get(f"/api/applications/{named.id}")
     by_slug = {row["base_resume"]: row["base_resume_name"] for row in listed}
     assert by_slug["ds_named"] == "Data science base"
     assert by_slug["no_such_base"] is None
@@ -2074,17 +1826,12 @@ def test_list_and_detail_name_the_base_resume(db_session):
     assert detail.json()["base_resume_name"] == "Data science base"
 
 
-def test_archived_and_deleted_base_keeps_its_name(db_session):
+def test_archived_and_deleted_base_keeps_its_name(db_session, client):
     named = _named_base_pair(db_session)
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        archived = client.post("/api/base-resumes/ds_named/archive")
-        after_archive = client.get(f"/api/applications/{named.id}")
-        deleted = client.delete("/api/base-resumes/ds_named")
-        after_delete = client.get(f"/api/applications/{named.id}")
-    finally:
-        app.dependency_overrides.clear()
+    archived = client.post("/api/base-resumes/ds_named/archive")
+    after_archive = client.get(f"/api/applications/{named.id}")
+    deleted = client.delete("/api/base-resumes/ds_named")
+    after_delete = client.get(f"/api/applications/{named.id}")
     assert archived.status_code == 200
     assert after_archive.json()["base_resume_name"] == "Data science base"
     assert deleted.status_code == 204

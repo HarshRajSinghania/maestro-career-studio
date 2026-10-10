@@ -229,3 +229,23 @@ def _clear_tables(session: Session) -> None:
     session.execute(sa.text("PRAGMA defer_foreign_keys=ON"))
     for table in reversed(Base.metadata.sorted_tables):
         session.execute(table.delete())
+
+
+@pytest.fixture
+def client(db_session):
+    """A TestClient whose requests use this test's session. Files needing a
+    different client (sealed, rollback-wrapped, lifespan) define their own,
+    which overrides this one."""
+    from fastapi.testclient import TestClient
+
+    from app.db import get_db
+    from app.main import app
+
+    def _override():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.pop(get_db, None)

@@ -3,25 +3,12 @@ deterministic autofill, never a place for EEO answer values."""
 
 import json
 
-from fastapi.testclient import TestClient
 from pydantic import ValidationError
 import pytest
 
 from app.config import settings
-from app.main import app
 from app.schemas.eeo_consent import EeoConsent
 from app.services import eeo_consent
-
-
-@pytest.fixture
-def client(db_session):
-    from app.db import get_db
-
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
 
 
 def test_defaults_are_disabled_with_null_acknowledgement():

@@ -7,25 +7,15 @@ services/resume_ops.py. These tests pin the parity so a future surface-local
 import json
 from datetime import UTC, datetime
 
-from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.config import settings
-from app.db import get_db
-from app.main import app
 from app.models.application import Application
 from app.models.base_resume import BaseResume
 from app.models.job import Job
 from app.models.resume_version import ResumeVersion
 from app.services.chat_tools import ToolContext, tool_edit_resume
 from tests.ats.fixtures import SAMPLE_RESUME
-
-
-def _override_db(db_session):
-    def _inner():
-        yield db_session
-
-    return _inner
 
 
 def _seed_base(db_session, tmp_path, monkeypatch, slug):
@@ -75,18 +65,14 @@ def _versions(db_session, kind, key):
 
 def test_base_edits_rest_and_chat_produce_identical_results(
     db_session, tmp_path, monkeypatch
-):
+, client):
     rest_slug = _seed_base(db_session, tmp_path, monkeypatch, "parity_rest")
     chat_slug = _seed_base(db_session, tmp_path, monkeypatch, "parity_chat")
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        resp = TestClient(app).patch(
-            f"/api/base-resumes/{rest_slug}/edits", json={"ops": OPS}
-        )
-        assert resp.status_code == 200, resp.text
-    finally:
-        app.dependency_overrides.clear()
+    resp = client.patch(
+        f"/api/base-resumes/{rest_slug}/edits", json={"ops": OPS}
+    )
+    assert resp.status_code == 200, resp.text
 
     ctx = ToolContext(db=db_session, message_id="msg-1", selections=[])
     card = tool_edit_resume(ctx, "base", chat_slug, OPS)["change_card"]
@@ -106,18 +92,14 @@ def test_base_edits_rest_and_chat_produce_identical_results(
     assert rest_v.summary == chat_v.summary == card["summary"]
 
 
-def test_application_edits_rest_and_chat_produce_identical_results(db_session):
+def test_application_edits_rest_and_chat_produce_identical_results(db_session, client):
     app_rest = _seed_application(db_session)
     app_chat = _seed_application(db_session)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        resp = TestClient(app).patch(
-            f"/api/applications/{app_rest.id}/edits", json={"ops": OPS}
-        )
-        assert resp.status_code == 200, resp.text
-    finally:
-        app.dependency_overrides.clear()
+    resp = client.patch(
+        f"/api/applications/{app_rest.id}/edits", json={"ops": OPS}
+    )
+    assert resp.status_code == 200, resp.text
 
     ctx = ToolContext(db=db_session, message_id="msg-2", selections=[])
     tool_edit_resume(ctx, "application", str(app_chat.id), OPS)

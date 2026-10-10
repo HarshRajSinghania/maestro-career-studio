@@ -1,12 +1,9 @@
 import json
 from uuid import UUID
 
-from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.config import settings
-from app.db import get_db
-from app.main import app
 from app.models.application import Application
 from app.models.base_resume import BaseResume
 from app.models.job import Job
@@ -14,13 +11,6 @@ from app.models.resume_lint_report import ResumeLintReport
 from app.models.tailoring_session import TailoringSession
 from app.services import prompt_assembly, prompts, quick_tailor, tailoring_session
 from tests.ats.fixtures import SAMPLE_JD, SAMPLE_RESUME
-
-
-def _override_db(db_session):
-    def _inner():
-        yield db_session
-
-    return _inner
 
 
 def _seed_job(db_session):
@@ -258,17 +248,13 @@ def test_policy_summary_rename_gates_summary_and_title_gaps():
 # --- endpoint integration ----------------------------------------------------
 
 
-def test_quick_tailor_happy_path(db_session, tmp_path, monkeypatch):
+def test_quick_tailor_happy_path(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_llm(monkeypatch)
     _mock_render(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _quick_tailor(TestClient(app), job, slug)
-    finally:
-        app.dependency_overrides.clear()
+    response = _quick_tailor(client, job, slug)
 
     assert response.status_code == 200
     body = response.json()
@@ -286,7 +272,7 @@ def test_quick_tailor_happy_path(db_session, tmp_path, monkeypatch):
             assert item["payload"]["placement_target"]["section"] == "skills"
 
 
-def test_quick_tailor_zero_actionable_never_calls_tailor(db_session, tmp_path, monkeypatch):
+def test_quick_tailor_zero_actionable_never_calls_tailor(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     # Fully-enabled base: the default fixture's disabled entries now legitimately
     # produce auto-resolutions via self-nomination, which is actionable work —
@@ -307,11 +293,7 @@ def test_quick_tailor_zero_actionable_never_calls_tailor(db_session, tmp_path, m
         },
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _quick_tailor(TestClient(app), job, slug)
-    finally:
-        app.dependency_overrides.clear()
+    response = _quick_tailor(client, job, slug)
 
     assert response.status_code == 200
     body = response.json()
@@ -344,7 +326,7 @@ def _seed_open_session(db_session, job, slug, resolutions, status="open"):
     return row
 
 
-def test_quick_tailor_409_when_open_session_has_resolutions(db_session, tmp_path, monkeypatch):
+def test_quick_tailor_409_when_open_session_has_resolutions(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_llm(monkeypatch)
@@ -363,11 +345,7 @@ def test_quick_tailor_409_when_open_session_has_resolutions(db_session, tmp_path
         ],
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _quick_tailor(TestClient(app), job, slug)
-    finally:
-        app.dependency_overrides.clear()
+    response = _quick_tailor(client, job, slug)
 
     assert response.status_code == 409
     assert response.json()["detail"] == IN_PROGRESS_409_DETAIL
@@ -376,40 +354,32 @@ def test_quick_tailor_409_when_open_session_has_resolutions(db_session, tmp_path
     assert db_session.get(TailoringSession, existing.id).status == "open"
 
 
-def test_quick_tailor_proceeds_when_open_session_only_skips(db_session, tmp_path, monkeypatch):
+def test_quick_tailor_proceeds_when_open_session_only_skips(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_llm(monkeypatch)
     _mock_render(monkeypatch)
     _seed_open_session(db_session, job, slug, [{"gap_id": "skill:x", "action": "skip"}])
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _quick_tailor(TestClient(app), job, slug)
-    finally:
-        app.dependency_overrides.clear()
+    response = _quick_tailor(client, job, slug)
 
     assert response.status_code == 200
     assert response.json()["nothing_to_tailor"] is False
 
 
-def test_quick_tailor_proceeds_when_open_session_empty_resolutions(db_session, tmp_path, monkeypatch):
+def test_quick_tailor_proceeds_when_open_session_empty_resolutions(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_llm(monkeypatch)
     _mock_render(monkeypatch)
     _seed_open_session(db_session, job, slug, [])
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _quick_tailor(TestClient(app), job, slug)
-    finally:
-        app.dependency_overrides.clear()
+    response = _quick_tailor(client, job, slug)
 
     assert response.status_code == 200
 
 
-def test_quick_tailor_proceeds_when_prior_session_not_open(db_session, tmp_path, monkeypatch):
+def test_quick_tailor_proceeds_when_prior_session_not_open(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_llm(monkeypatch)
@@ -423,16 +393,12 @@ def test_quick_tailor_proceeds_when_prior_session_not_open(db_session, tmp_path,
         status="tailored",
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _quick_tailor(TestClient(app), job, slug)
-    finally:
-        app.dependency_overrides.clear()
+    response = _quick_tailor(client, job, slug)
 
     assert response.status_code == 200
 
 
-def test_quick_tailor_surfaces_health_warning(db_session, tmp_path, monkeypatch):
+def test_quick_tailor_surfaces_health_warning(db_session, tmp_path, monkeypatch, client):
     # The created session's transient health_warning must reach the response
     # (fix B5), including on the nothing_to_tailor path.
     job = _seed_job(db_session)
@@ -450,11 +416,7 @@ def test_quick_tailor_surfaces_health_warning(db_session, tmp_path, monkeypatch)
         lambda job_id, base_resume, session=None: seeded,
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _quick_tailor(TestClient(app), job, slug)
-    finally:
-        app.dependency_overrides.clear()
+    response = _quick_tailor(client, job, slug)
 
     assert response.status_code == 200
     body = response.json()
@@ -462,7 +424,7 @@ def test_quick_tailor_surfaces_health_warning(db_session, tmp_path, monkeypatch)
     assert body["health_warning"] == seeded.health_warning
 
 
-def test_quick_tailor_health_gate_409_passthrough(db_session, tmp_path, monkeypatch):
+def test_quick_tailor_health_gate_409_passthrough(db_session, tmp_path, monkeypatch, client):
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_llm(monkeypatch)
@@ -487,11 +449,7 @@ def test_quick_tailor_health_gate_409_passthrough(db_session, tmp_path, monkeypa
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _quick_tailor(TestClient(app), job, slug)
-    finally:
-        app.dependency_overrides.clear()
+    response = _quick_tailor(client, job, slug)
 
     assert response.status_code == 409
     # The gate by TODAY's label (the fixture stores the old "Parse fidelity";
@@ -499,18 +457,14 @@ def test_quick_tailor_health_gate_409_passthrough(db_session, tmp_path, monkeypa
     assert "a must-fix problem: PDF text is readable." in response.json()["detail"]
 
 
-def test_quick_tailor_render_failure_degrades_not_fails(db_session, tmp_path, monkeypatch):
+def test_quick_tailor_render_failure_degrades_not_fails(db_session, tmp_path, monkeypatch, client):
 
     job = _seed_job(db_session)
     slug = _seed_base(db_session, tmp_path, monkeypatch)
     _mock_llm(monkeypatch)
     _mock_render(monkeypatch, error=RuntimeError("pdflatex exploded"))
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _quick_tailor(TestClient(app), job, slug)
-    finally:
-        app.dependency_overrides.clear()
+    response = _quick_tailor(client, job, slug)
 
     assert response.status_code == 200
     body = response.json()
@@ -521,7 +475,7 @@ def test_quick_tailor_render_failure_degrades_not_fails(db_session, tmp_path, mo
     # for the UI. (Not asserted here: the render call is mocked.)
 
 
-def test_quick_tailor_compare_failure_degrades_to_none(db_session, tmp_path, monkeypatch):
+def test_quick_tailor_compare_failure_degrades_to_none(db_session, tmp_path, monkeypatch, client):
     # A compare failure post-commit must not 500 the whole endpoint (fix B6):
     # compare degrades to None and the render still runs, mirroring render
     # degradation.
@@ -535,11 +489,7 @@ def test_quick_tailor_compare_failure_degrades_to_none(db_session, tmp_path, mon
 
     monkeypatch.setattr("app.services.quick_tailor.ats_score.compare", boom)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _quick_tailor(TestClient(app), job, slug)
-    finally:
-        app.dependency_overrides.clear()
+    response = _quick_tailor(client, job, slug)
 
     assert response.status_code == 200
     body = response.json()
@@ -548,24 +498,19 @@ def test_quick_tailor_compare_failure_degrades_to_none(db_session, tmp_path, mon
     assert body["application_id"] is not None
 
 
-def test_quick_tailor_unknown_job_404_unknown_base_422(db_session, tmp_path, monkeypatch):
+def test_quick_tailor_unknown_job_404_unknown_base_422(db_session, tmp_path, monkeypatch, client):
     from uuid import uuid4
 
     job = _seed_job(db_session)
     _seed_base(db_session, tmp_path, monkeypatch)
     _mock_llm(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        bad_job = client.post(
-            f"/api/jobs/{uuid4()}/quick-tailor", json={"base_resume": "data_scientist"}
-        )
-        bad_base = client.post(
-            f"/api/jobs/{job.id}/quick-tailor", json={"base_resume": "no_such_slug"}
-        )
-    finally:
-        app.dependency_overrides.clear()
+    bad_job = client.post(
+        f"/api/jobs/{uuid4()}/quick-tailor", json={"base_resume": "data_scientist"}
+    )
+    bad_base = client.post(
+        f"/api/jobs/{job.id}/quick-tailor", json={"base_resume": "no_such_slug"}
+    )
 
     # Unknown job_id is a 404 (fix B8); an unknown base on a real job is a 422.
     assert bad_job.status_code == 404
@@ -575,7 +520,7 @@ def test_quick_tailor_unknown_job_404_unknown_base_422(db_session, tmp_path, mon
 
 def test_quick_tailor_proceeds_when_open_session_has_only_system_autos(
     db_session, tmp_path, monkeypatch
-):
+, client):
     """Auto-resolutions seeded at session creation (payload.provenance) are not
     user work: an untouched-but-enriched session must not block quick tailor."""
     job = _seed_job(db_session)
@@ -600,11 +545,7 @@ def test_quick_tailor_proceeds_when_open_session_has_only_system_autos(
         ],
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _quick_tailor(TestClient(app), job, slug)
-    finally:
-        app.dependency_overrides.clear()
+    response = _quick_tailor(client, job, slug)
 
     assert response.status_code == 200
 
@@ -627,7 +568,7 @@ def test_policy_keywords_into_skills_off_gates_profile_auto():
     assert resolutions[0]["payload"]["provenance"] == {"source": "kb_profile"}
 
 
-def test_quick_tailor_preserves_prestored_cannot_confirm(db_session, tmp_path, monkeypatch):
+def test_quick_tailor_preserves_prestored_cannot_confirm(db_session, tmp_path, monkeypatch, client):
     """A standing "I can't confirm this" must survive the profile plan's
     replace=True save — the plan must not resurrect the disconfirmed keyword.
     Pins the suppression-preservation guard in run_for_job."""
@@ -648,11 +589,7 @@ def test_quick_tailor_preserves_prestored_cannot_confirm(db_session, tmp_path, m
     _mock_llm(monkeypatch)
     _mock_render(monkeypatch)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = _quick_tailor(TestClient(app), job, slug)
-    finally:
-        app.dependency_overrides.clear()
+    response = _quick_tailor(client, job, slug)
 
     assert response.status_code == 200
     row = db_session.get(TailoringSession, UUID(response.json()["session_id"]))

@@ -8,20 +8,8 @@ what tells the picker whether to ask for confirmation.
 """
 
 import pytest
-from fastapi.testclient import TestClient
 
-from app.db import get_db
-from app.main import app
 from app.schemas.job_preferences import MAX_LABEL_CHARS
-
-
-@pytest.fixture
-def client(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
 
 
 def test_catalog_is_additive_for_existing_consumers(client):

@@ -9,11 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.db import get_db
-from app.main import app
 from app.models.application import Application
 from app.models.base_resume import BaseResume
 from app.models.job import Job
@@ -312,13 +309,6 @@ def test_apply_edits_rejects_invalid_extra_sections_in_base():
 # --------------------------------------------------------------------------- #
 
 
-def _override_db(db_session):
-    def _inner():
-        yield db_session
-
-    return _inner
-
-
 def _stub_base_render(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(base_router_module.settings, "base_resumes_dir", tmp_path)
     monkeypatch.setattr(base_resume_render.settings, "base_resumes_dir", tmp_path)
@@ -338,7 +328,7 @@ def _stub_base_render(monkeypatch, tmp_path: Path):
 
 def test_base_put_preserves_extra_sections_in_db_file_and_response(
     db_session, tmp_path, monkeypatch
-):
+, client):
     import json
 
     _stub_base_render(monkeypatch, tmp_path)
@@ -352,14 +342,10 @@ def test_base_put_preserves_extra_sections_in_db_file_and_response(
         extra_sections=[_entries_section(), _bullets_section()],
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).put(
-            "/api/base-resumes/data_scientist",
-            json={"display_name": "DS", "data": new_data},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.put(
+        "/api/base-resumes/data_scientist",
+        json={"display_name": "DS", "data": new_data},
+    )
 
     assert response.status_code == 200
     # API response round-trips extras
@@ -394,7 +380,7 @@ def _job(db_session) -> Job:
     return job
 
 
-def test_application_patch_preserves_extras_and_drops_junk(db_session):
+def test_application_patch_preserves_extras_and_drops_junk(db_session, client):
     job = _job(db_session)
     application = Application(
         job_id=job.id, base_resume="data_scientist", status="draft"
@@ -409,14 +395,10 @@ def test_application_patch_preserves_extras_and_drops_junk(db_session):
     )
     payload_json["bogus_unknown_key"] = 123  # must be dropped by normalization
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            f"/api/applications/{application.id}",
-            json={"customized_json": payload_json},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        f"/api/applications/{application.id}",
+        json={"customized_json": payload_json},
+    )
 
     assert response.status_code == 200
     stored = response.json()["customized_json"]
@@ -429,7 +411,7 @@ def test_application_patch_preserves_extras_and_drops_junk(db_session):
     assert application.customized_json["extra_sections"][0]["type"] == "bullets"
 
 
-def test_application_patch_rejects_invalid_extra_sections(db_session):
+def test_application_patch_rejects_invalid_extra_sections(db_session, client):
     job = _job(db_session)
     application = Application(
         job_id=job.id, base_resume="data_scientist", status="draft"
@@ -440,14 +422,10 @@ def test_application_patch_rejects_invalid_extra_sections(db_session):
 
     bad = _resume(extra_sections=[_bullets_section(key="summary", title="collides")])
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            f"/api/applications/{application.id}",
-            json={"customized_json": bad},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        f"/api/applications/{application.id}",
+        json={"customized_json": bad},
+    )
 
     assert response.status_code == 422
 
@@ -457,7 +435,7 @@ def test_application_patch_rejects_invalid_extra_sections(db_session):
 # --------------------------------------------------------------------------- #
 
 
-def test_application_restore_preserves_extra_sections(db_session):
+def test_application_restore_preserves_extra_sections(db_session, client):
     job = _job(db_session)
     application = Application(
         job_id=job.id,
@@ -476,13 +454,9 @@ def test_application_restore_preserves_extra_sections(db_session):
     record_version(db_session, "application", key, with_extras, source="edit_ops")
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            f"/api/resume-versions/application/{key}/2/restore"
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        f"/api/resume-versions/application/{key}/2/restore"
+    )
 
     assert response.status_code == 200
     db_session.refresh(application)

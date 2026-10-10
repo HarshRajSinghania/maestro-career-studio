@@ -1,29 +1,14 @@
 """Task 13: run location and refused requests over browser HTTP."""
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.config import settings
-from app.db import get_db
-from app.main import app
 from app.models.agent_run import AgentRun
 from app.models.job import Job
 from app.models.sync import SyncRequest
 from app.models.types import utcnow
 from app.services import agent_runs, proposals
 from app.services.sync import hooks, request_apply
-
-
-@pytest.fixture
-def client(db_session):
-    def override():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.pop(get_db, None)
 
 
 def _run(db, machine):

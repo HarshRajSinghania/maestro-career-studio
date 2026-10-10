@@ -63,7 +63,7 @@ def _add_skill(db_session, job, name, category="language", requirement="required
     )
 
 
-def test_top_skills_filters_and_counts_distinct_jobs(db_session):
+def test_top_skills_filters_and_counts_distinct_jobs(db_session, client):
     job1 = _seed_job(db_session, raw_hash="job-1", role_category="data_scientist")
     job2 = _seed_job(db_session, raw_hash="job-2", role_category="data_scientist")
     job3 = _seed_job(db_session, raw_hash="job-3", role_category="data_engineer")
@@ -73,11 +73,7 @@ def test_top_skills_filters_and_counts_distinct_jobs(db_session):
     _add_skill(db_session, job3, "Spark")
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/top-skills?role_category=data_scientist")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/top-skills?role_category=data_scientist")
 
     assert response.status_code == 200
     body = response.json()
@@ -91,7 +87,7 @@ def test_top_skills_filters_and_counts_distinct_jobs(db_session):
     assert "rank_percentile" in body["top"][0]
 
 
-def test_top_skills_sections_split_top_thirty_percent(db_session):
+def test_top_skills_sections_split_top_thirty_percent(db_session, client):
     jobs = [
         _seed_job(db_session, raw_hash=f"split-job-{i}", role_category="data_scientist")
         for i in range(10)
@@ -103,11 +99,7 @@ def test_top_skills_sections_split_top_thirty_percent(db_session):
                 _add_skill(db_session, job, name)
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/top-skills?role_category=data_scientist")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/top-skills?role_category=data_scientist")
 
     assert response.status_code == 200
     body = response.json()
@@ -120,7 +112,7 @@ def test_top_skills_sections_split_top_thirty_percent(db_session):
     assert body["rest"][0]["rank"] == 4
 
 
-def test_top_skills_rank_tier_buckets(db_session):
+def test_top_skills_rank_tier_buckets(db_session, client):
     jobs = [
         _seed_job(db_session, raw_hash=f"job-{i}", role_category="data_scientist")
         for i in range(10)
@@ -133,11 +125,7 @@ def test_top_skills_rank_tier_buckets(db_session):
                 _add_skill(db_session, job, name, requirement=level)
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/top-skills?role_category=data_scientist")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/top-skills?role_category=data_scientist")
 
     assert response.status_code == 200
     body = response.json()
@@ -145,7 +133,7 @@ def test_top_skills_rank_tier_buckets(db_session):
     assert {row["bucket"] for row in body["top"]} <= {"core", "preferred_top"}
 
 
-def test_heatmap_returns_percent_jobs_by_role(db_session):
+def test_heatmap_returns_percent_jobs_by_role(db_session, client):
     scientist1 = _seed_job(db_session, raw_hash="sci-1", role_category="data_scientist")
     scientist2 = _seed_job(db_session, raw_hash="sci-2", role_category="data_scientist")
     engineer1 = _seed_job(db_session, raw_hash="eng-1", role_category="data_engineer")
@@ -154,11 +142,7 @@ def test_heatmap_returns_percent_jobs_by_role(db_session):
     _add_skill(db_session, engineer1, "Python")
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/heatmap?limit=2")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/heatmap?limit=2")
 
     assert response.status_code == 200
     rows = {
@@ -170,7 +154,7 @@ def test_heatmap_returns_percent_jobs_by_role(db_session):
     assert rows[("SQL", "data_scientist")] == 50.0
 
 
-def test_fit_distribution_buckets_scores(db_session):
+def test_fit_distribution_buckets_scores(db_session, client):
     job1 = _seed_job(db_session, raw_hash="fit-job-1", role_category="data_scientist")
     job2 = _seed_job(db_session, raw_hash="fit-job-2", role_category="data_scientist")
     job3 = _seed_job(db_session, raw_hash="fit-job-3", role_category="data_scientist")
@@ -185,11 +169,7 @@ def test_fit_distribution_buckets_scores(db_session):
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/fit-distribution")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/fit-distribution")
 
     assert response.status_code == 200
     rows = {item["base_resume"]: item["buckets"] for item in response.json()}
@@ -198,7 +178,7 @@ def test_fit_distribution_buckets_scores(db_session):
     assert rows["data_scientist"]["80-100"] == 1
 
 
-def test_fit_distribution_flags_low_sample_and_reports_n(db_session):
+def test_fit_distribution_flags_low_sample_and_reports_n(db_session, client):
     jobs = [
         _seed_job(db_session, raw_hash=f"fit-ls-{i}", role_category="data_scientist")
         for i in range(6)
@@ -209,11 +189,7 @@ def test_fit_distribution_flags_low_sample_and_reports_n(db_session):
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/fit-distribution")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/fit-distribution")
 
     assert response.status_code == 200
     rows = {item["base_resume"]: item for item in response.json()}
@@ -224,7 +200,7 @@ def test_fit_distribution_flags_low_sample_and_reports_n(db_session):
     assert rows["hybrid"]["buckets"]["0-20"] == 5
 
 
-def test_fit_distribution_names_each_base_resume(db_session):
+def test_fit_distribution_names_each_base_resume(db_session, client):
     """The chart legend says the resume's own name. A slug with no row has none."""
     from app.models.base_resume import BaseResume
 
@@ -233,17 +209,13 @@ def test_fit_distribution_names_each_base_resume(db_session):
     db_session.add_all([_ats_base_row(job.id, "ds_base", 70.0), _ats_base_row(job.id, "disk_only", 40.0)])
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/fit-distribution")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/fit-distribution")
 
     names = {row["base_resume"]: row["display_name"] for row in response.json()}
     assert names == {"ds_base": "Data Science Base", "disk_only": None}
 
 
-def test_overview_aggregates(db_session):
+def test_overview_aggregates(db_session, client):
     j1 = _seed_job(db_session, raw_hash="o1", role_category="data_scientist", level="entry")
     j2 = _seed_job(db_session, raw_hash="o2", role_category="data_scientist", level="mid")
     j3 = _seed_job(db_session, raw_hash="o3", role_category="data_engineer", level="entry")
@@ -264,12 +236,7 @@ def test_overview_aggregates(db_session):
     _add_skill(db_session, j1, "SQL", requirement="required")
     db_session.flush()
 
-    client = TestClient(app)
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        r = client.get("/api/explore/overview")
-    finally:
-        app.dependency_overrides.clear()
+    r = client.get("/api/explore/overview")
     assert r.status_code == 200
     body = r.json()
 
@@ -296,20 +263,15 @@ def test_overview_aggregates(db_session):
     assert len(body["signals"]) <= 5
 
 
-def test_overview_refuses_mixed_currency_mean(db_session):
+def test_overview_refuses_mixed_currency_mean(db_session, client):
     j1 = _seed_job(db_session, raw_hash="mc1", role_category="data_scientist")
     j2 = _seed_job(db_session, raw_hash="mc2", role_category="data_scientist")
     j1.salary_min, j1.salary_max, j1.salary_period, j1.salary_currency = 120000, 140000, "year", "USD"
     j2.salary_min, j2.salary_max, j2.salary_period, j2.salary_currency = 70000, 90000, "year", "GBP"
     db_session.flush()
 
-    client = TestClient(app)
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        body = client.get("/api/explore/overview").json()
-        usd = client.get("/api/explore/overview", params={"salary_currency": "USD"}).json()
-    finally:
-        app.dependency_overrides.clear()
+    body = client.get("/api/explore/overview").json()
+    usd = client.get("/api/explore/overview", params={"salary_currency": "USD"}).json()
 
     assert body["meta"]["salary_mixed_currencies"] is True
     assert body["meta"]["salary_year_avg_min"] is None
@@ -320,7 +282,7 @@ def test_overview_refuses_mixed_currency_mean(db_session):
     assert round(usd["meta"]["salary_year_avg_min"]) == 120000
 
 
-def test_overview_null_salary_is_ordinary(db_session):
+def test_overview_null_salary_is_ordinary(db_session, client):
     _seed_job(db_session, raw_hash="ns1", role_category="data_scientist")
     paid = _seed_job(db_session, raw_hash="ns2", role_category="data_scientist")
     paid.salary_min, paid.salary_max, paid.salary_period, paid.salary_currency = (
@@ -330,51 +292,31 @@ def test_overview_null_salary_is_ordinary(db_session):
         "USD",
     )
     db_session.flush()
-    client = TestClient(app)
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        body = client.get("/api/explore/overview").json()
-    finally:
-        app.dependency_overrides.clear()
+    body = client.get("/api/explore/overview").json()
     assert body["meta"]["jobs_with_salary"] == 1
     assert body["meta"]["jobs_without_salary"] == 1
 
 
-def test_overview_filters_by_country(db_session):
+def test_overview_filters_by_country(db_session, client):
     us = _seed_job(db_session, raw_hash="c1", role_category="data_scientist")
     de = _seed_job(db_session, raw_hash="c2", role_category="data_scientist")
     us.country = "US"
     de.country = "DE"
     db_session.flush()
-    client = TestClient(app)
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        r = client.get("/api/explore/overview", params={"country": "DE"})
-    finally:
-        app.dependency_overrides.clear()
+    r = client.get("/api/explore/overview", params={"country": "DE"})
     assert r.json()["meta"]["total_jobs"] == 1
 
 
-def test_overview_filters_by_role(db_session):
+def test_overview_filters_by_role(db_session, client):
     _seed_job(db_session, raw_hash="f1", role_category="data_scientist")
     _seed_job(db_session, raw_hash="f2", role_category="data_engineer")
     db_session.flush()
-    client = TestClient(app)
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        r = client.get("/api/explore/overview", params={"role_category": "data_scientist"})
-    finally:
-        app.dependency_overrides.clear()
+    r = client.get("/api/explore/overview", params={"role_category": "data_scientist"})
     assert r.json()["meta"]["total_jobs"] == 1
 
 
-def test_overview_empty(db_session):
-    client = TestClient(app)
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        r = client.get("/api/explore/overview")
-    finally:
-        app.dependency_overrides.clear()
+def test_overview_empty(db_session, client):
+    r = client.get("/api/explore/overview")
     body = r.json()
     assert body["meta"]["total_jobs"] == 0
     assert body["meta"]["since"] is None
@@ -382,7 +324,7 @@ def test_overview_empty(db_session):
     assert body["role_mix"] == [] and body["signals"] == []
 
 
-def test_overview_signals(db_session):
+def test_overview_signals(db_session, client):
     j1 = _seed_job(db_session, raw_hash="s1", role_category="data_scientist")
     j2 = _seed_job(db_session, raw_hash="s2", role_category="data_scientist")
     j1.opt_accepted, j2.opt_accepted = "yes", "no"
@@ -391,12 +333,7 @@ def test_overview_signals(db_session):
     _add_skill(db_session, j1, "Python", requirement="required")
     _add_skill(db_session, j2, "Python", requirement="required")
     db_session.flush()
-    client = TestClient(app)
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        body = client.get("/api/explore/overview").json()
-    finally:
-        app.dependency_overrides.clear()
+    body = client.get("/api/explore/overview").json()
     titles = " ".join(s["title"] for s in body["signals"])
     # The OPT share is the tab's own tile ("OPT (US student work permit)"): a signal said it twice.
     assert "OPT" not in titles
@@ -488,7 +425,7 @@ def test_top_skill_signal_title_starts_with_words(db_session):
     assert "Most required skill: sql (100% of jobs)" in [s["title"] for s in signals]
 
 
-def test_role_mix_over_time_groups_by_week(db_session):
+def test_role_mix_over_time_groups_by_week(db_session, client):
     _seed_job(
         db_session,
         raw_hash="week-1",
@@ -518,11 +455,7 @@ def test_role_mix_over_time_groups_by_week(db_session):
     )
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/role-mix-over-time?window=week")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/role-mix-over-time?window=week")
 
     assert response.status_code == 200
     rows = response.json()
@@ -533,7 +466,7 @@ def test_role_mix_over_time_groups_by_week(db_session):
     assert keys == sorted(keys)
 
 
-def test_top_skills_collapses_one_name_across_categories(db_session):
+def test_top_skills_collapses_one_name_across_categories(db_session, client):
     job1 = _seed_job(db_session, raw_hash="agg-1", role_category="data_scientist")
     job2 = _seed_job(db_session, raw_hash="agg-2", role_category="data_scientist")
     job3 = _seed_job(db_session, raw_hash="agg-3", role_category="data_scientist")
@@ -543,11 +476,7 @@ def test_top_skills_collapses_one_name_across_categories(db_session):
     _add_skill(db_session, job3, "data modeling", category="methodology")
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/top-skills")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/top-skills")
 
     assert response.status_code == 200
     rows = response.json()["top"] + response.json()["rest"]
@@ -559,7 +488,7 @@ def test_top_skills_collapses_one_name_across_categories(db_session):
     assert modeling[0]["skill_category"] == "ml_modeling"
 
 
-def test_fit_distribution_excludes_soft_deleted_base_resume(db_session):
+def test_fit_distribution_excludes_soft_deleted_base_resume(db_session, client):
     from datetime import UTC, datetime
 
     from app.models.base_resume import BaseResume
@@ -586,11 +515,7 @@ def test_fit_distribution_excludes_soft_deleted_base_resume(db_session):
     db_session.add(_ats_base_row(job.id, "old_track", 70.0))
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/explore/fit-distribution")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/explore/fit-distribution")
 
     assert response.status_code == 200
     slugs = {row["base_resume"] for row in response.json()}

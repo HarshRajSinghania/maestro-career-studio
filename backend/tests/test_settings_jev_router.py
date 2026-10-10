@@ -1,22 +1,5 @@
-import pytest
-from fastapi.testclient import TestClient
-
-from app.db import get_db
-from app.main import app
 from app.services import jev
 from app.services.llm import LLMProviderError
-
-
-@pytest.fixture
-def client(db_session):
-    def _db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = _db
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
 
 
 def test_get_reports_defaults_and_never_the_key(client):

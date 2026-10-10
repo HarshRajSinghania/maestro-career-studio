@@ -1,24 +1,10 @@
 import uuid
 
-import pytest
 import sqlalchemy as sa
-from fastapi.testclient import TestClient
 
 from app.models.career_kb import KBDocument, KBPoint
 from app.models.setting import Setting
 from app.services import prompts
-
-
-@pytest.fixture
-def client(db_session):
-    from app.db import get_db
-    from app.main import app
-
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
 
 
 def _fake_llm(payload):

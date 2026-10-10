@@ -248,20 +248,6 @@ def test_plan_rejects_a_non_object_response(db_session, monkeypatch):
 # --- endpoint ---------------------------------------------------------------
 
 
-@pytest.fixture
-def client(db_session):
-    from fastapi.testclient import TestClient
-
-    from app.db import get_db
-    from app.main import app
-
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
-
-
 def test_plan_endpoint_returns_the_proposal(client, db_session, monkeypatch):
     keep = _entity(db_session, "experience", "Data Scientist")
     drop = _entity(db_session, "experience", "Barista")

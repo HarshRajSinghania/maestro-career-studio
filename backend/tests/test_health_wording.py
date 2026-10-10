@@ -8,10 +8,7 @@ text becomes a `suggestion` only when `health_guards` accepts it.
 from copy import deepcopy
 
 import pytest
-from fastapi.testclient import TestClient
 
-from app.db import get_db
-from app.main import app
 from app.models.setting import Setting
 from app.services import bullet_classify, coherence_check, health_wording
 from app.services import resume_lint as rl
@@ -544,17 +541,6 @@ def test_the_coherence_check_uses_the_users_bank(db_session, monkeypatch):
 
 # --------------------------------------------------------------------------- #
 # router
-
-@pytest.fixture
-def client(db_session):
-    def _inner():
-        yield db_session
-    app.dependency_overrides[get_db] = _inner
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
-
 
 def test_get_wording_returns_the_bank_ignored_and_defaults(client):
     body = client.get("/api/resume-lint/wording").json()

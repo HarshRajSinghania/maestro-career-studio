@@ -1,10 +1,7 @@
 from datetime import UTC, datetime
 
 import pytest
-from fastapi.testclient import TestClient
 
-from app.db import get_db
-from app.main import app
 from app.models.application import Application
 from app.models.job import Job
 from app.services.job_url_match import is_same_posting, posting_id
@@ -149,13 +146,6 @@ def test_is_same_posting_with_query_identity(saved, current, expected):
     assert is_same_posting(saved, current) is expected
 
 
-def _override_db(db_session):
-    def _inner():
-        yield db_session
-
-    return _inner
-
-
 def _job(source_url: str | None, tag: str) -> Job:
     return Job(
         raw_text=f"JD {tag}",
@@ -168,7 +158,7 @@ def _job(source_url: str | None, tag: str) -> Job:
     )
 
 
-def test_match_exact_url_returns_job_and_newest_application(db_session):
+def test_match_exact_url_returns_job_and_newest_application(db_session, client):
     job = _job(LEVER, "exact")
     db_session.add(job)
     db_session.flush()
@@ -186,13 +176,9 @@ def test_match_exact_url_returns_job_and_newest_application(db_session):
     db_session.add_all([older, newer])
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get(
-            "/api/jobs/match", params={"url": f"{LEVER}?gh_src=x"}
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get(
+        "/api/jobs/match", params={"url": f"{LEVER}?gh_src=x"}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -207,7 +193,7 @@ def test_match_exact_url_returns_job_and_newest_application(db_session):
     assert body["application"]["job_title"] == "Data Scientist"
 
 
-def test_match_names_the_application_base_resume_even_after_a_delete(db_session):
+def test_match_names_the_application_base_resume_even_after_a_delete(db_session, client):
     from app.models.base_resume import BaseResume
 
     job = _job(LEVER, "named")
@@ -224,17 +210,13 @@ def test_match_names_the_application_base_resume_even_after_a_delete(db_session)
     db_session.add(Application(job_id=job.id, base_resume="ds_named", status="applied"))
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/jobs/match", params={"url": LEVER})
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/jobs/match", params={"url": LEVER})
 
     # Same joined name as GET /api/applications: a soft-deleted base keeps it.
     assert response.json()["application"]["base_resume_name"] == "Data science base"
 
 
-def test_match_unknown_page_returns_none(db_session):
+def test_match_unknown_page_returns_none(db_session, client):
     # The NULL-source_url row is here to show a link-less job is harmless, not
     # to guard anything: is_same_posting(None, ...) returns False rather than
     # raising. The router's .is_not(None) filter narrows the scan; it has no
@@ -242,13 +224,9 @@ def test_match_unknown_page_returns_none(db_session):
     db_session.add_all([_job(LEVER, "unknown"), _job(None, "no-link")])
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get(
-            "/api/jobs/match", params={"url": "https://news.example.com/article/1"}
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get(
+        "/api/jobs/match", params={"url": "https://news.example.com/article/1"}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -257,7 +235,7 @@ def test_match_unknown_page_returns_none(db_session):
     assert body["application"] is None
 
 
-def test_match_sibling_posting_is_none(db_session):
+def test_match_sibling_posting_is_none(db_session, client):
     """The case the two-state redesign exists for. Under the old scoring this
     sibling scored 12 — the same integer as a saved posting's own apply page —
     and surfaced as `likely`, a job the user could accept. Neither path
@@ -265,14 +243,10 @@ def test_match_sibling_posting_is_none(db_session):
     db_session.add(_job(GREENHOUSE, "sibling"))
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get(
-            "/api/jobs/match",
-            params={"url": "https://boards.greenhouse.io/acme/jobs/456"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get(
+        "/api/jobs/match",
+        params={"url": "https://boards.greenhouse.io/acme/jobs/456"},
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -281,7 +255,7 @@ def test_match_sibling_posting_is_none(db_session):
     assert body["application"] is None
 
 
-def test_match_apply_page_is_exact(db_session):
+def test_match_apply_page_is_exact(db_session, client):
     # The other side of that collision: applying navigates DOWN from the saved
     # posting, so the apply page IS the posting. The job has no application, so
     # a hit must still serialize application: null.
@@ -289,13 +263,9 @@ def test_match_apply_page_is_exact(db_session):
     db_session.add(job)
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get(
-            "/api/jobs/match", params={"url": f"{GREENHOUSE}/application"}
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get(
+        "/api/jobs/match", params={"url": f"{GREENHOUSE}/application"}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -304,25 +274,21 @@ def test_match_apply_page_is_exact(db_session):
     assert body["application"] is None
 
 
-def test_match_employer_index_page_is_none(db_session):
+def test_match_employer_index_page_is_none(db_session, client):
     # Navigating UP to the employer's listing must not claim to be the job.
     # The saved path is longer, so it is not a prefix of the current path.
     db_session.add(_job(LEVER, "ancestor"))
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get(
-            "/api/jobs/match", params={"url": "https://jobs.lever.co/acme"}
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get(
+        "/api/jobs/match", params={"url": "https://jobs.lever.co/acme"}
+    )
 
     assert response.status_code == 200
     assert response.json()["match"] == "none"
 
 
-def test_match_empty_url_is_none_not_422(db_session):
+def test_match_empty_url_is_none_not_422(db_session, client):
     # The endpoint fires on navigation rather than on user intent, so a blank
     # tab URL is an ordinary event. Answer "none" instead of raising a client
     # error the extension would have to special-case. Pinned because the route
@@ -330,17 +296,13 @@ def test_match_empty_url_is_none_not_422(db_session):
     db_session.add(_job(LEVER, "empty-url"))
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/jobs/match", params={"url": ""})
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/jobs/match", params={"url": ""})
 
     assert response.status_code == 200
     assert response.json()["match"] == "none"
 
 
-def test_match_ties_resolve_to_the_newest_capture(db_session):
+def test_match_ties_resolve_to_the_newest_capture(db_session, client):
     # Job boards reuse a URL across successive postings, so two rows sharing a
     # source_url is a reachable state and both match. Without an explicit scan
     # order the winner would be whatever Postgres happened to return.
@@ -351,11 +313,7 @@ def test_match_ties_resolve_to_the_newest_capture(db_session):
     db_session.add_all([older, newer])
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/jobs/match", params={"url": LEVER})
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/jobs/match", params={"url": LEVER})
 
     assert response.status_code == 200
     body = response.json()

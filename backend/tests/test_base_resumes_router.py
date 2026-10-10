@@ -132,15 +132,11 @@ def _stub_render(monkeypatch, tmp_path: Path) -> list[str]:
     return rendered
 
 
-def test_list_base_resumes_returns_summaries(db_session):
+def test_list_base_resumes_returns_summaries(db_session, client):
     _seed(db_session, slug="data_scientist")
     _seed(db_session, slug="ai_ml_engineer", display_name="AI/ML Engineer")
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/base-resumes")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/base-resumes")
 
     assert response.status_code == 200
     body = response.json()
@@ -149,14 +145,10 @@ def test_list_base_resumes_returns_summaries(db_session):
     assert "updated_at" in body[0]
 
 
-def test_get_base_resume_returns_detail(db_session):
+def test_get_base_resume_returns_detail(db_session, client):
     _seed(db_session, slug="data_scientist", pdf_path="/tmp/ds.pdf")
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/base-resumes/data_scientist")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/base-resumes/data_scientist")
 
     assert response.status_code == 200
     body = response.json()
@@ -165,32 +157,23 @@ def test_get_base_resume_returns_detail(db_session):
     assert body["data"]["contact"]["name"] == "Sample"
 
 
-def test_get_unknown_base_resume_returns_404(db_session):
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/base-resumes/missing")
-    finally:
-        app.dependency_overrides.clear()
+def test_get_unknown_base_resume_returns_404(db_session, client):
+    response = client.get("/api/base-resumes/missing")
 
     assert response.status_code == 404
 
 
-def test_create_base_resume_validates_slug_and_writes_file(db_session, tmp_path, monkeypatch):
+def test_create_base_resume_validates_slug_and_writes_file(db_session, tmp_path, monkeypatch, client):
     rendered = _stub_render(monkeypatch, tmp_path)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        bad = client.post(
-            "/api/base-resumes",
-            json={"slug": "Bad-Slug", "display_name": "x", "data": SAMPLE_DATA},
-        )
-        good = client.post(
-            "/api/base-resumes",
-            json={"slug": "custom", "display_name": "Custom", "data": SAMPLE_DATA},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    bad = client.post(
+        "/api/base-resumes",
+        json={"slug": "Bad-Slug", "display_name": "x", "data": SAMPLE_DATA},
+    )
+    good = client.post(
+        "/api/base-resumes",
+        json={"slug": "custom", "display_name": "Custom", "data": SAMPLE_DATA},
+    )
 
     assert bad.status_code == 400
     assert good.status_code == 200
@@ -200,36 +183,28 @@ def test_create_base_resume_validates_slug_and_writes_file(db_session, tmp_path,
     assert written["contact"]["name"] == "Sample"
 
 
-def test_create_base_resume_conflict_when_slug_exists(db_session, tmp_path, monkeypatch):
+def test_create_base_resume_conflict_when_slug_exists(db_session, tmp_path, monkeypatch, client):
     _stub_render(monkeypatch, tmp_path)
     _seed(db_session, slug="data_scientist")
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/base-resumes",
-            json={"slug": "data_scientist", "display_name": "x", "data": SAMPLE_DATA},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/base-resumes",
+        json={"slug": "data_scientist", "display_name": "x", "data": SAMPLE_DATA},
+    )
 
     assert response.status_code == 409
 
 
-def test_update_base_resume_renders_and_persists(db_session, tmp_path, monkeypatch):
+def test_update_base_resume_renders_and_persists(db_session, tmp_path, monkeypatch, client):
     rendered = _stub_render(monkeypatch, tmp_path)
     _seed(db_session, slug="data_scientist")
 
     new_data = {**SAMPLE_DATA, "summary": "Updated summary"}
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).put(
-            "/api/base-resumes/data_scientist",
-            json={"display_name": "Data Sci", "data": new_data},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.put(
+        "/api/base-resumes/data_scientist",
+        json={"display_name": "Data Sci", "data": new_data},
+    )
 
     assert response.status_code == 200
     assert rendered == ["data_scientist"]
@@ -238,7 +213,7 @@ def test_update_base_resume_renders_and_persists(db_session, tmp_path, monkeypat
     assert db_session.get(BaseResume, "data_scientist").data_json["summary"] == "Updated summary"
 
 
-def test_delete_base_resume_soft_deletes_and_keeps_files(db_session, tmp_path, monkeypatch):
+def test_delete_base_resume_soft_deletes_and_keeps_files(db_session, tmp_path, monkeypatch, client):
     monkeypatch.setattr(router_module.settings, "base_resumes_dir", tmp_path)
     pdf = tmp_path / "pdfs" / "data_scientist.pdf"
     tex = tmp_path / "tex" / "data_scientist.tex"
@@ -250,11 +225,7 @@ def test_delete_base_resume_soft_deletes_and_keeps_files(db_session, tmp_path, m
     json_path.write_text("{}")
     _seed(db_session, slug="data_scientist", pdf_path=str(pdf), tex_path=str(tex))
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).delete("/api/base-resumes/data_scientist")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.delete("/api/base-resumes/data_scientist")
 
     assert response.status_code == 204
     # Preserve-history policy: row survives, stamped deleted_at, files kept.
@@ -266,7 +237,7 @@ def test_delete_base_resume_soft_deletes_and_keeps_files(db_session, tmp_path, m
     assert json_path.exists()
 
 
-def test_deleted_base_resume_excluded_from_list_but_get_still_serves(db_session):
+def test_deleted_base_resume_excluded_from_list_but_get_still_serves(db_session, client):
     from datetime import UTC, datetime
 
     _seed(db_session, slug="data_scientist")
@@ -274,13 +245,8 @@ def test_deleted_base_resume_excluded_from_list_but_get_still_serves(db_session)
     deleted.deleted_at = datetime.now(UTC)
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        list_response = client.get("/api/base-resumes")
-        get_response = client.get("/api/base-resumes/old_track")
-    finally:
-        app.dependency_overrides.clear()
+    list_response = client.get("/api/base-resumes")
+    get_response = client.get("/api/base-resumes/old_track")
 
     assert list_response.status_code == 200
     assert [item["slug"] for item in list_response.json()] == ["data_scientist"]
@@ -289,7 +255,7 @@ def test_deleted_base_resume_excluded_from_list_but_get_still_serves(db_session)
     assert get_response.json()["slug"] == "old_track"
 
 
-def test_create_blocks_reuse_of_soft_deleted_slug(db_session, tmp_path, monkeypatch):
+def test_create_blocks_reuse_of_soft_deleted_slug(db_session, tmp_path, monkeypatch, client):
     from datetime import UTC, datetime
 
     _stub_render(monkeypatch, tmp_path)
@@ -297,20 +263,16 @@ def test_create_blocks_reuse_of_soft_deleted_slug(db_session, tmp_path, monkeypa
     deleted.deleted_at = datetime.now(UTC)
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/base-resumes",
-            json={"slug": "old_track", "display_name": "x", "data": SAMPLE_DATA},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/base-resumes",
+        json={"slug": "old_track", "display_name": "x", "data": SAMPLE_DATA},
+    )
 
     assert response.status_code == 409
     assert "deleted" in response.json()["detail"].lower()
 
 
-def test_port_project_appends_disabled_copy_to_target(db_session, tmp_path, monkeypatch):
+def test_port_project_appends_disabled_copy_to_target(db_session, tmp_path, monkeypatch, client):
     rendered = _stub_render(monkeypatch, tmp_path)
     source_data = {
         **SAMPLE_DATA,
@@ -327,14 +289,10 @@ def test_port_project_appends_disabled_copy_to_target(db_session, tmp_path, monk
     _seed(db_session, slug="data_scientist", data_json=source_data)
     _seed(db_session, slug="hybrid", data_json=target_data)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/base-resumes/data_scientist/port-project",
-            json={"target_slug": "hybrid", "project_index": 0},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/base-resumes/data_scientist/port-project",
+        json={"target_slug": "hybrid", "project_index": 0},
+    )
 
     assert response.status_code == 200
     assert response.json() == {
@@ -356,33 +314,25 @@ def test_port_project_appends_disabled_copy_to_target(db_session, tmp_path, monk
     assert source.data_json["projects"][0]["enabled"] is True
 
 
-def test_port_project_rejects_same_slug(db_session):
+def test_port_project_rejects_same_slug(db_session, client):
     _seed(db_session, slug="data_scientist")
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/base-resumes/data_scientist/port-project",
-            json={"target_slug": "data_scientist", "project_index": 0},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/base-resumes/data_scientist/port-project",
+        json={"target_slug": "data_scientist", "project_index": 0},
+    )
 
     assert response.status_code == 400
 
 
-def test_duplicate_base_resume_copies_data(db_session, tmp_path, monkeypatch):
+def test_duplicate_base_resume_copies_data(db_session, tmp_path, monkeypatch, client):
     rendered = _stub_render(monkeypatch, tmp_path)
     _seed(db_session, slug="data_scientist")
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/base-resumes/data_scientist/duplicate",
-            json={"new_slug": "data_scientist_v2", "new_display_name": "DS v2"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/base-resumes/data_scientist/duplicate",
+        json={"new_slug": "data_scientist_v2", "new_display_name": "DS v2"},
+    )
 
     assert response.status_code == 200
     assert rendered == ["data_scientist_v2"]
@@ -396,42 +346,30 @@ def test_duplicate_base_resume_copies_data(db_session, tmp_path, monkeypatch):
     assert version.summary == "Duplicated from Data Scientist"
 
 
-def test_get_base_resume_pdf_returns_file(db_session, tmp_path):
+def test_get_base_resume_pdf_returns_file(db_session, tmp_path, client):
     pdf = tmp_path / "ds.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
     _seed(db_session, slug="data_scientist", pdf_path=str(pdf))
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/base-resumes/data_scientist/pdf")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/base-resumes/data_scientist/pdf")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
 
 
-def test_get_base_resume_pdf_404_when_missing(db_session):
+def test_get_base_resume_pdf_404_when_missing(db_session, client):
     _seed(db_session, slug="data_scientist", pdf_path=None)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/base-resumes/data_scientist/pdf")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/base-resumes/data_scientist/pdf")
 
     assert response.status_code == 404
 
 
-def test_render_endpoint_triggers_render(db_session, tmp_path, monkeypatch):
+def test_render_endpoint_triggers_render(db_session, tmp_path, monkeypatch, client):
     rendered = _stub_render(monkeypatch, tmp_path)
     _seed(db_session, slug="data_scientist")
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post("/api/base-resumes/data_scientist/render")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post("/api/base-resumes/data_scientist/render")
 
     assert response.status_code == 200
     assert rendered == ["data_scientist"]
@@ -463,7 +401,7 @@ def test_render_endpoint_returns_compile_failure_detail(
 
 def test_edits_render_failure_sets_render_error_then_clears(
     db_session, tmp_path, monkeypatch
-):
+, client):
     monkeypatch.setattr(router_module.settings, "base_resumes_dir", tmp_path)
     _seed(db_session, slug="data_scientist")
 
@@ -474,67 +412,55 @@ def test_edits_render_failure_sets_render_error_then_clears(
     monkeypatch.setattr(router_module.base_resume_render, "render_base_resume", boom)
 
     ops = [{"kind": "replace_summary", "value": "New summary"}]
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            "/api/base-resumes/data_scientist/edits", json={"ops": ops}
-        )
-        assert response.status_code == 200
-        assert response.json()["render_error"] == "latex exploded"
+    response = client.patch(
+        "/api/base-resumes/data_scientist/edits", json={"ops": ops}
+    )
+    assert response.status_code == 200
+    assert response.json()["render_error"] == "latex exploded"
 
-        def ok(slug, db, *, template_id=None):
-            row = db.get(BaseResume, slug)
-            row.render_error = None
-            row.pdf_pages = 1
-            db.commit()
-            db.refresh(row)
-            return row
+    def ok(slug, db, *, template_id=None):
+        row = db.get(BaseResume, slug)
+        row.render_error = None
+        row.pdf_pages = 1
+        db.commit()
+        db.refresh(row)
+        return row
 
-        monkeypatch.setattr(base_resume_render, "render_base_resume", ok)
-        monkeypatch.setattr(router_module.base_resume_render, "render_base_resume", ok)
+    monkeypatch.setattr(base_resume_render, "render_base_resume", ok)
+    monkeypatch.setattr(router_module.base_resume_render, "render_base_resume", ok)
 
-        response2 = TestClient(app).patch(
-            "/api/base-resumes/data_scientist/edits", json={"ops": ops}
-        )
-        assert response2.status_code == 200
-        assert response2.json()["render_error"] is None
-    finally:
-        app.dependency_overrides.clear()
+    response2 = client.patch(
+        "/api/base-resumes/data_scientist/edits", json={"ops": ops}
+    )
+    assert response2.status_code == 200
+    assert response2.json()["render_error"] is None
 
 
-def test_render_falls_back_for_unknown_template(db_session, tmp_path, monkeypatch):
+def test_render_falls_back_for_unknown_template(db_session, tmp_path, monkeypatch, client):
     # Render stays tolerant of a stale/deleted persisted template_id: the render
     # endpoint no longer 404s — it falls back to the default template.
     if shutil.which("pdflatex") is None:
         pytest.skip("pdflatex is not installed")
     monkeypatch.setattr(router_module.settings, "base_resumes_dir", tmp_path)
     _seed(db_session, slug="data_scientist", data_json=SAMPLE_RESUME)
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        r = TestClient(app).post(
-            "/api/base-resumes/data_scientist/render?template_id=nope"
-        )
-    finally:
-        app.dependency_overrides.clear()
+    r = client.post(
+        "/api/base-resumes/data_scientist/render?template_id=nope"
+    )
     assert r.status_code == 200
     assert r.json()["render_error"] is None
 
 
-def test_render_reports_explicit_resolved_template(db_session, tmp_path, monkeypatch):
+def test_render_reports_explicit_resolved_template(db_session, tmp_path, monkeypatch, client):
     monkeypatch.setattr(router_module.settings, "base_resumes_dir", tmp_path)
     monkeypatch.setattr(base_resume_render.settings, "base_resumes_dir", tmp_path)
     _stub_render_compilers(monkeypatch)
     _seed_render_templates(db_session)
     _seed(db_session, slug="data_scientist", data_json=SAMPLE_DATA)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/base-resumes/data_scientist/render"
-            "?template_id=observed_template"
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/base-resumes/data_scientist/render"
+        "?template_id=observed_template"
+    )
 
     assert response.status_code == 200, response.text
     assert response.json()["resolved_template_id"] == "observed_template"
@@ -542,21 +468,17 @@ def test_render_reports_explicit_resolved_template(db_session, tmp_path, monkeyp
     assert response.json()["template_fallback"] is False
 
 
-def test_render_reports_explicit_template_fallback(db_session, tmp_path, monkeypatch):
+def test_render_reports_explicit_template_fallback(db_session, tmp_path, monkeypatch, client):
     monkeypatch.setattr(router_module.settings, "base_resumes_dir", tmp_path)
     monkeypatch.setattr(base_resume_render.settings, "base_resumes_dir", tmp_path)
     _stub_render_compilers(monkeypatch)
     _seed_render_templates(db_session)
     _seed(db_session, slug="data_scientist", data_json=SAMPLE_DATA)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post(
-            "/api/base-resumes/data_scientist/render"
-            "?template_id=bogus_template"
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post(
+        "/api/base-resumes/data_scientist/render"
+        "?template_id=bogus_template"
+    )
 
     assert response.status_code == 200, response.text
     assert response.json()["resolved_template_id"] == "default"
@@ -564,7 +486,7 @@ def test_render_reports_explicit_template_fallback(db_session, tmp_path, monkeyp
     assert response.json()["template_fallback"] is True
 
 
-def test_render_falls_back_for_draft_template(db_session, tmp_path, monkeypatch):
+def test_render_falls_back_for_draft_template(db_session, tmp_path, monkeypatch, client):
     # A not-ready (draft) template also falls back to default instead of 400.
     from app.services import template_registry as reg
 
@@ -575,36 +497,28 @@ def test_render_falls_back_for_draft_template(db_session, tmp_path, monkeypatch)
     reg.create_draft(
         db_session, id="draftt", display_name="D", source="X", origin="mcp"
     )
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        r = TestClient(app).post(
-            "/api/base-resumes/data_scientist/render?template_id=draftt"
-        )
-    finally:
-        app.dependency_overrides.clear()
+    r = client.post(
+        "/api/base-resumes/data_scientist/render?template_id=draftt"
+    )
     assert r.status_code == 200
     assert r.json()["render_error"] is None
 
 
-def test_update_falls_back_for_unknown_template(db_session, tmp_path, monkeypatch):
+def test_update_falls_back_for_unknown_template(db_session, tmp_path, monkeypatch, client):
     # The update PUT re-renders; a bad template_id no longer 404s the request.
     if shutil.which("pdflatex") is None:
         pytest.skip("pdflatex is not installed")
     monkeypatch.setattr(router_module.settings, "base_resumes_dir", tmp_path)
     _seed(db_session, slug="data_scientist")
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        r = TestClient(app).put(
-            "/api/base-resumes/data_scientist",
-            json={"display_name": "DS", "data": SAMPLE_RESUME, "template_id": "nope"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    r = client.put(
+        "/api/base-resumes/data_scientist",
+        json={"display_name": "DS", "data": SAMPLE_RESUME, "template_id": "nope"},
+    )
     assert r.status_code == 200
     assert r.json()["render_error"] is None
 
 
-def test_update_falls_back_for_draft_template(db_session, tmp_path, monkeypatch):
+def test_update_falls_back_for_draft_template(db_session, tmp_path, monkeypatch, client):
     from app.services import template_registry as reg
 
     if shutil.which("pdflatex") is None:
@@ -614,34 +528,26 @@ def test_update_falls_back_for_draft_template(db_session, tmp_path, monkeypatch)
     reg.create_draft(
         db_session, id="draftt", display_name="D", source="X", origin="mcp"
     )
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        r = TestClient(app).put(
-            "/api/base-resumes/data_scientist",
-            json={"display_name": "DS", "data": SAMPLE_RESUME, "template_id": "draftt"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    r = client.put(
+        "/api/base-resumes/data_scientist",
+        json={"display_name": "DS", "data": SAMPLE_RESUME, "template_id": "draftt"},
+    )
     assert r.status_code == 200
     assert r.json()["render_error"] is None
 
 
-def test_get_unknown_slug_404s_without_lazy_bootstrap(db_session, tmp_path, monkeypatch):
+def test_get_unknown_slug_404s_without_lazy_bootstrap(db_session, tmp_path, monkeypatch, client):
     """A GET must not mint a row or a JSON file for a slug that does not exist."""
     monkeypatch.setattr(router_module.settings, "base_resumes_dir", tmp_path)
     assert db_session.get(BaseResume, "retired_profile") is None
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        res = TestClient(app).get("/api/base-resumes/retired_profile")
-    finally:
-        app.dependency_overrides.clear()
+    res = client.get("/api/base-resumes/retired_profile")
 
     assert res.status_code == 404
     assert db_session.get(BaseResume, "retired_profile") is None
     assert not (tmp_path / "retired_profile.json").exists()
 
 
-def test_patch_base_resume_edits_replaces_bullet_only(db_session, monkeypatch, tmp_path):
+def test_patch_base_resume_edits_replaces_bullet_only(db_session, monkeypatch, tmp_path, client):
     data = {
         **SAMPLE_DATA,
         "experience": [
@@ -651,25 +557,21 @@ def test_patch_base_resume_edits_replaces_bullet_only(db_session, monkeypatch, t
     _seed(db_session, slug="data_scientist", data_json=data)
     rendered = _stub_render(monkeypatch, tmp_path)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            "/api/base-resumes/data_scientist/edits",
-            json={
-                "ops": [
-                    {
-                        "kind": "replace_bullet",
-                        "section": "experience",
-                        "index": 0,
-                        "bullet_index": 0,
-                        "value": "New bullet.",
-                        "expected_content_hash": bullet_classify.content_hash("Old."),
-                    }
-                ]
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        "/api/base-resumes/data_scientist/edits",
+        json={
+            "ops": [
+                {
+                    "kind": "replace_bullet",
+                    "section": "experience",
+                    "index": 0,
+                    "bullet_index": 0,
+                    "value": "New bullet.",
+                    "expected_content_hash": bullet_classify.content_hash("Old."),
+                }
+            ]
+        },
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -679,7 +581,7 @@ def test_patch_base_resume_edits_replaces_bullet_only(db_session, monkeypatch, t
 
 def test_patch_base_resume_edits_hash_mismatch_returns_409_without_write(
     db_session, monkeypatch, tmp_path
-):
+, client):
     data = {
         **SAMPLE_DATA,
         "experience": [
@@ -694,27 +596,23 @@ def test_patch_base_resume_edits_hash_mismatch_returns_409_without_write(
     row = _seed(db_session, slug="data_scientist", data_json=data)
     rendered = _stub_render(monkeypatch, tmp_path)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            "/api/base-resumes/data_scientist/edits",
-            json={
-                "ops": [
-                    {
-                        "kind": "replace_bullet",
-                        "section": "experience",
-                        "index": 0,
-                        "bullet_index": 0,
-                        "value": "Wrong target rewrite.",
-                        "expected_content_hash": bullet_classify.content_hash(
-                            "Report-time bullet."
-                        ),
-                    }
-                ]
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        "/api/base-resumes/data_scientist/edits",
+        json={
+            "ops": [
+                {
+                    "kind": "replace_bullet",
+                    "section": "experience",
+                    "index": 0,
+                    "bullet_index": 0,
+                    "value": "Wrong target rewrite.",
+                    "expected_content_hash": bullet_classify.content_hash(
+                        "Report-time bullet."
+                    ),
+                }
+            ]
+        },
+    )
 
     assert response.status_code == 409
     assert response.json()["detail"].startswith("content changed since analysis")
@@ -723,59 +621,47 @@ def test_patch_base_resume_edits_hash_mismatch_returns_409_without_write(
     assert rendered == []
 
 
-def test_patch_base_resume_edits_out_of_range_returns_400(db_session, monkeypatch, tmp_path):
+def test_patch_base_resume_edits_out_of_range_returns_400(db_session, monkeypatch, tmp_path, client):
     _seed(db_session, slug="data_scientist")
     _stub_render(monkeypatch, tmp_path)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            "/api/base-resumes/data_scientist/edits",
-            json={
-                "ops": [
-                    {
-                        "kind": "replace_bullet",
-                        "section": "experience",
-                        "index": 7,
-                        "bullet_index": 0,
-                        "value": "x",
-                    }
-                ]
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        "/api/base-resumes/data_scientist/edits",
+        json={
+            "ops": [
+                {
+                    "kind": "replace_bullet",
+                    "section": "experience",
+                    "index": 7,
+                    "bullet_index": 0,
+                    "value": "x",
+                }
+            ]
+        },
+    )
 
     assert response.status_code == 400
     assert "out of range" in response.json()["detail"]
 
 
-def test_patch_base_resume_edits_missing_skills_category_returns_400(db_session, monkeypatch, tmp_path):
+def test_patch_base_resume_edits_missing_skills_category_returns_400(db_session, monkeypatch, tmp_path, client):
     _seed(db_session, slug="data_scientist")
     _stub_render(monkeypatch, tmp_path)
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            "/api/base-resumes/data_scientist/edits",
-            json={"ops": [{"kind": "replace_skills_group", "category": "Robotics", "items": ["ROS"]}]},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        "/api/base-resumes/data_scientist/edits",
+        json={"ops": [{"kind": "replace_skills_group", "category": "Robotics", "items": ["ROS"]}]},
+    )
 
     assert response.status_code == 400
 
 
-def test_patch_base_resume_edits_unknown_slug_returns_404(db_session, monkeypatch, tmp_path):
+def test_patch_base_resume_edits_unknown_slug_returns_404(db_session, monkeypatch, tmp_path, client):
     _stub_render(monkeypatch, tmp_path)
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            "/api/base-resumes/missing/edits",
-            json={"ops": [{"kind": "replace_summary", "value": "x"}]},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        "/api/base-resumes/missing/edits",
+        json={"ops": [{"kind": "replace_summary", "value": "x"}]},
+    )
     assert response.status_code == 404
 
 
@@ -914,18 +800,14 @@ def _real_tex_render(monkeypatch, tmp_path):
     )
 
 
-def test_put_persists_formatting_and_render_uses_it(db_session, tmp_path, monkeypatch):
+def test_put_persists_formatting_and_render_uses_it(db_session, tmp_path, monkeypatch, client):
     _real_tex_render(monkeypatch, tmp_path)
     _seed(db_session, slug="data_scientist")
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        resp = TestClient(app).put(
-            "/api/base-resumes/data_scientist",
-            json={"data": SAMPLE_DATA, "formatting": {"font_size": 12}},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    resp = client.put(
+        "/api/base-resumes/data_scientist",
+        json={"data": SAMPLE_DATA, "formatting": {"font_size": 12}},
+    )
 
     assert resp.status_code == 200
     assert resp.json()["formatting"] == {"font_size": 12}
@@ -935,25 +817,20 @@ def test_put_persists_formatting_and_render_uses_it(db_session, tmp_path, monkey
     assert "12pt" in tex
 
 
-def test_put_rejects_invalid_formatting(db_session, tmp_path, monkeypatch):
+def test_put_rejects_invalid_formatting(db_session, tmp_path, monkeypatch, client):
     _real_tex_render(monkeypatch, tmp_path)
     _seed(db_session, slug="data_scientist")
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        # out-of-range value and unknown key are both rejected at write time,
-        # so an invalid override can't be stored and brick later renders.
-        bad_value = client.put(
-            "/api/base-resumes/data_scientist",
-            json={"data": SAMPLE_DATA, "formatting": {"font_size": 99}},
-        )
-        bad_key = client.put(
-            "/api/base-resumes/data_scientist",
-            json={"data": SAMPLE_DATA, "formatting": {"bogus": True}},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    # out-of-range value and unknown key are both rejected at write time,
+    # so an invalid override can't be stored and brick later renders.
+    bad_value = client.put(
+        "/api/base-resumes/data_scientist",
+        json={"data": SAMPLE_DATA, "formatting": {"font_size": 99}},
+    )
+    bad_key = client.put(
+        "/api/base-resumes/data_scientist",
+        json={"data": SAMPLE_DATA, "formatting": {"bogus": True}},
+    )
 
     assert bad_value.status_code == 400
     assert bad_key.status_code == 400
@@ -961,21 +838,17 @@ def test_put_rejects_invalid_formatting(db_session, tmp_path, monkeypatch):
     assert row.formatting_json is None  # nothing invalid persisted
 
 
-def test_put_omitting_formatting_leaves_it_unchanged(db_session, tmp_path, monkeypatch):
+def test_put_omitting_formatting_leaves_it_unchanged(db_session, tmp_path, monkeypatch, client):
     _real_tex_render(monkeypatch, tmp_path)
     _seed(db_session, slug="data_scientist")
     row = db_session.get(BaseResume, "data_scientist")
     row.formatting_json = {"font_size": 12}
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        resp = TestClient(app).put(
-            "/api/base-resumes/data_scientist",
-            json={"data": SAMPLE_DATA},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    resp = client.put(
+        "/api/base-resumes/data_scientist",
+        json={"data": SAMPLE_DATA},
+    )
 
     assert resp.status_code == 200
     assert resp.json()["formatting"] == {"font_size": 12}
@@ -983,21 +856,17 @@ def test_put_omitting_formatting_leaves_it_unchanged(db_session, tmp_path, monke
     assert row.formatting_json == {"font_size": 12}
 
 
-def test_put_explicit_null_formatting_clears_it(db_session, tmp_path, monkeypatch):
+def test_put_explicit_null_formatting_clears_it(db_session, tmp_path, monkeypatch, client):
     _real_tex_render(monkeypatch, tmp_path)
     _seed(db_session, slug="data_scientist")
     row = db_session.get(BaseResume, "data_scientist")
     row.formatting_json = {"font_size": 12}
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        resp = TestClient(app).put(
-            "/api/base-resumes/data_scientist",
-            json={"data": SAMPLE_DATA, "formatting": None},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    resp = client.put(
+        "/api/base-resumes/data_scientist",
+        json={"data": SAMPLE_DATA, "formatting": None},
+    )
 
     assert resp.status_code == 200
     assert resp.json()["formatting"] is None
@@ -1007,7 +876,7 @@ def test_put_explicit_null_formatting_clears_it(db_session, tmp_path, monkeypatc
     assert "11pt" in Path(row.tex_path).read_text(encoding="utf-8")
 
 
-def test_preview_manifest_and_page(db_session, tmp_path):
+def test_preview_manifest_and_page(db_session, tmp_path, client):
     pdf_path = tmp_path / "data_scientist.pdf"
     _write_valid_pdf(pdf_path, pages=1)
     _seed(
@@ -1017,14 +886,9 @@ def test_preview_manifest_and_page(db_session, tmp_path):
         pdf_rendered_at=datetime.now(UTC),
     )
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        manifest = client.get("/api/base-resumes/data_scientist/preview/pages")
-        page = client.get("/api/base-resumes/data_scientist/preview/page/1")
-        missing = client.get("/api/base-resumes/data_scientist/preview/page/99")
-    finally:
-        app.dependency_overrides.clear()
+    manifest = client.get("/api/base-resumes/data_scientist/preview/pages")
+    page = client.get("/api/base-resumes/data_scientist/preview/page/1")
+    missing = client.get("/api/base-resumes/data_scientist/preview/page/99")
 
     assert manifest.status_code == 200
     body = manifest.json()
@@ -1035,22 +899,17 @@ def test_preview_manifest_and_page(db_session, tmp_path):
     assert missing.status_code == 404
 
 
-def test_preview_404_before_first_render(db_session):
+def test_preview_404_before_first_render(db_session, client):
     _seed(db_session, slug="data_scientist")
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        manifest = client.get("/api/base-resumes/data_scientist/preview/pages")
-        page = client.get("/api/base-resumes/data_scientist/preview/page/1")
-    finally:
-        app.dependency_overrides.clear()
+    manifest = client.get("/api/base-resumes/data_scientist/preview/pages")
+    page = client.get("/api/base-resumes/data_scientist/preview/page/1")
 
     assert manifest.status_code == 404
     assert page.status_code == 404
 
 
-def test_put_persists_template_id_and_render_uses_it(db_session, tmp_path, monkeypatch):
+def test_put_persists_template_id_and_render_uses_it(db_session, tmp_path, monkeypatch, client):
     """PUT with template_id persists it (round-trips on GET), and a later render
     that passes no template_id falls back to the stored choice."""
     from app.services import pdf_render
@@ -1087,27 +946,22 @@ def test_put_persists_template_id_and_render_uses_it(db_session, tmp_path, monke
 
     tex_file = tmp_path / "tex" / "data_scientist.tex"
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        resp = client.put(
-            "/api/base-resumes/data_scientist",
-            json={"data": SAMPLE_DATA, "template_id": "themed"},
-        )
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["template_id"] == "themed"
+    resp = client.put(
+        "/api/base-resumes/data_scientist",
+        json={"data": SAMPLE_DATA, "template_id": "themed"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["template_id"] == "themed"
 
-        got = client.get("/api/base-resumes/data_scientist")
-        assert got.status_code == 200
-        assert got.json()["template_id"] == "themed"
-        assert "THEMED_MARKER" in tex_file.read_text(encoding="utf-8")
+    got = client.get("/api/base-resumes/data_scientist")
+    assert got.status_code == 200
+    assert got.json()["template_id"] == "themed"
+    assert "THEMED_MARKER" in tex_file.read_text(encoding="utf-8")
 
-        # Re-render WITHOUT a template_id -> falls back to the stored choice.
-        tex_file.unlink()
-        rr = client.post("/api/base-resumes/data_scientist/render")
-        assert rr.status_code == 200
-    finally:
-        app.dependency_overrides.clear()
+    # Re-render WITHOUT a template_id -> falls back to the stored choice.
+    tex_file.unlink()
+    rr = client.post("/api/base-resumes/data_scientist/render")
+    assert rr.status_code == 200
 
     assert "THEMED_MARKER" in tex_file.read_text(encoding="utf-8")
 
@@ -1139,7 +993,7 @@ _EXTRAS_PUT_DATA = {
 }
 
 
-def test_put_re_render_incompatible_template_returns_400(db_session, tmp_path, monkeypatch):
+def test_put_re_render_incompatible_template_returns_400(db_session, tmp_path, monkeypatch, client):
     # F1: base-resume PUT re-render with an extras-bearing resume + a template
     # that cannot render custom sections returns a clean 400 with the message
     # (via the ValueError->400 mapping), not an unhandled 500.
@@ -1147,14 +1001,10 @@ def test_put_re_render_incompatible_template_returns_400(db_session, tmp_path, m
     _seed(db_session, "ds_put")
     _ready_no_extras_template(db_session, "noextra_put")
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).put(
-            "/api/base-resumes/ds_put",
-            json={"data": _EXTRAS_PUT_DATA, "template_id": "noextra_put"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.put(
+        "/api/base-resumes/ds_put",
+        json={"data": _EXTRAS_PUT_DATA, "template_id": "noextra_put"},
+    )
 
     assert response.status_code == 400, response.text
     detail = response.json()["detail"]
@@ -1164,7 +1014,7 @@ def test_put_re_render_incompatible_template_returns_400(db_session, tmp_path, m
 
 def test_edit_ops_incompatible_template_degrades_to_render_error(
     db_session, tmp_path, monkeypatch
-):
+, client):
     # F1 deliberate deviation: the typed-edit PATCH commits the edit BEFORE
     # rendering, so an incompatible template must NOT become a 4xx (that would
     # push clients to retry the applied ops). It degrades to a persisted
@@ -1174,26 +1024,22 @@ def test_edit_ops_incompatible_template_degrades_to_render_error(
     _seed(db_session, "ds_edit")
     _ready_no_extras_template(db_session, "noextra_edit")
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).patch(
-            "/api/base-resumes/ds_edit/edits?template_id=noextra_edit",
-            json={
-                "ops": [
-                    {
-                        "kind": "add_extra_section",
-                        "value": {
-                            "key": "awards",
-                            "title": "Awards",
-                            "type": "bullets",
-                            "bullets": ["First place"],
-                        },
-                    }
-                ]
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = client.patch(
+        "/api/base-resumes/ds_edit/edits?template_id=noextra_edit",
+        json={
+            "ops": [
+                {
+                    "kind": "add_extra_section",
+                    "value": {
+                        "key": "awards",
+                        "title": "Awards",
+                        "type": "bullets",
+                        "bullets": ["First place"],
+                    },
+                }
+            ]
+        },
+    )
 
     assert response.status_code == 200, response.text
     body = response.json()
@@ -1203,18 +1049,13 @@ def test_edit_ops_incompatible_template_degrades_to_render_error(
     assert [s["key"] for s in body["data"]["extra_sections"]] == ["awards"]
 
 
-def test_archived_base_resume_hidden_from_list_unless_requested(db_session):
+def test_archived_base_resume_hidden_from_list_unless_requested(db_session, client):
     _seed(db_session, slug="data_scientist")
     _seed(db_session, slug="old_track")
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        archived = client.post("/api/base-resumes/old_track/archive")
-        default_list = client.get("/api/base-resumes")
-        with_archived = client.get("/api/base-resumes?include_archived=true")
-    finally:
-        app.dependency_overrides.clear()
+    archived = client.post("/api/base-resumes/old_track/archive")
+    default_list = client.get("/api/base-resumes")
+    with_archived = client.get("/api/base-resumes?include_archived=true")
 
     assert archived.status_code == 200
     assert archived.json()["archived_at"] is not None
@@ -1222,27 +1063,22 @@ def test_archived_base_resume_hidden_from_list_unless_requested(db_session):
     assert [i["slug"] for i in with_archived.json()] == ["data_scientist", "old_track"]
 
 
-def test_unarchive_restores_to_the_default_list(db_session):
+def test_unarchive_restores_to_the_default_list(db_session, client):
     from datetime import UTC, datetime
 
     row = _seed(db_session, slug="old_track")
     row.archived_at = datetime.now(UTC)
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        client = TestClient(app)
-        restored = client.post("/api/base-resumes/old_track/unarchive")
-        listing = client.get("/api/base-resumes")
-    finally:
-        app.dependency_overrides.clear()
+    restored = client.post("/api/base-resumes/old_track/unarchive")
+    listing = client.get("/api/base-resumes")
 
     assert restored.status_code == 200
     assert restored.json()["archived_at"] is None
     assert [i["slug"] for i in listing.json()] == ["old_track"]
 
 
-def test_archived_base_resume_is_still_fully_resolvable(db_session):
+def test_archived_base_resume_is_still_fully_resolvable(db_session, client):
     """Archive hides from menus; it must never break the resume itself."""
     from datetime import UTC, datetime
 
@@ -1250,33 +1086,25 @@ def test_archived_base_resume_is_still_fully_resolvable(db_session):
     row.archived_at = datetime.now(UTC)
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        detail = TestClient(app).get("/api/base-resumes/old_track")
-    finally:
-        app.dependency_overrides.clear()
+    detail = client.get("/api/base-resumes/old_track")
 
     assert detail.status_code == 200
     assert detail.json()["slug"] == "old_track"
 
 
-def test_archive_404s_on_a_soft_deleted_resume(db_session):
+def test_archive_404s_on_a_soft_deleted_resume(db_session, client):
     from datetime import UTC, datetime
 
     row = _seed(db_session, slug="old_track")
     row.deleted_at = datetime.now(UTC)
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).post("/api/base-resumes/old_track/archive")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.post("/api/base-resumes/old_track/archive")
 
     assert response.status_code == 404
 
 
-def test_list_exposes_render_error_and_archived_at(db_session):
+def test_list_exposes_render_error_and_archived_at(db_session, client):
     from datetime import UTC, datetime
 
     row = _seed(db_session, slug="data_scientist")
@@ -1284,11 +1112,7 @@ def test_list_exposes_render_error_and_archived_at(db_session):
     row.archived_at = datetime(2026, 8, 4, tzinfo=UTC)
     db_session.commit()
 
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        response = TestClient(app).get("/api/base-resumes?include_archived=true")
-    finally:
-        app.dependency_overrides.clear()
+    response = client.get("/api/base-resumes?include_archived=true")
 
     assert response.status_code == 200
     item = response.json()[0]

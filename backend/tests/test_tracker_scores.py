@@ -2,31 +2,10 @@
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-from fastapi.testclient import TestClient
-
-from app.db import get_db
-from app.main import app
 from app.models.application import Application
 from app.models.ats_score import AtsScore
 from app.models.base_resume import BaseResume
 from app.models.job import Job
-
-
-def _override_db(db_session):
-    def _inner():
-        yield db_session
-
-    return _inner
-
-
-@pytest.fixture
-def client(db_session):
-    app.dependency_overrides[get_db] = _override_db(db_session)
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
 
 
 _seq = {"n": 0}

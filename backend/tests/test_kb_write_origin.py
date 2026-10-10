@@ -3,22 +3,8 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-import pytest
-from fastapi.testclient import TestClient
 
 from app.models.career_kb import KBEntity, KBPoint
-
-
-@pytest.fixture
-def client(db_session):
-    from app.db import get_db
-    from app.main import app
-
-    app.dependency_overrides[get_db] = lambda: db_session
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
 
 
 MCP_HEADERS = {

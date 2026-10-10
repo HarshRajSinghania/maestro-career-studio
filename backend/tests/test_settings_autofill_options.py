@@ -1,21 +1,4 @@
-import pytest
-from fastapi.testclient import TestClient
-
-from app.db import get_db
-from app.main import app
 from app.services import model_settings
-
-
-@pytest.fixture
-def client(db_session):
-    def _db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = _db
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
 
 
 def test_low_stakes_defaults_off_and_round_trips(db_session):
