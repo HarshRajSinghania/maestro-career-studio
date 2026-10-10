@@ -89,9 +89,9 @@ backend/
                        artifacts, application_render, engines (the ONE probe),
                        pdf_render (dual-engine: pdflatex + typst), pdf_preview,
                        jd_extraction, resume_lint, health_*, career_kb,
-                       chat_agent, chat_tools, autofill_choose + autofill_slots
-                       + jev (the Companion's fill pass and its Jev engine),
-                       automations (the Automations page's catalog), agent_runs + inbox_readiness, …)
+                       chat_agent + chat_tools, attachment_extract (stdlib DOCX),
+                       autofill_choose + autofill_slots + jev (Companion fill),
+                       automations (page catalog), agent_runs + inbox_readiness, …)
     automations/skills/  the agent prompts, one <name>/SKILL.md each: the Automations
                        source of the Automations page; indexed by docs/skills/README.md
     templates/         bundled .tex.j2 sources, typst_classic.typ and cover_letter.typ

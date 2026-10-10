@@ -116,14 +116,62 @@ def _transcribe_images(images: list[bytes], filename: str) -> str:
     return (text or "").strip()
 
 
-def _docx_text(data: bytes) -> str:
-    import docx
+_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
-    document = docx.Document(io.BytesIO(data))
-    parts = [p.text for p in document.paragraphs]
-    for table in document.tables:
-        for row in table.rows:
-            parts.append(" | ".join(cell.text for cell in row.cells))
+
+def _w_text(node) -> str:
+    """Read direct runs and hyperlinks; omit revisions and drawing content."""
+    out: list[str] = []
+    for child in node:
+        runs = child.findall(f"{_W}r") if child.tag == f"{_W}hyperlink" else [child]
+        for run in runs:
+            if run.tag != f"{_W}r":
+                continue
+            for el in run:
+                if el.tag == f"{_W}t":
+                    out.append(el.text or "")
+                elif el.tag in (f"{_W}tab", f"{_W}ptab"):
+                    out.append("\t")
+                elif el.tag == f"{_W}cr" or (
+                    el.tag == f"{_W}br" and el.get(f"{_W}type", "textWrapping") == "textWrapping"
+                ):
+                    out.append("\n")
+                elif el.tag == f"{_W}noBreakHyphen":
+                    out.append("-")
+    return "".join(out)
+
+
+def _docx_text(data: bytes) -> str:
+    import zipfile
+    from xml.etree import ElementTree
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        root = ElementTree.fromstring(archive.read("word/document.xml"))
+    body = root.find(f"{_W}body")
+    if body is None:
+        return ""
+    parts = [_w_text(p) for p in body.findall(f"{_W}p")]
+    for table in body.findall(f"{_W}tbl"):
+        previous: dict[int, str] = {}
+        for row in table.findall(f"{_W}tr"):
+            before = row.find(f"{_W}trPr/{_W}gridBefore")
+            column = int(before.get(f"{_W}val", "0")) if before is not None else 0
+            cells: list[str] = []
+            current: dict[int, str] = {}
+            for tc in row.findall(f"{_W}tc"):
+                span_node = tc.find(f"{_W}tcPr/{_W}gridSpan")
+                span = int(span_node.get(f"{_W}val", "1")) if span_node is not None else 1
+                merge = tc.find(f"{_W}tcPr/{_W}vMerge")
+                # Horizontal spans repeat the cell; vertical continuations use the cell above.
+                if merge is not None and merge.get(f"{_W}val", "continue") == "continue":
+                    text = previous[column]
+                else:
+                    text = "\n".join(_w_text(p) for p in tc.findall(f"{_W}p"))
+                cells.extend([text] * span)
+                current.update(dict.fromkeys(range(column, column + span), text))
+                column += span
+            previous = current
+            parts.append(" | ".join(cells))
     return "\n".join(parts)
 
 

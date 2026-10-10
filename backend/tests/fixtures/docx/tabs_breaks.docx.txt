@@ -1,0 +1,5 @@
+Tabs	and	text
+Line break
+Carriage returnPage breakColumn break	Positioned tab-hyphen linked text
+Next	paragraph
+with a break

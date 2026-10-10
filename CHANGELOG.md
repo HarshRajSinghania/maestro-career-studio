@@ -60,6 +60,8 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ### Removed
 
+- Word text extraction uses the standard library, removing python-docx and its
+  sole lxml dependency while preserving paragraph and table text output.
 - Four API routes with no caller outside tests: `POST /api/resume-lint/wording/reset`,
   `GET /api/kb/extra-section-presets`, `GET /api/resume-versions/{kind}/{key}/{number}/diff`,
   and `POST /api/kb/consolidate`. Word-bank reset still saves through `PUT /wording`;

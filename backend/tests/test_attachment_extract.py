@@ -1,4 +1,6 @@
 import io
+from xml.etree import ElementTree
+import zipfile
 
 import pytest
 
@@ -16,13 +18,31 @@ def _make_pdf_bytes(text: str) -> bytes:
 
 
 def _make_docx_bytes(paragraphs: list[str]) -> bytes:
-    import docx
-
-    document = docx.Document()
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    document = ElementTree.Element(f"{w}document")
+    body = ElementTree.SubElement(document, f"{w}body")
     for p in paragraphs:
-        document.add_paragraph(p)
+        paragraph = ElementTree.SubElement(body, f"{w}p")
+        run = ElementTree.SubElement(paragraph, f"{w}r")
+        ElementTree.SubElement(run, f"{w}t").text = p
     buf = io.BytesIO()
-    document.save(buf)
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr(
+            "[Content_Types].xml",
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Override PartName="/word/document.xml" '
+            'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+            '</Types>',
+        )
+        archive.writestr(
+            "_rels/.rels",
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Target="word/document.xml" '
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"/>'
+            '</Relationships>',
+        )
+        archive.writestr("word/document.xml", ElementTree.tostring(document))
     return buf.getvalue()
 
 

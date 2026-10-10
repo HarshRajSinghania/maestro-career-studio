@@ -1,0 +1,10 @@
+Before first table
+Between tables
+After both tables
+Name | Details
+Project | First paragraph
+Second paragraph
+
+Horizontal merge | Horizontal merge | Right
+Vertical merge | Middle | Last
+Vertical merge |  | End
