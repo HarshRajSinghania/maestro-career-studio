@@ -1460,6 +1460,65 @@ Run `check_system_md.py`, the docs slop check, the ledger check. **Commit** `doc
 
 Run each, record in the Gate table (with numbers), fix or log anything red.
 
+### Task 16: `maestro import-docker <checkout>` — one-time move from a Docker install (owner request, 2026-10-10)
+
+Added after the owner's first real uv install: the uv install starts empty, and the owner's data lives in a Docker
+checkout. This is the design's branch-C "one-time import" pulled forward (C reuses it). The Docker install is
+**only read, never written**.
+
+**Facts (owner's checkout, read-only, 2026-10-10):** layout `<checkout>/{data,applications,base_resumes,kb_documents,settings,exports}` (~250 MB) — the same
+folder names as `MAESTRO_HOME`; `data/maestro_cs.sqlite3` (+ -wal/-shm) at alembic head `559244b575bc`; `data/backups/`
+(old snapshots) and `data/handoff/` exist (do not import them); secrets in `settings/secrets/{sync-key,job-site-login.json}`
+(the Docker copy reads the sync key from `settings_dir/secrets/sync-key`, `app/services/sync/status.py:40`; the uv
+install forces `SYNC_KEY_FILE=<home>/sync-key`, `maestro_cs/home.py`); `.env` at the checkout root with
+OPENAI_API_KEY, GEMINI_API_KEY, FAST/SMART/CHAT_MODEL, SYNC_PUBLIC_HOST plus compose-only keys (*_HOST_PORT,
+POSTGRES_*). Stored container paths (`/app/...`): applications.artifact_dir (75), applications.pdf_path (133),
+applications.tex_path (133), base_resumes.pdf_path (20), base_resumes.tex_path (20), kb_documents.file_path (3),
+qa_entries.pdf_path (2); base_resumes.render_error (1, free text — leave it).
+
+**Behaviour** (`backend/maestro_cs/importer.py`, CLI `maestro import-docker CHECKOUT [--replace] [--dry-run]`):
+1. Refuse (one sentence each, nothing changed): CHECKOUT lacks `data/maestro_cs.sqlite3` or `docker-compose.yml`; the uv
+   Maestro is running (live supervisor record); anything answers on the uv ports or on the checkout's
+   `BACKEND_HOST_PORT`/8001 and 3000 (a running Docker stack — "Stop it with `docker compose down` in <checkout>");
+   the Docker DB's alembic revision ≠ this code's head (older → "update the Docker install to 0.9.0 first";
+   newer → "install a newer Maestro"); the uv home already holds user data (any job, application, or base resume other
+   than the demo `example`) unless `--replace`.
+2. Snapshot the uv home's current DB (Task 7's backup) — the undo point; print its path.
+3. Copy the Docker DB with the SQLite backup API (read-only source, WAL respected; reuse `app.tools.backup_db` logic, not a
+   file copy) into `<home>/data/maestro_cs.sqlite3`, replacing the uv one (move the old one aside first; restore it on
+   any later failure).
+4. Copy `applications/`, `base_resumes/`, `kb_documents/`, `exports/`, `settings/` into the home (merge; Docker's files
+   win over the uv install's fresh copies; never follow symlinks out of the checkout; keep 0600/0700 modes on POSIX).
+   Place the sync key where the uv install reads it: `settings/secrets/sync-key` → `<home>/sync-key` (0600).
+5. Rewrite stored paths in the copied DB inside ONE transaction: for each of the listed columns, replace a leading
+   `/app/<dir>/` with `<home>/<dir>/` for dir in {applications, base_resumes, kb_documents, exports, settings, data}
+   (exact prefix only; forward slashes stay forward on POSIX; on Windows write the native home path); report counts per
+   column; any remaining `/app/` value in those columns afterwards → fail and restore. Discover the columns by scanning
+   TEXT columns of every table for a `/app/` prefix rather than hard-coding only the list above, but only ever rewrite
+   values that START with `/app/`.
+6. `.env` → `maestro.env`: carry only keys the backend understands (app.config.Settings field names, uppercased, plus
+   HTTPS_PROXY/HTTP_PROXY/NO_PROXY/SSL_CERT_FILE), never path/port/database/compose keys (DATA_DIR…, DATABASE_URL,
+   *_HOST_PORT, POSTGRES_*, IMAGE_*, APP_UID/GID, COMPOSE_*, ALLOWED_HOSTS, MAESTRO_CS_UPLOAD_*). Append them to
+   `maestro.env` (keep its comments; never overwrite a key already set there — report it); values written verbatim
+   (quote safely); file stays 0600. Never print a secret value — print key names only.
+7. Verify: row counts per table equal between the Docker DB and the imported DB; sample up to 10 rewritten file paths and
+   report how many exist; `maestro check` revision == head. Print a summary and: "This Maestro now holds your data.
+   Don't run the Docker install alongside it — they share one sync identity." Exit 0.
+8. `--dry-run`: steps 1 and the read-only parts of 5–7 (what would be copied/rewritten/carried), changes nothing.
+On any failure after step 2: restore the uv DB from the moved-aside file, leave copied files (harmless) but say so,
+exit 1 with one sentence. Never touch the checkout. Windows: paths, `sync-key` mode no-op, `.env` parsing (python-dotenv,
+interpolate=False).
+
+**Tests** (`backend/tests/maestro_cs/test_importer.py`): build a fake checkout in tmp_path with a real migrated SQLite DB
+(use the app's migrations against a tmp file, insert rows with `/app/...` paths, a sync key, a `.env`), then import into a
+tmp home: counts equal, paths rewritten, files copied, key placed, env carried without secrets printed, refusals
+(running ports via an injected probe, revision mismatch, non-empty home, missing checkout), `--replace`, `--dry-run`
+changes nothing, failure mid-way restores the DB, checkout files byte-identical before/after (hash them).
+**Real dry run (controller, after review):** `maestro import-docker <owner checkout> --dry-run` against the owner's real
+checkout (read-only), then an import into a SCRATCH home (`MAESTRO_HOME=<scratch>`, spare ports) to prove it end to end
+before the owner runs it for real. Docs: README/UPDATING "Move from Docker to the uv install"; CHANGELOG Added;
+SYSTEM.md one line (others.md detail).
+
 ## Gate table
 
 | Gate | Pass condition | Result |
