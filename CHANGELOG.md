@@ -53,6 +53,8 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 ### Changed
 
 - Langfuse tracing is an optional extra; the Docker image still includes it.
+- Backend image copies files with the app user's ownership and excludes tests,
+  calibration and native-install scripts; the Docker sync-key tool stays available.
 
 ### Fixed
 

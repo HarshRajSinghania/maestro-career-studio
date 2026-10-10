@@ -699,11 +699,10 @@ with the failure mode that bought it. Code citing "§8" lands here.
   dev`. TeX is optional (`services/engines` searches the TeX homes itself, and
   `MAESTRO_CS_PDFLATEX=/nonexistent` simulates a TeX-less host). Full recipe: the maintainer's local
   `verify` skill (not shipped). Browser-pane gotchas: DPR mismatch → use ref clicks; toasts overlay the send button.
-- **Two dependency sources, on purpose.** `pyproject.toml` keeps `>=` floors (what
-  `pip install -e ".[dev,mcp]"` resolves); `backend/requirements.lock` is hash-pinned and is what the
-  **container image** installs, so a published image is reproducible. After changing a dependency, regenerate
-  the lock **on the target platform** (command in `backend/Dockerfile`; macOS/3.13 pip-compile gives wrong
-  pins). CI's `dependency-audit` (`pip-audit` on the lock) failing an unrelated PR on a new advisory is intended.
+- **Two dependency sources, on purpose.** `pyproject.toml` keeps `>=` floors for editable/dev installs
+  (`pip install -e ".[dev,mcp]"`, also CI); the container installs hash-pinned `backend/requirements.lock`.
+  Regenerate that lock with **`mcp` + `tracing` only, on Linux/Python 3.12** (command in `backend/Dockerfile`;
+  macOS/3.13 gives wrong pins). CI's `dependency-audit` (`pip-audit` on the lock) failing on a new advisory is intended.
 - **No Langfuse stack ships here** (the bundled compose file had fixed default secrets).
   The SDK is the `tracing` extra (included in Docker, omitted from desktop); `services/tracing.py` requires
   all three `LANGFUSE_*` settings. Tracing points at the user's host; `langfuse_host` defaults to empty.

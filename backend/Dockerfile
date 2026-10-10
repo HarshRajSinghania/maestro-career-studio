@@ -67,24 +67,27 @@ ARG APP_GID=1000
 RUN { getent group $APP_GID >/dev/null || groupadd --gid $APP_GID app; } \
     && useradd --uid $APP_UID --gid $APP_GID --create-home --shell /bin/bash app
 
+# The app user owns /app itself (not recursively — the COPYs below set their own
+# ownership), so startup can create data/, logs/ … when nothing is bind-mounted.
+RUN mkdir /app && chown $APP_UID:$APP_GID /app
 WORKDIR /app
-# Dependencies come from the hash-pinned lockfile, not from resolving
+# Runtime dependencies (mcp + tracing) come from the hash-pinned lockfile, not from resolving
 # pyproject.toml's floors at build time: a published image must be reproducible,
 # and a compromised upstream release must not be able to land in it silently.
 # pyproject.toml keeps its `>=` floors for editable/dev installs (`pip install
 # -e ".[mcp]"` still resolves normally). Regenerate the lock on the target
 # platform after changing a dependency:
 #   docker run --rm -v "$PWD/backend:/w" -w /w python:3.12-slim \
-#     sh -c "pip install pip-tools && pip-compile --extra dev --extra mcp \
-#            --generate-hashes --output-file requirements.lock pyproject.toml"
-COPY pyproject.toml requirements.lock ./
-RUN pip install --no-cache-dir -r requirements.lock \
-    && pip install --no-cache-dir --no-deps -e ".[dev]"
-
-COPY . .
+#     sh -c "pip install pip-tools && pip-compile --extra mcp --extra tracing \
+#            --upgrade-package mako --generate-hashes --no-emit-index-url \
+#            --output-file requirements.lock pyproject.toml"
 # Numeric, not `app:app`: when APP_GID matched an existing system group above,
 # the user's primary group is THAT group and no group named `app` exists.
-RUN chown -R $APP_UID:$APP_GID /app
+COPY --chown=$APP_UID:$APP_GID pyproject.toml requirements.lock ./
+RUN pip install --no-cache-dir -r requirements.lock \
+    && pip install --no-cache-dir --no-deps -e .
+
+COPY --chown=$APP_UID:$APP_GID . .
 USER app
 
 # Version identity, last so it invalidates one layer and not the TeX Live

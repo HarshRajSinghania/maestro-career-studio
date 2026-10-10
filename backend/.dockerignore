@@ -1,0 +1,12 @@
+tests/
+mcp_server/tests/
+# The sync-key CLI is also a Docker operator tool; other scripts are host-only.
+scripts/*
+!scripts/__init__.py
+!scripts/sync_key.py
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.slop-baseline.json
+.slopconfig.json
