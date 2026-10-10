@@ -81,7 +81,7 @@ Run on this Mac in a scratch dir (nothing in the repo changed):
 | R5 | "supervised background pair (pidfile …)" | `maestro run` is a foreground supervisor (used as-is by autostart units); `maestro start` detaches it. Stop = a `run/stop.request` file the supervisor polls, plus SIGTERM on POSIX; children stop with SIGTERM to their session (POSIX) or `CTRL_BREAK_EVENT` (Windows), then a tree kill after 10 s. Process identity = pid + psutil `create_time`. | One code path for all three OSes; no shutdown endpoint on a zero-auth API. |
 | R6 | "`update` — … `uv tool upgrade` → restart" | On Windows the running `maestro.exe` and venv `python.exe` are locked, so `update` snapshots, stops, then hands off to a detached `cmd` that waits for this process to exit, runs uv, and starts the new version (log: `logs/update.log`). POSIX runs uv in-process, then starts the new shim. | Windows cannot replace a running executable. |
 | R7 | (silent) | New core dependencies: `psutil` (process identity + tree kill on all OSes) and `python-dotenv` (already transitive via pydantic-settings; now imported directly). | Cross-platform supervisor without shelling out to `ps`/`taskkill`. |
-| R8 | (silent) | The `maestro` process never imports `app.*` before it has applied the install's environment (`app.config.settings` reads env at import). One-shot verbs (`check`, `migrate`, `connect`) apply it first; long-lived servers get it as child env. | Otherwise settings bind to `/app/...` defaults. |
+| R8 | (silent) | The `maestro` process never imports `app.*` before it has applied the install's environment (`app.config.settings` reads env at import). One-shot verbs (`check`, `migrate`, `connect`) call `apply_env()` first, which also does `os.chdir(home)`; long-lived servers get it as child env with cwd = home. | Otherwise settings bind to `/app/...` defaults, and `Settings(env_file=".env")` (config.py:46) would read a Docker checkout's `.env` from the user's cwd. |
 | R9 | "`uv tool install maestro-career-studio`" | Docs say `uv tool install --python 3.12 maestro-career-studio`. | CI and Docker run 3.12; uv would otherwise pick 3.14. uv downloads 3.12 itself. |
 | R10 | "`connect claude-desktop` … `{"command": "maestro", "args": ["mcp"]}`" | Writes the ABSOLUTE shim path (design item 7 says so too); the connect card's Claude Desktop row on a uv install shows `maestro connect claude-desktop` instead of the bundle download. | GUI apps lack `~/.local/bin` on PATH; the `.mcpb` is not in the wheel. |
 
@@ -89,6 +89,13 @@ Run on this Mac in a scratch dir (nothing in the repo changed):
 Claude Code command, both in `maestro connect claude-code` and on the connect card. Without it,
 `claude mcp add` writes a *local* (per-project) entry for whatever folder the terminal is in, so
 Maestro silently disappears in other projects.
+
+**Plan verification (Fable 5.1, 2026-10-10):** "ready after fixes". Folded in: the upgrade job's
+second wheel reuses the first wheel's web bundle (`--web-from`); `maestro run` exits 0 next to a live
+supervisor so autostart never loops; the bridge keeps Node's single total deadline; ports come from
+the process env before `maestro.env`; the web process's secret strip is in code; spawn errors are
+sentences; the migration test isolates its database; `apply_env` changes to the home folder (no cwd
+`.env`); the full list of places that print `claude mcp add`; minors.
 
 **Not in B′ (stays where the design put it):** the one-time import from a Docker checkout (C);
 PyInstaller, Electron, signing, a tray (B, C); the native bot scripts calling `maestro` (a later
@@ -143,8 +150,8 @@ scope. ADD tests beside pinned tests, never replace them.
   repo.
 - `backend/requirements.lock` is regenerated only inside `python:3.12-slim` with the recipe in
   `backend/Dockerfile`. If Docker is not running, log it and leave the lock for release time.
-- New tests for `maestro_cs` live in `backend/tests/maestro_cs/` (an `__init__.py`-less test dir
-  like the others; check `tests/` conventions first). Unit tests never bind 8001/3000, never touch
+- New tests for `maestro_cs` live in `backend/tests/maestro_cs/`, with an `__init__.py` like every
+  other `tests/` subdir (`ats/`, `sync/`, `tools/`, `browser/`). Unit tests never bind 8001/3000, never touch
   the real `MAESTRO_HOME`, never call `launchctl`/`systemctl`/`schtasks`/`uv`/the network: inject
   runners and use `tmp_path`.
 - Lint: `cd backend && python -m ruff check .`; frontend: `npx tsc --noEmit && npm run lint &&
@@ -222,9 +229,12 @@ def test_pypi_metadata():
     assert "Homepage" in project["urls"]
 ```
 
-`test_run_migrations_location.py`: in a `tmp_path` cwd (`monkeypatch.chdir`), with `DATA_DIR`
-pointing at `tmp_path` and a fresh database URL, call `seeding.run_migrations()` and assert the
-`alembic_version` row equals the head from `ScriptDirectory` of `backend/migrations`. Also assert
+`test_run_migrations_location.py`: in a `tmp_path` cwd (`monkeypatch.chdir`), with
+`monkeypatch.setenv("TEST_DATABASE_URL", f"sqlite:///{tmp_path}/t.sqlite3")` — `migrations/env.py`
+prefers `TEST_DATABASE_URL`, which conftest sets session-wide, and `settings` is built at import,
+so `DATA_DIR` alone would re-migrate the shared test DB — call `seeding.run_migrations()` and assert
+the `alembic_version` row **in that file** equals the head from `ScriptDirectory` of
+`backend/migrations`. Also assert
 `run_migrations` does not read `alembic.ini` (patch `alembic.config.Config.__init__` to record the
 `file_` argument and assert it is `None`). Follow how `tests/conftest.py:175` builds a migration
 config, and reuse its database fixture pattern rather than inventing one.
@@ -279,7 +289,8 @@ def package_version() -> str:
 `maestro_cs/__main__.py`: `from maestro_cs.cli import main; raise SystemExit(main())`.
 
 **Step 3:** Run the two test files → PASS; full suite in the CI-shaped venv (deps changed) → green.
-`pip install -e backend` in the branch venv so `maestro` resolves.
+`pip uninstall -y maestro-career-studio-backend && pip install -e backend` in the branch venv so
+`maestro` resolves (two editable finders would both serve `app`).
 
 **Step 4: Lock.** If Docker is running, regenerate `backend/requirements.lock` in
 `python:3.12-slim` with the Dockerfile recipe **plus** `--unsafe-package nodejs-wheel-binaries`, and
@@ -305,7 +316,9 @@ finite positive `rss_mb` and `peak_mb` — the contract `native/common.sh`'s `va
 `files.py`: `monkeypatch.delattr(os, "fchmod", raising=False)` and assert a sync file write still
 succeeds with its content intact.
 
-**Step 2: Implement.** `memory.py`: try `import resource` (POSIX); fall back to psutil.
+**Step 2: Implement.** `memory.py`: try `import resource` (POSIX); fall back to psutil. Keep a
+module-level `resource` name (`resource = None` on failure): `tests/test_health_memory.py:29,61`
+patches `memory.resource.getrusage`. The reload test restores `sys.modules` afterwards.
 `files.py`: `if hasattr(os, "fchmod"): os.fchmod(...)` else `os.chmod(path, mode)` after close
 (no-op-ish on Windows; protection is the per-user profile ACL, stated in Task 14's SECURITY.md).
 
@@ -378,8 +391,10 @@ Deviation log + Gate G7 pending. `npx tsc --noEmit && npm run lint`.
   mode asserts on win32).
 - `read_env_file` parses `KEY=value`, `KEY='v w'`, `KEY="v"`, comments, `export KEY=v`; ignores
   blank values (an empty value means unset, SYSTEM.md's scrub rule).
-- `ports_from({})` → (8001, 3000); `MAESTRO_PORT`/`MAESTRO_WEB_PORT` override; `"0"`, `"70000"`,
-  `"abc"` → `HomeError`; equal ports → `HomeError`.
+- `ports_from({}, {})` → (8001, 3000); precedence **process env > maestro.env > default** for
+  `MAESTRO_PORT`/`MAESTRO_WEB_PORT` (tests, CI and side-by-side stacks set them in the
+  environment; on the owner's Mac 8001/3000 are the live Docker stack); `"0"`, `"70000"`, `"abc"`
+  → `HomeError`; equal ports → `HomeError`.
 - `backend_env`: every path var under the home; `DATABASE_URL`, `TEST_DATABASE_URL`,
   `MAESTRO_CS_UPLOAD_HOST_ROOT`, `MCPB_BUNDLE_PATH` removed even if the env file or the parent
   env sets them; file values override inherited ones; enforced values override both;
@@ -388,8 +403,8 @@ Deviation log + Gate G7 pending. `npx tsc --noEmit && npm run lint`.
   `MAESTRO_CS_PUBLIC_BACKEND_URL=http://localhost:<p>`.
 - `web_env`: has `PORT`, `HOSTNAME=127.0.0.1`, `API_PROXY_BACKEND=http://127.0.0.1:<backend>`,
   `NODE_ENV=production`, `NEXT_TELEMETRY_DISABLED=1`; passes `FRONTEND_ALLOWED_HOSTS` from the env
-  file when set; and contains **no** key from the env file other than that (assert an
-  `OPENAI_API_KEY` in the file does not reach it).
+  file when set; and contains **no** key from the env file other than that, and no
+  `_WEB_STRIPPED` name inherited from the shell (assert both).
 - `runtime.node_path()` honours `MAESTRO_NODE`; otherwise ends in `bin/node` (POSIX) /
   `node.exe` (win32) under `nodejs_wheel`; `runtime.web_dir()` honours `MAESTRO_WEB_DIR`, else
   `maestro_cs/web`; `web_dir_ok()` is true only when `server.js` exists.
@@ -492,10 +507,13 @@ def _port(value: str | None, default: int, name: str) -> int:
     return int(value)
 
 
-def ports_from(settings: Mapping[str, str]) -> Ports:
+def ports_from(settings: Mapping[str, str], environ: Mapping[str, str] = os.environ) -> Ports:
+    def pick(name: str) -> str | None:
+        return (environ.get(name) or "").strip() or settings.get(name)
+
     ports = Ports(
-        _port(settings.get("MAESTRO_PORT"), DEFAULT_BACKEND_PORT, "MAESTRO_PORT"),
-        _port(settings.get("MAESTRO_WEB_PORT"), DEFAULT_WEB_PORT, "MAESTRO_WEB_PORT"),
+        _port(pick("MAESTRO_PORT"), DEFAULT_BACKEND_PORT, "MAESTRO_PORT"),
+        _port(pick("MAESTRO_WEB_PORT"), DEFAULT_WEB_PORT, "MAESTRO_WEB_PORT"),
     )
     if ports.backend == ports.web:
         raise HomeError("MAESTRO_PORT and MAESTRO_WEB_PORT must differ.")
@@ -532,9 +550,18 @@ def backend_env(home: Path, settings: Mapping[str, str], environ: Mapping[str, s
     return env
 
 
+# Never given to the web server, even when the user's shell exports them: it needs no secret.
+_WEB_STRIPPED = _STRIPPED + (
+    "OPENAI_API_KEY", "GEMINI_API_KEY", "OPENAI_BASE_URL", "LANGFUSE_PUBLIC_KEY",
+    "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST", "SYNC_REMOTE_URL", "SYNC_KEY_FILE",
+)
+
+
 def web_env(settings: Mapping[str, str], environ: Mapping[str, str], ports: Ports) -> dict[str, str]:
-    # Built from the parent environment, never from maestro.env: the UI server needs no API key.
-    env = {k: v for k, v in environ.items() if k not in _STRIPPED}
+    # Built from the parent environment (Node needs PATH, SYSTEMROOT, proxy variables), never
+    # from maestro.env, and minus every secret the backend reads.
+    env = {k: v for k, v in environ.items()
+           if k not in _WEB_STRIPPED and k not in settings}
     if settings.get("FRONTEND_ALLOWED_HOSTS"):
         env["FRONTEND_ALLOWED_HOSTS"] = settings["FRONTEND_ALLOWED_HOSTS"]
     env.update({
@@ -546,10 +573,9 @@ def web_env(settings: Mapping[str, str], environ: Mapping[str, str], ports: Port
     })
     return env
 ```
-Note for the executor: the parent environment may itself hold `OPENAI_API_KEY` (a user's shell).
-`web_env` inherits the parent env because Node needs `PATH`, `SYSTEMROOT` (Windows) and proxy
-variables; strip every key `backend_env` takes from the env file **and** every name in
-`app.config.Settings` that ends in `_API_KEY`/`_SECRET_KEY` (list them explicitly; a test pins it).
+Note for the executor: check `app.config.Settings` for any other secret field (`*_API_KEY`,
+`*_SECRET_KEY`, tokens) and add it to `_WEB_STRIPPED`; a test asserts that a shell-exported
+`OPENAI_API_KEY` and every key set in `maestro.env` are absent from `web_env`.
 
 `maestro.env.template`: the native `maestro.env.example`'s settings (API keys, base URL, models,
 proxy, `SYNC_REMOTE_URL`) as commented `KEY=` lines in dotenv syntax, plus `#MAESTRO_PORT=8001` and
@@ -585,7 +611,10 @@ ports from a `socket.bind(("127.0.0.1", 0))` helper.
   window makes `run()` return 1 and stop the other child.
 - A child that never becomes healthy → `run()` returns 1 within `health_timeout`, log names it.
 - A child that ignores SIGTERM is killed after `grace` (set `grace=1` in the test).
-- Logs: `backend.log` from a previous run is kept as `backend.log.1`.
+- Logs: `backend.log` from a previous run is kept as `backend.log.1`; an in-run restart appends
+  to `backend.log` (rotation is once per `run()`).
+- A missing child executable (`argv[0]` does not exist) → `run()` returns 1 with a sentence, no
+  traceback.
 - POSIX: SIGTERM to the supervisor (run it as a subprocess via `python -m maestro_cs.supervisor`
   test entry, or a thread-safe flag hook) stops cleanly with 0.
 `signal.signal` only works on the main thread, so tests run `Supervisor.run()` on the main
@@ -729,6 +758,7 @@ class Supervisor:
         for name in ("stop.request", "ready.json"):
             (self.run_dir / name).unlink(missing_ok=True)
         procs.write_record(self.run_dir / "supervisor.json", os.getpid())
+        self._rotate_logs()
         self._install_signals()
         try:
             for spec in self.specs:
@@ -755,24 +785,36 @@ class Supervisor:
         for name in names:
             signal.signal(getattr(signal, name), handler)
 
-    def _spawn(self, spec: ChildSpec) -> subprocess.Popen:
-        if spec.log.exists():
-            os.replace(spec.log, spec.log.with_name(spec.log.name + ".1"))
-        log = open(spec.log, "ab")  # noqa: SIM115 - the child owns it for its lifetime
+    def _rotate_logs(self) -> None:
+        # Once per run, not per spawn: an in-run restart appends, so the crash that caused it
+        # stays in the same file instead of overwriting last run's backend.log.1.
+        for spec in self.specs:
+            if spec.log.exists():
+                os.replace(spec.log, spec.log.with_name(spec.log.name + ".1"))
+
+    def _spawn(self, spec: ChildSpec) -> subprocess.Popen | None:
         kwargs: dict = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {
             "start_new_session": True}
         try:
-            proc = subprocess.Popen(spec.argv, cwd=spec.cwd, env=spec.env, stdin=subprocess.DEVNULL,
-                                    stdout=log, stderr=subprocess.STDOUT, **kwargs)
-        finally:
-            log.close()
+            with open(spec.log, "ab") as log:  # the child keeps its own handle
+                proc = subprocess.Popen(spec.argv, cwd=spec.cwd, env=spec.env,
+                                        stdin=subprocess.DEVNULL, stdout=log,
+                                        stderr=subprocess.STDOUT, **kwargs)
+        except OSError as exc:  # e.g. node missing or not executable
+            self.say(f"Cannot start {spec.name}: {exc.strerror or exc}.")
+            return None
         self.children[spec.name] = proc
-        procs.write_record(self.run_dir / f"{spec.name}.json", proc.pid)
+        try:
+            procs.write_record(self.run_dir / f"{spec.name}.json", proc.pid)
+        except psutil.Error:
+            pass  # it already exited; _start reports the exit code
         self.say(f"Started {spec.name} (pid {proc.pid}).")
         return proc
 
     def _start(self, spec: ChildSpec) -> bool:
         proc = self._spawn(spec)
+        if proc is None:
+            return False
         deadline = time.monotonic() + spec.health_timeout
         while time.monotonic() < deadline:
             if self._should_stop():
@@ -856,7 +898,10 @@ server holds no data. Log what the Windows CI job observes.)
   `http://127.0.0.1:<backend>/health`, timeout 120 s; web `[node_path(), "server.js"]`, cwd =
   `web_dir()`, health `http://127.0.0.1:<web>/api/version` (proves the proxy too), timeout 60 s.
   Refuses with a sentence if `web_dir_ok()` is false ("This copy has no web app; reinstall with
-  `uv tool install --force …`"). Logs to `logs/supervisor.log`.
+  `uv tool install --force …`"). **If `run/supervisor.json` names a live supervisor
+  (`procs.live_process`), prints "Maestro is already running." and exits 0** — so a launchd/systemd
+  copy started next to a manual one never fails, and `KeepAlive.SuccessfulExit=false` /
+  `Restart=on-failure` never loop. Logs to `logs/supervisor.log`.
 - `maestro start [--no-browser] [--skip-model]`:
   1. already running (supervisor record live) → "Maestro is already running at http://localhost:3000." exit 0.
   2. Port preflight on both ports: `port_free(port)` (POSIX `SO_REUSEADDR` so TIME_WAIT passes —
@@ -935,7 +980,8 @@ check's keys and `code_head` == the head the test computes; R8 — patch `os.env
 - Test: `backend/tests/maestro_cs/test_bridge.py` — one test per case in `mcpb/tests/bridge.test.js`
   (read it; mirror names), using `httpx.MockTransport`.
 
-**Contract (identical to `mcpb/server/index.js`):** newline-delimited JSON-RPC on stdin/stdout;
+**Contract (identical to `mcpb/server/index.js`, including bridge.test.js:198 "the overall
+deadline includes a response body that keeps sending data"):** newline-delimited JSON-RPC on stdin/stdout;
 each line POSTed to `http://localhost:<port>/mcp[/profile]` with `Accept: application/json,
 text/event-stream` and the session header once known; remembers `initialize` and
 `notifications/initialized`; on HTTP 404 with a session, replays the handshake without the stale
@@ -943,7 +989,7 @@ id, then retries the line once; 200 → write the body; 202 → nothing; other s
 error for requests with an `id`; parse error → `{"id": null, "error": {"code": -32700}}`; a
 non-object line → a stderr sentence; connection refused → "Maestro Career Studio is not running at
 http://localhost:8001. Start it with `maestro start` and try again."; 10-minute bound → the same
-timeout sentence as Node. stdout carries JSON-RPC only (write bytes + `\n`, flush; never `print`
+timeout sentence as Node (tests inject `timeout=0.08`, as the Node tests use 80 ms). stdout carries JSON-RPC only (write bytes + `\n`, flush; never `print`
 diagnostics there). `trust_env=False` (loopback; the branch A lesson).
 
 ```python
@@ -952,6 +998,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from typing import Any, BinaryIO, TextIO
 
 import httpx
@@ -978,6 +1025,7 @@ class Bridge:
                  stderr: TextIO | None = None, timeout: float = TIMEOUT_SECONDS) -> None:
         self.backend_url = backend_url.rstrip("/")
         self.url = mcp_url(backend_url, profile)
+        self.timeout = timeout
         self.client = client or httpx.Client(timeout=httpx.Timeout(timeout), trust_env=False)
         self.stdout = stdout or sys.stdout.buffer
         self.stderr = stderr or sys.stderr
@@ -994,8 +1042,18 @@ class Bridge:
                    "Content-Type": "application/json"}
         if self.session_id:
             headers["Mcp-Session-Id"] = self.session_id
+        # One deadline covers connect, headers and the complete body (httpx's own timeouts are
+        # per phase, so a body that keeps trickling would never time out).
+        deadline = time.monotonic() + self.timeout
         try:
-            response = self.client.post(self.url, content=line.encode("utf-8"), headers=headers)
+            with self.client.stream("POST", self.url, content=line.encode("utf-8"),
+                                    headers=headers) as response:
+                chunks = []
+                for chunk in response.iter_bytes():
+                    chunks.append(chunk)
+                    if time.monotonic() > deadline:
+                        raise httpx.ReadTimeout(TIMEOUT_MESSAGE)
+                status, session = response.status_code, response.headers.get("mcp-session-id")
         except httpx.TimeoutException:
             message = TIMEOUT_MESSAGE
         except (httpx.ConnectError, httpx.UnsupportedProtocol, httpx.InvalidURL):
@@ -1005,12 +1063,12 @@ class Bridge:
             message = FAILED_MESSAGE
         else:
             body = None
-            if response.status_code == 200:
+            if status == 200:
                 try:
-                    body = response.json()
+                    body = json.loads(b"".join(chunks))
                 except ValueError:
                     raise BridgeError("Maestro Career Studio returned an invalid JSON response.") from None
-            return response.status_code, response.headers.get("mcp-session-id"), body
+            return status, session, body
         print(message, file=self.stderr, flush=True)
         raise BridgeError(message)
 
@@ -1087,8 +1145,11 @@ tools; restart the backend mid-session and send `tools/list` again (replay works
 `settings` — add `maestro_install: str = ""` to `Settings`), the `claude-desktop` client is
 `kind="command"`, `value="maestro connect claude-desktop"`; otherwise unchanged. If the owner said
 yes to the scope proposal, the `claude-code` value becomes
-`claude mcp add --scope user --transport http maestro-career-studio <url>` (update its tests and the
-two docs that print it: grep for `claude mcp add`). Test both installs. Check the card renders
+`claude mcp add --scope user --transport http maestro-career-studio <url>`. Update every place that
+prints it: `README.md:437`, `docs/GETTING_STARTED.md:249`, `backend/mcp_server/README.md:41`,
+`plugins/maestro-career-studio/README.md:52`, `docs/RELEASING.md:43`, `scripts/setup-mcp.sh:74`
+(its own `--scope` handling at :151 explains local vs user — keep it consistent), and the pin in
+`backend/tests/test_setup_connect.py:33` (re-grep `claude mcp add` before editing). Test both installs. Check the card renders
 `kind="command"` for any client id (`connect-assistant-card.tsx:97`) — no frontend change expected.
 
 **CLI:** `maestro connect [client] [--profile P] [--print]`. No client → list the clients and,
@@ -1135,8 +1196,13 @@ Pure render functions (tested by snapshot-style asserts) + an injected `runner` 
 - **Windows:** `schtasks /Create /TN "Maestro Career Studio" /SC ONLOGON /RL LIMITED /F /TR "<pythonw.exe> -m maestro_cs run"`
   (`venv_python(windowless=True)` so no console window appears at logon); off: `schtasks /Delete /TN … /F`.
   Quote the `/TR` value for paths with spaces (test it).
-- `is_enabled()` for `status`. Autostart never starts or stops Maestro now; it prints "Maestro
-  will start when you log in." / "… no longer starts at login." Off by default.
+- `is_enabled()` for `status`. Off by default. The platforms differ on "now", and the messages
+  say so: **macOS** `bootstrap` of a `RunAtLoad` plist starts Maestro immediately ("Maestro will
+  start when you log in; it is starting now.") — harmless if it already runs, because `maestro run`
+  exits 0 when a live supervisor exists; `off` (`bootout`) stops the launchd copy, so print
+  "Maestro no longer starts at login and has stopped; run `maestro start` to use it now."
+  **Linux** `enable` without `--now` and **Windows** ONLOGON do not start it now ("Maestro will
+  start when you log in."). Test each message.
 
 **Commit** `feat(maestro): autostart at login on macOS, Linux and Windows`.
 
@@ -1161,7 +1227,9 @@ Flow (each step a function with injected network/runner):
    `%USERPROFILE%\.local\bin\uv.exe`; none → print the manual command and how to restart, exit 1,
    data untouched). Command: `uv tool upgrade maestro-career-studio`, or with `--source WHEEL`
    (tests/offline) `uv tool install --force --python 3.12 WHEEL`.
-   - POSIX: run it; on failure print its output, start the old version again if it was running,
+   - POSIX: import everything the post-upgrade path needs (`webbrowser`, `urllib.request`,
+     `json`, `subprocess`, the control module) **before** running uv, which swaps the venv's files
+     under this process. Run it; on failure print its output, start the old version again if it was running,
      exit 1. On success run `<shim_path()> start --no-browser` as a **new** process (this one
      still has the old code loaded) if it was running.
    - Windows (R6): spawn detached `cmd /d /c` that waits for this pid to exit (poll with
@@ -1187,8 +1255,10 @@ correctly (quote paths with spaces) without running it; `--yes` skips the prompt
 - Create: `scripts/build_wheel.py`, `scripts/check_wheel.py`, `scripts/smoke_uv_install.py`
 - Test: `backend/tests/test_wheel_scripts.py` (pure helpers only: member rules, version rewrite)
 
-`build_wheel.py [--version X] [--skip-frontend] [--out dist]` (stdlib only, runs on all three CI
-OSes):
+`build_wheel.py [--version X] [--skip-frontend | --web-from WHEEL] [--out dist]` (stdlib only, runs
+on all three CI OSes). `--web-from` copies `maestro_cs/web/` out of an existing wheel instead of
+building the frontend (the upgrade job has no frontend build; its second wheel would otherwise ship
+no web app and `maestro run` would refuse):
 1. Version = `--version` or `backend/pyproject.toml`'s.
 2. Unless `--skip-frontend`: `npm ci` and `npm run build` in `frontend/` with
    `NEXT_PUBLIC_APP_VERSION=<version>`, `NEXT_TELEMETRY_DISABLED=1`.
@@ -1254,12 +1324,15 @@ in the Gate table (G2, G3-macOS).
   `FASTEMBED_CACHE_PATH` there (copy in before start) so each run doesn't download 100 MB;
   `python scripts/smoke_uv_install.py --wheel dist/*.whl --expect-version 0.0.0.dev1`.
 - `uv-upgrade` job: needs `uv-wheel`; matrix `[ubuntu-latest, windows-latest]`; builds a second
-  wheel `--version 0.0.0.dev2 --skip-frontend` (backend version is what's checked); installs dev1,
+  wheel `--version 0.0.0.dev2 --web-from <downloaded dev1 wheel>` (the backend version is what's
+  checked; the web bundle is reused, so the frontend reports dev1 — expected); installs dev1,
   starts, creates a base resume through the API, `maestro update --source <dev2 wheel> --yes`
   (Windows: then poll `maestro status --json` up to 120 s), asserts backend version dev2, the base
   resume still there, a snapshot in `backups/`, then stops.
-- Trigger: PRs/pushes touching `backend/**`, `frontend/**`, `scripts/*wheel*`, `scripts/smoke_*`,
-  the workflow itself — follow how the existing jobs filter paths.
+- Trigger: the same as the existing jobs (push to `main`, pull requests; ci.yml has no `paths:`
+  filters today — don't invent them). Note in the CHANGELOG/Deviation log that the backend,
+  mcp-cold-install and dependency-audit installs now also download `nodejs-wheel-binaries`
+  (~60 MB wheel, ~200 MB installed) each run; accepted.
 - Match the repo's action pinning style (SHA pins if the existing jobs use them).
 
 **pypi.yml:**
@@ -1308,8 +1381,8 @@ record "pending CI" until the first run.
   rollback line, and "a Docker install and a uv install are separate copies; don't run both at once".
 - PRIVACY: the code comes from PyPI; `maestro status`/`maestro update` contact `pypi.org` (version)
   and `raw.githubusercontent.com` (changelog) only when you run them; the scoring model downloads
-  from Hugging Face on first start into your Maestro folder (check how PRIVACY already words the
-  model download and reuse it).
+  from Hugging Face on first start into your Maestro folder. PRIVACY.md has no model-download
+  wording today (Docker downloads it too) — write it fresh and make it true for both installs.
 - SECURITY: both servers bind 127.0.0.1; on Windows file modes are not enforced, so protection
   is the per-user `%APPDATA%` ACL (state what Task 2/CI verified); the web server process gets no
   API keys; `maestro.env` is the only secrets file.
