@@ -151,7 +151,8 @@ def backend_env(home: Path, settings: Mapping[str, str], environ: Mapping[str, s
         f"http://localhost:{ports.web},http://127.0.0.1:{ports.web}"
     )
     blocked = set(_STRIPPED) | set(enforced) | {_ORIGINS}
-    env = _without(environ, blocked)
+    # A name set in maestro.env wins over the shell in any capitalisation.
+    env = _without(environ, blocked | {k.upper() for k in settings})
     env.update(_without(settings, blocked))
     env[_ORIGINS] = origins
     env.update(enforced)

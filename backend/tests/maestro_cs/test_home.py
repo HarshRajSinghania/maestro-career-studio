@@ -9,6 +9,7 @@ import pytest
 from maestro_cs import home as H
 from maestro_cs.home import HomeError, Ports
 
+BACKEND_DIR = Path(__file__).resolve().parents[2]
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
 
 
@@ -271,9 +272,12 @@ def test_lowercase_overrides_cannot_move_the_database(tmp_path):
     env = _backend(tmp_path, settings=lowered, environ={**lowered, "PATH": os.environ.get("PATH", "")})
     if sys.platform == "win32":
         env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+    # Import `app` from this checkout, not wherever the venv's editable install points.
+    env["PYTHONPATH"] = str(BACKEND_DIR)
+    assert not (tmp_path / ".env").exists()
     code = "from app.config import settings; print(settings.data_dir); print(settings.database_url)"
     out = subprocess.run(
-        [sys.executable, "-I", "-c", code], env=env, cwd=tmp_path,
+        [sys.executable, "-c", code], env=env, cwd=tmp_path,
         capture_output=True, text=True, check=True,
     ).stdout.split("\n")
     assert Path(out[0]) == tmp_path / "data"
@@ -320,3 +324,9 @@ def test_failed_template_read_leaves_no_env_file(tmp_path, monkeypatch):
 def test_ports_reject_non_ascii_digits(bad):
     with pytest.raises(HomeError, match="MAESTRO_PORT"):
         H.ports_from({}, {"MAESTRO_PORT": bad})
+
+
+def test_a_file_setting_beats_the_shell_in_any_capitalisation(tmp_path):
+    env = _backend(tmp_path, settings={"fast_model": "b"}, environ={"FAST_MODEL": "a"})
+    variants = {k: v for k, v in env.items() if k.upper() == "FAST_MODEL"}
+    assert variants == {"fast_model": "b"}
