@@ -58,6 +58,16 @@ Never expand scope.
 - Slop ratchet, per surface touched: `python3 ~/.claude/skills/ai-slop-detector/scripts/slop_scan.py check <backend|frontend|extension>`
   from the repo root. If it fails only because a COUNT metric moved down or hotspots moved,
   re-baseline with `... baseline <surface>` and say why in the commit.
+- **CI-shaped venv for any task that removes a dependency (6, 7, 9).** The shared anaconda env
+  still has every package, so it cannot catch a missing one; CI installs `pip install -e ".[dev,mcp]"`
+  (`.github/workflows/ci.yml:48`), not the lock. Build a throwaway venv exactly like CI under the
+  scratchpad and run the suite there (KB "Agent lessons" e354b9bb / a6240360):
+  ```bash
+  SP=/private/tmp/claude-501/-Users-ajeyds-Projects-maestro-career-studio--claude-worktrees-desktop-app-phase-three-a2c0b5/56b3260b-72d9-445f-b6d1-91985eb85172/scratchpad
+  ~/.langflow/uv/uv venv -p 3.12 $SP/ci-venv && VIRTUAL_ENV=$SP/ci-venv ~/.langflow/uv/uv pip install -e "backend[dev,mcp]"
+  cd backend && MAESTRO_SKIP_SLOW=1 $SP/ci-venv/bin/python -m pytest tests/ mcp_server/tests/ -q -n auto --dist loadfile -p no:cacheprovider
+  ```
+  (`uv` lives at `~/.langflow/uv/uv` on this machine; `-p 3.12` matches CI's Python.)
 - Commit after every task. End each message with:
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` (or the executing model's line).
 
@@ -80,7 +90,11 @@ Never expand scope.
 
 **Step 2:** Run the full suite; record pass/skip counts and wall time in the Gate table below.
 
-**Step 3:** Run all three slop checks and `scripts/check_system_md.py`; record results.
+**Step 3:** Run all three slop checks and `scripts/check_system_md.py`; record results. Also record
+the slop checks for `main` (e.g. `git worktree add $SP/main-ro origin/main` read-only, or
+`git stash`-free: run the scan from that throwaway worktree, then `git worktree remove` it), so a
+later failure can be told apart from one `main` already has: a ratchet the default branch already
+fails cannot be passed by splitting functions (KB "Agent lessons" 98a592ed).
 
 No commit.
 
@@ -330,6 +344,10 @@ Note on order: python-docx's `document.paragraphs` are the BODY's direct `w:p` c
 - Modify: `backend/app/services/attachment_extract.py:119-127`
 - Create: `backend/tests/fixtures/docx/` (two or three small real `.docx` files: plain paragraphs; a table; tabs/line breaks). Generate them ONCE with python-docx BEFORE removing it, via a throwaway script in the scratchpad, and commit the binaries.
 - Test: `backend/tests/test_attachment_extract_docx.py` (new)
+- Modify: `backend/tests/test_attachment_extract.py:19` — `_make_docx_bytes` imports python-docx;
+  rewrite it to build a minimal `.docx` with `zipfile` (a `[Content_Types].xml`, `_rels/.rels` and
+  `word/document.xml` with `w:p`/`w:tbl`), or have it read the new fixtures. Without this, CI fails
+  with `ModuleNotFoundError` once python-docx leaves `pyproject.toml`.
 - Modify: `backend/pyproject.toml` (drop `python-docx`), `THIRD_PARTY_NOTICES.md` (drop python-docx and lxml if lxml has no other dependent — check `requirements.lock` "via" lines)
 
 **Step 1: Golden test, written while python-docx is still installed:**
@@ -397,10 +415,12 @@ log it as a deviation and name it in CHANGELOG.) Bad zip / missing `word/documen
 surface the same way the old code failed — check how callers handle `_docx_text` exceptions
 (`UnreadableFile` mapping) and keep that contract; add a test with a non-zip payload.
 
-**Step 4:** Remove `python-docx` from `pyproject.toml`; `pip uninstall -y python-docx` in the
-anaconda env is NOT allowed (shared env) — instead verify no import remains:
-`git grep -n "import docx\|from docx" backend` → nothing. Run the new test file and
-`git grep -l attachment_extract backend/tests` files.
+**Step 4:** Rewrite `_make_docx_bytes` (above). Remove `python-docx` from `pyproject.toml`;
+`pip uninstall` in the anaconda env is NOT allowed (shared env). Verify:
+`git grep -n "import docx\|from docx" backend` → nothing (today it finds
+`app/services/attachment_extract.py:120` AND `tests/test_attachment_extract.py:19`). Then run the
+new test file and every `git grep -l attachment_extract backend/tests` file in the **CI-shaped
+venv** (Ground rules) — it has no python-docx, so it is the only run that proves the removal.
 
 **Step 5:** Commit: `refactor(attachments): read .docx with zipfile + ElementTree; drop python-docx (and lxml)`.
 The lock is regenerated in Task 9.
@@ -453,7 +473,11 @@ def test_missing_langfuse_package_says_how_to_enable_it(monkeypatch, caplog):
 
 **Step 4:** Update `README`/`docs` wherever Langfuse setup is described (`git grep -n -i langfuse -- README.md docs SYSTEM.md CONTRIBUTING.md`): Docker images keep it (Task 9 compiles the lock with `--extra tracing`); the desktop build will not. SYSTEM.md §9 "No Langfuse stack ships here" bullet gains one clause: the SDK is the `tracing` extra. CHANGELOG (Unreleased): "Changed: Langfuse tracing is an optional extra; the Docker image still includes it."
 
-**Step 5:** Run `tests/test_tracing.py`; full suite. Commit: `build: langfuse becomes the optional 'tracing' extra`.
+**Step 5:** Run `tests/test_tracing.py`, then the full suite in the **CI-shaped venv** (no
+langfuse there). Expected: green — `test_tracing.py` only monkeypatches settings, and
+`test_filled_answers_invariant.py:82` only greps import lines. If any test needs the real SDK, add
+`tracing` to `ci.yml:48` (`.[dev,mcp,tracing]`) and log it; otherwise CI deliberately runs without
+it, which is the desktop build's shape. Commit: `build: langfuse becomes the optional 'tracing' extra`.
 
 ---
 
@@ -531,7 +555,8 @@ docker rmi maestro-trim-check
 Also check `docker-compose.dev.yml`: if it runs pytest or ruff inside the image, give the dev
 override its own `pip install -e ".[dev]"` step rather than putting dev tools back in the image.
 
-**Step 5:** Full suite (local env unaffected). Commit: `build(docker): runtime-only lock and image; .dockerignore; mako off the yanked release`.
+**Step 5:** Full suite in the CI-shaped venv (the lock no longer carries dev tools; CI never read it for
+tests, but confirm nothing else did). Commit: `build(docker): runtime-only lock and image; .dockerignore; mako off the yanked release`.
 
 ---
 
@@ -601,7 +626,9 @@ not chase all of them; stop when remaining sites are non-mechanical. Log the cou
   tool-removal tests (pinned). Before deleting each, read it: if it guards a SECURITY or privacy
   rule ("never leak X") rather than a removed UI element, keep it and log it.
 
-**Steps:** one commit per item (T3, T4, T7, T9). Browser tests need Playwright with
+**Steps:** one commit per item (T3, T4, T7, T9). After T3, run the backend slop check: moving an
+assertion raises the receiving test's complexity count (KB "Agent lessons" 98a592ed) — re-baseline
+with that reason if it is the only movement. Browser tests need Playwright with
 `channel="chrome"` locally; run each touched browser file alone, then the full suite at the end.
 Record the new wall time in the Gate table.
 
@@ -683,7 +710,11 @@ must re-check these names.
 
 **Step 3: Browser check** (SYSTEM.md §9: never against the compose stack). Start a fresh backend
 per the worktree recipe (uvicorn on a free port, all `*_DIR` under the scratchpad) and
-`API_PROXY_BACKEND=http://127.0.0.1:<port> npx next dev -p 3100`; open
+`API_PROXY_BACKEND=http://127.0.0.1:<port> npx next dev -p 3100`. The worktree sits inside the main
+checkout, so dotenv can pick up the main `.env`: start uvicorn with the sync and AI-key variables
+blanked (`SYNC_REMOTE_URL= SYNC_PUBLIC_HOST= OPENAI_API_KEY= GEMINI_API_KEY=`) as well as every
+`*_DIR` under the scratchpad (KB "Agent lessons" 2e89fc15). Before opening the browser,
+`ls public/monaco/vs/language` must show only `json`. Open
 `http://localhost:3100`. Open (a) the JSON editor (a base resume's JSON/advanced view) and (b) the
 LaTeX template editor (Templates → a LaTeX template → edit). In each: the editor renders, typing
 works, JSON shows validation squiggles for invalid JSON, and the network log shows NO 404 under
@@ -801,3 +832,4 @@ at the end run the full suite and the extension slop check.
 |---|---|---|---|---|
 | (planning) | D1, D2, D3, T6 in branch 0 | need branch B's standalone build / sidecar spec / macOS job | moved to branch B | Subtraction first; evidence over assumption |
 | (planning) | D5 add playwright to the lock | Task 9 removes dev extras from the lock | dropped | — |
+| (planning, KB review) | Task 6 grep "→ nothing" | `tests/test_attachment_extract.py:19` imports python-docx; CI installs `.[dev,mcp]` not the lock | rewrite the helper; CI-shaped venv gate for tasks 6/7/9 | A cut is done only when every reader is gone |
