@@ -295,6 +295,35 @@ def test_a_run_next_to_a_live_supervisor_exits_zero_so_bootstrap_is_harmless(tmp
     assert "already running" in capsys.readouterr().out
 
 
+def test_a_busy_port_at_login_exits_zero_so_the_supervisor_units_do_not_loop(tmp_path, monkeypatch, capsys):
+    # Docker (or anything) holding 8001/3000 at login: launchd restarts a non-zero `run` every
+    # ~10 s and systemd until StartLimitBurst; a clean exit 0 ends it, and the user is told why.
+    assert plistlib.loads(render_plist(SHIM, Path(HOME), False))["KeepAlive"] == {"SuccessfulExit": False}
+    unit = render_unit(SHIM, Path("/home/ann/.local/share/maestro-career-studio"))
+    assert "Restart=on-failure" in unit and f"ExecStart={SHIM} run" in unit
+    monkeypatch.setattr(control, "web_bundle_missing", lambda environ: False)
+    monkeypatch.setattr(control, "port_free", lambda port, host="127.0.0.1": False)
+    monkeypatch.setattr(control, "http_get_json", lambda url, timeout=2.0: {"version": "0.8.0"})
+    ctx = control.load_context({"MAESTRO_HOME": str(tmp_path / "home")})
+    assert control.run(ctx) == 0
+    assert "Another Maestro (version 0.8.0) is already running" in capsys.readouterr().out
+
+
+def test_windows_autostart_runs_start_which_refuses_a_busy_port_with_a_sentence(tmp_path, monkeypatch, capsys):
+    # The Windows task has no restart setting and runs `start`; `start` raises ControlError, which
+    # the CLI turns into one stderr sentence and exit 1 (never a traceback).
+    xml = render_task_xml(PYTHONW, "ann")
+    assert "RestartOnFailure" not in xml and "-m maestro_cs start --no-browser" in xml
+    monkeypatch.setattr(control, "web_bundle_missing", lambda environ: False)
+    monkeypatch.setattr(control, "port_free", lambda port, host="127.0.0.1": False)
+    monkeypatch.setattr(control, "http_get_json", lambda url, timeout=2.0: None)
+    monkeypatch.setenv("MAESTRO_HOME", str(tmp_path / "home"))
+    assert cli.main(["start", "--no-browser"]) == 1
+    err = capsys.readouterr().err
+    assert err.startswith("Port ") and "is in use by another program" in err
+    assert "Traceback" not in err
+
+
 # --- Linux ---------------------------------------------------------------------------------
 
 def linux_enable_creates_link(tmp_path):

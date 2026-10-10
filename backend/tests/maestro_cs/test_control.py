@@ -553,8 +553,81 @@ def test_run_refuses_without_a_web_bundle(rig, monkeypatch):
         control.run(rig.ctx)
 
 
+class NoSupervisor:
+    """A Supervisor stand-in that fails the test when `run` gets as far as building children."""
+
+    def __init__(self, *args, **kwargs):
+        raise AssertionError("run spawned children although a port was busy")
+
+
+def free_ports(monkeypatch, busy=(), versions=None):
+    """Swap the module-level probes `run` uses; returns the list of URLs it asked."""
+    asked = []
+    monkeypatch.setattr(control, "port_free", lambda port, host="127.0.0.1": port not in busy)
+
+    def fake_get(url, timeout=2.0):
+        asked.append(url)
+        return (versions or {}).get(int(url.split(":")[2].split("/")[0]))
+
+    monkeypatch.setattr(control, "http_get_json", fake_get)
+    return asked
+
+
+def test_run_with_a_docker_maestro_on_the_port_explains_and_exits_zero(rig, monkeypatch, capsys):
+    # Exit 0 on purpose: launchd (KeepAlive SuccessfulExit=false) and systemd (Restart=on-failure)
+    # restart a non-zero `run` forever; there is nothing to retry until the user stops the other one.
+    monkeypatch.setattr(runtime, "web_dir_ok", lambda environ=None: True)
+    monkeypatch.setattr(control, "Supervisor", NoSupervisor)
+    free_ports(monkeypatch, busy={18001}, versions={18001: {"version": "0.8.0"}})
+    assert control.run(rig.ctx) == 0
+    out = capsys.readouterr().out
+    assert "Another Maestro (version 0.8.0) is already running on port 18001" in out
+    assert "docker compose down" in out
+    assert list(rig.ctx.run_dir.iterdir()) == []  # no records left behind
+
+
+def test_run_with_another_program_on_the_web_port_exits_zero(rig, monkeypatch, capsys):
+    monkeypatch.setattr(runtime, "web_dir_ok", lambda environ=None: True)
+    monkeypatch.setattr(control, "Supervisor", NoSupervisor)
+    free_ports(monkeypatch, busy={13000})
+    assert control.run(rig.ctx) == 0
+    assert capsys.readouterr().out.strip() == (
+        "Port 13000 is in use by another program. Maestro needs ports 18001 and 13000."
+    )
+    assert list(rig.ctx.run_dir.iterdir()) == []
+
+
+def test_run_writes_the_busy_port_sentence_to_the_supervisor_log(rig, monkeypatch):
+    # Under autostart stdout goes to launchd.log / the journal; the same sentence is in
+    # logs/supervisor.log so `maestro logs supervisor` explains why nothing is running.
+    monkeypatch.setattr(runtime, "web_dir_ok", lambda environ=None: True)
+    monkeypatch.setattr(control, "Supervisor", NoSupervisor)
+    free_ports(monkeypatch, busy={13000})
+    assert control.run(rig.ctx) == 0
+    assert "Port 13000 is in use by another program" in (
+        rig.ctx.logs_dir / "supervisor.log").read_text(encoding="utf-8")
+
+
+def test_run_with_free_ports_goes_on_to_the_supervisor(tmp_path, monkeypatch):
+    rig = Rig(tmp_path, environ={"MAESTRO_WEB_CMD": '["x"]'})
+    asked = free_ports(monkeypatch)
+    built = []
+
+    class FakeSupervisor:
+        def __init__(self, run_dir, specs, ready, out):
+            built.append(specs)
+
+        def run(self):
+            return 0
+
+    monkeypatch.setattr(control, "Supervisor", FakeSupervisor)
+    assert control.run(rig.ctx) == 0
+    assert len(built) == 1 and asked == []
+
+
 def test_run_logs_to_the_supervisor_log(tmp_path, monkeypatch):
     rig = Rig(tmp_path, environ={"MAESTRO_WEB_CMD": '["x"]'})
+    free_ports(monkeypatch)
     seen = {}
 
     class FakeSupervisor:

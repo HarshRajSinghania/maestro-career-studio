@@ -200,6 +200,27 @@ def running_supervisor(ctx: Context) -> psutil.Process | None:
     return procs.live_process(procs.read_json(ctx.run_dir / "supervisor.json"))
 
 
+def preflight(
+    ctx: Context, is_port_free: Callable[[int], bool], http_get: Callable[..., dict[str, Any] | None],
+) -> None:
+    """Raise a ControlError sentence when either port is held (`start` and `run` share this)."""
+    ports = ctx.ports
+    for port in (ports.backend, ports.web):
+        if is_port_free(port):
+            continue
+        info = http_get(f"http://127.0.0.1:{port}/api/version")
+        if info and isinstance(info.get("version"), str):
+            raise ControlError(
+                f"Another Maestro (version {info['version']}) is already running on port "
+                f"{port}, probably the Docker install. Stop it first (`docker compose down` "
+                "in its folder), then run `maestro start`."
+            )
+        raise ControlError(
+            f"Port {port} is in use by another program. "
+            f"Maestro needs ports {ports.backend} and {ports.web}."
+        )
+
+
 def run(ctx: Context) -> int:
     """`maestro run`: the foreground supervisor (autostart units run this)."""
     if running_supervisor(ctx):
@@ -207,13 +228,23 @@ def run(ctx: Context) -> int:
         return 0
     if web_bundle_missing(ctx.environ):
         raise ControlError(NO_WEB)
-    specs = build_specs(ctx)
-    ready = {"backend_url": ctx.backend_url, "web_url": ctx.web_url}
     try:
         out = open(ctx.logs_dir / "supervisor.log", "a", encoding="utf-8", buffering=1)  # noqa: SIM115
     except OSError:
         out = sys.stdout
     try:
+        try:
+            preflight(ctx, port_free, http_get_json)
+        except ControlError as exc:
+            # Exit 0 on purpose: launchd (KeepAlive SuccessfulExit=false) and systemd
+            # (Restart=on-failure) restart a failing `run` forever, and with another Maestro or
+            # program on the port there is nothing to retry until the user acts.
+            print(exc)
+            if out is not sys.stdout:
+                print(exc, file=out)
+            return 0
+        specs = build_specs(ctx)
+        ready = {"backend_url": ctx.backend_url, "web_url": ctx.web_url}
         return Supervisor(ctx.run_dir, specs, ready=ready, out=out).run()
     finally:
         if out is not sys.stdout:
@@ -252,8 +283,8 @@ class Controller:
         ctx: Context,
         *,
         spawn: Callable[..., Any] = subprocess.Popen,
-        http_get: Callable[..., dict[str, Any] | None] = http_get_json,
-        is_port_free: Callable[[int], bool] = port_free,
+        http_get: Callable[..., dict[str, Any] | None] | None = None,
+        is_port_free: Callable[[int], bool] | None = None,
         run_prefetch: Callable[[Context], bool] | None = None,
         open_url: Callable[[str], Any] = webbrowser.open,
         send_term: Callable[[psutil.Process], None] | None = None,
@@ -263,7 +294,9 @@ class Controller:
         ready_timeout: float = READY_TIMEOUT,
         stop_wait: float = STOP_WAIT,
     ) -> None:
-        self.ctx, self.spawn, self.http_get, self.is_port_free = ctx, spawn, http_get, is_port_free
+        # looked up here, not bound at definition, so tests can swap the module-level probes
+        self.ctx, self.spawn = ctx, spawn
+        self.http_get, self.is_port_free = http_get or http_get_json, is_port_free or port_free
         self.run_prefetch = run_prefetch or self._prefetch
         self.open_url, self.sleep, self.clock, self.say = open_url, sleep, clock, say
         self.send_term = send_term or self._send_term
@@ -310,21 +343,7 @@ class Controller:
         return 0
 
     def _preflight(self) -> None:
-        ports = self.ctx.ports
-        for port in (ports.backend, ports.web):
-            if self.is_port_free(port):
-                continue
-            info = self.http_get(f"http://127.0.0.1:{port}/api/version")
-            if info and isinstance(info.get("version"), str):
-                raise ControlError(
-                    f"Another Maestro (version {info['version']}) is already running on port "
-                    f"{port}, probably the Docker install. Stop it first (`docker compose down` "
-                    "in its folder), then run `maestro start`."
-                )
-            raise ControlError(
-                f"Port {port} is in use by another program. "
-                f"Maestro needs ports {ports.backend} and {ports.web}."
-            )
+        preflight(self.ctx, self.is_port_free, self.http_get)
 
     def _seed_demo(self) -> None:
         home = self.ctx.home
