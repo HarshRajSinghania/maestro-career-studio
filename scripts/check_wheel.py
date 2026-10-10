@@ -14,6 +14,9 @@ import sys
 import zipfile
 from pathlib import Path, PurePosixPath
 
+if sys.version_info < (3, 12):
+    raise SystemExit("check_wheel.py needs Python 3.12 or newer (this is %d.%d)." % sys.version_info[:2])
+
 MAX_BYTES = 30 * 1024 * 1024
 DIST_NAME = "maestro-career-studio"
 FILENAME = re.compile(r"^maestro_career_studio-(?P<version>[^-]+)-py3-none-any\.whl$")
@@ -40,6 +43,11 @@ FORBIDDEN_SUFFIXES = (".pyc", ".node", ".dylib", ".dll", ".exe")
 _SHARED_OBJECT = re.compile(r"\.so(\.\d+)*$")
 
 
+def is_env_file(base: str) -> bool:
+    """`.env` and `.env.<anything>` (`.env.production`), but not the `.env.example` template."""
+    return base == ".env" or (base.startswith(".env.") and base != ".env.example")
+
+
 def _forbidden(name: str) -> str | None:
     parts = PurePosixPath(name).parts
     base = parts[-1] if parts else ""
@@ -47,7 +55,7 @@ def _forbidden(name: str) -> str | None:
         return "a tests/ folder"
     if base.endswith(FORBIDDEN_SUFFIXES) or _SHARED_OBJECT.search(base):
         return "a compiled or bytecode file"
-    if base == ".env":
+    if is_env_file(base):
         return "an .env file"
     for first, second in (("node_modules", "sharp"), ("node_modules", "@img")):
         if any(a == first and b == second for a, b in zip(parts, parts[1:])):

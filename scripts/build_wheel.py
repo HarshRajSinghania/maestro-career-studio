@@ -8,8 +8,10 @@ Stdlib only, so it runs unchanged on macOS, Linux and Windows CI. The wheel is t
 `backend/` project (R1/R2 of docs/plans/2026-10-10-desktop-step3-uv-install.md) plus
 `maestro_cs/web/` (the Next standalone bundle) and `maestro_cs/data/example.json`.
 
-Everything is staged in a temp folder from `git ls-files`, so the working tree is never
-edited and untracked files (a stray `.env`, local data) can never reach the wheel.
+The backend is staged in a temp folder from `git ls-files`, so the working tree is never
+edited and an untracked file (a stray `.env`, local data) cannot reach the wheel from there.
+The web bundle is not tracked: Next copies `frontend/.env*` into it, so the staged copy drops
+every `.env` / `.env.<name>` file (not `.env.example`), and check_wheel.py refuses any left.
 """
 from __future__ import annotations
 
@@ -20,9 +22,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import tomllib
 import zipfile
 from pathlib import Path
+
+if sys.version_info < (3, 12):
+    raise SystemExit("build_wheel.py needs Python 3.12 or newer (this is %d.%d)." % sys.version_info[:2])
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
@@ -49,6 +53,8 @@ def rewrite_version(pyproject_text: str, version: str) -> str:
 
 
 def project_version(pyproject_text: str) -> str:
+    import tomllib  # noqa: PLC0415  (3.11+; the version guard above has already passed)
+
     return str(tomllib.loads(pyproject_text)["project"]["version"])
 
 
@@ -80,6 +86,17 @@ def build_frontend(version: str, install: bool) -> None:
     run([npm, "run", "build"], FRONTEND, env)
 
 
+def is_env_file(name: str) -> bool:
+    return name == ".env" or (name.startswith(".env.") and name != ".env.example")
+
+
+def drop_env_files(root: Path) -> None:
+    for path in root.rglob(".env*"):
+        if path.is_file() and is_env_file(path.name):
+            print(f"dropping {path.relative_to(root)} from the web bundle")
+            path.unlink()
+
+
 def copy_tree(src: Path, dst: Path) -> None:
     shutil.copytree(src, dst, symlinks=False, dirs_exist_ok=True)
 
@@ -93,6 +110,7 @@ def stage_web_from_build(stage_pkg: Path) -> None:
     copy_tree(standalone, web)
     copy_tree(FRONTEND / ".next" / "static", web / ".next" / "static")
     copy_tree(FRONTEND / "public", web / "public")
+    drop_env_files(web)
 
 
 def stage_web_from_wheel(wheel: Path, stage_pkg: Path) -> None:
@@ -108,6 +126,8 @@ def stage_web_from_wheel(wheel: Path, stage_pkg: Path) -> None:
             if target_root not in target.parents:  # a hostile member name must not escape
                 die(f"{wheel.name} has a member outside {WEB_PREFIX}: {name}")
             target.parent.mkdir(parents=True, exist_ok=True)
+            if is_env_file(target.name):
+                continue
             with archive.open(name) as source, open(target, "wb") as sink:
                 shutil.copyfileobj(source, sink)
 

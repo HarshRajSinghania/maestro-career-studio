@@ -36,6 +36,9 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+if sys.version_info < (3, 12):
+    raise SystemExit("smoke_uv_install.py needs Python 3.12 or newer (this is %d.%d)." % sys.version_info[:2])
+
 WINDOWS = sys.platform == "win32"
 EXPECTED_TOOLS = 88  # backend/tests/test_mcp_http_loopback.py pins the same number
 LOG_TAIL = 40
@@ -109,6 +112,12 @@ def bare_404_problems(status: int, headers: dict[str, str], body: bytes) -> list
     if extra:
         problems.append(f"unexpected headers {extra} (Vary or CORS added to the bare 404?)")
     return problems
+
+
+def version_printed(text: str) -> str:
+    """The version `maestro --version` printed: its last word (`maestro-career-studio 0.8.0`)."""
+    words = text.split()
+    return words[-1] if words else ""
 
 
 def security_header_problems(headers: dict[str, str]) -> list[str]:
@@ -277,8 +286,8 @@ class Smoke:
         text = self.maestro("--version").stdout.strip()
         self.facts["maestro --version"] = text
         if self.expect:
-            self.expect_ok(text.endswith(self.expect), f"`maestro --version` printed {text!r}, "
-                           f"expected a line ending in {self.expect}")
+            self.expect_ok(version_printed(text) == self.expect, f"`maestro --version` printed {text!r}, "
+                           f"expected the version {self.expect}")
 
     def seed_model(self) -> None:
         seed = Path(self.model_seed) if self.model_seed else None
@@ -462,7 +471,7 @@ class Smoke:
         if self.shim.is_file():
             with contextlib.suppress(Exception):
                 self.maestro("stop", timeout=90, expect_code=None)
-        for name in ("web", "backend", "supervisor"):  # last resort if `stop` could not
+        for name in ("supervisor", "web", "backend"):  # last resort, supervisor first: it respawns if `stop` could not
             record = self.home / "run" / f"{name}.json"
             try:
                 pid = int(json.loads(record.read_text(encoding="utf-8"))["pid"])
@@ -528,6 +537,8 @@ class Smoke:
                 print(f"kept {self.root}")
             else:
                 shutil.rmtree(self.root, onexc=_clear_readonly)
+                if self.root.exists():
+                    print(f"could not delete {self.root}; remove it by hand", file=sys.stderr)
         if code == 0:
             self.summary(time.monotonic() - started)
         return code

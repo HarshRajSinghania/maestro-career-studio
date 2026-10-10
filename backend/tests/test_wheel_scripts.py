@@ -106,12 +106,28 @@ def test_each_required_folder_needs_a_member(folder):
     "tests/test_x.py", "mcp_server/tests/test_http.py", "app/__pycache__/a.cpython-312.pyc",
     "app/.env", "maestro_cs/web/node_modules/sharp/lib/index.js",
     "maestro_cs/web/node_modules/@img/sharp-darwin-arm64/lib.js", "maestro_cs/web/a.node",
+    "maestro_cs/web/.env", "maestro_cs/web/.env.production", "maestro_cs/web/.env.local",
     "maestro_cs/web/lib.dylib", "maestro_cs/web/lib.so", "maestro_cs/web/lib.so.1.2",
     "maestro_cs/web/lib.dll", "maestro_cs/web/node.exe", "base_resumes/me.json",
 ])
 def test_each_forbidden_member_is_named(extra):
     problems = check_wheel.name_problems([*GOOD, extra])
     assert len(problems) == 1 and extra in problems[0]
+
+
+def test_an_env_example_template_is_not_an_env_file():
+    assert check_wheel.name_problems([*GOOD, "maestro_cs/web/.env.example"]) == []
+    assert not check_wheel.is_env_file("maestro.env.template")
+
+
+def test_the_build_drops_env_files_from_the_web_copy(tmp_path):
+    web = tmp_path / "web"
+    (web / "sub").mkdir(parents=True)
+    for name in (".env", ".env.production", "sub/.env.local", ".env.example", "server.js"):
+        (web / name).write_text("x", encoding="utf-8")
+    build_wheel.drop_env_files(web)
+    assert sorted(p.relative_to(web).as_posix() for p in web.rglob("*") if p.is_file()) == [
+        ".env.example", "server.js"]
 
 
 def test_the_demo_resume_is_the_only_base_resume_allowed():
@@ -183,6 +199,19 @@ def test_a_refused_connection_reads_as_no_answer_but_a_bug_names_its_type():
     assert smoke.describe(KeyError("score")).startswith("KeyError")
     assert smoke.describe(ValueError("bad json")) == "ValueError: bad json"
     assert smoke.describe(smoke.Failure("expected 400, got 200")) == "expected 400, got 200"
+
+
+@pytest.mark.parametrize(("printed", "version"), [
+    ("maestro-career-studio 0.8.0", "0.8.0"), ("maestro-career-studio 0.8.0\n", "0.8.0"),
+    ("maestro-career-studio 10.8.0", "10.8.0"), ("", ""),
+])
+def test_the_printed_version_is_the_last_word(printed, version):
+    assert smoke.version_printed(printed) == version
+
+
+@pytest.mark.parametrize("suffix", ["0", "8.0", ".0"])
+def test_a_version_suffix_is_not_the_version(suffix):
+    assert smoke.version_printed("maestro-career-studio 10.8.0") != suffix
 
 
 def test_the_bare_404_is_the_pinned_shape():
