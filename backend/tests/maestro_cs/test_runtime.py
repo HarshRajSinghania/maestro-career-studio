@@ -68,6 +68,9 @@ def test_venv_python(tmp_path):
     exe = "C:/v/Scripts/python.exe"
     assert R.venv_python("win32", windowless=True, executable=exe) == Path("C:/v/Scripts/pythonw.exe")
     assert R.venv_python("win32", executable=exe) == Path(exe)
+    pyw = "C:/v/Scripts/pythonw.exe"  # sys.executable when autostart runs `start`
+    assert R.venv_python("win32", executable=pyw) == Path(exe)
+    assert R.venv_python("win32", windowless=True, executable=pyw) == Path(pyw)
     assert R.venv_python("linux", windowless=True, executable="/v/bin/python") == Path("/v/bin/python")
 
 

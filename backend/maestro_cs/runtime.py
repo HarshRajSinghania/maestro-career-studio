@@ -68,6 +68,8 @@ def venv_python(platform: str = sys.platform, windowless: bool = False,
                 executable: str = sys.executable) -> Path:
     """This environment's interpreter; `pythonw.exe` on Windows when no console is wanted."""
     python = Path(executable)
-    if platform == "win32" and windowless:
-        return python.with_name("pythonw.exe")
+    if platform == "win32":
+        # sys.executable is pythonw.exe when autostart runs us; callers that want a console
+        # program (the supervisor, the model download) must get python.exe back.
+        return python.with_name("pythonw.exe" if windowless else "python.exe")
     return python
