@@ -177,7 +177,110 @@ def test_backup_real_child_writes_a_verified_gzip(tmp_path):
         conn.close()
 
 
+def test_backup_refuses_an_out_that_exists_and_keeps_it_even_if_the_backup_would_fail(tmp_path):
+    ctx = make_ctx(tmp_path)
+    make_db(ctx)
+    precious = tmp_path / "important.txt"
+    precious.write_text("do not lose me")
+    run = FakeRun(1, "error: boom")
+    m, _ = maint(ctx, run)
+    with pytest.raises(ControlError, match="already exists; choose a new file name\\.$"):
+        m.backup(str(precious))
+    assert precious.read_text() == "do not lose me" and run.calls == []
+
+
+def test_a_failing_backup_never_unlinks_a_path_it_did_not_create(tmp_path):
+    ctx = make_ctx(tmp_path)
+    make_db(ctx)
+    fresh = tmp_path / "new.gz"
+    m, _ = maint(ctx, FakeRun(1, "error: boom"))  # FakeRun writes the file, then fails
+    with pytest.raises(ControlError):
+        m.backup(str(fresh))
+    assert not fresh.exists()  # this run created it, so it goes
+
+
+def test_default_names_in_the_same_second_get_a_suffix_and_a_failure_keeps_the_first(tmp_path):
+    ctx = make_ctx(tmp_path)
+    make_db(ctx)
+    m, said = maint(ctx)
+    m.backup()
+    m.backup()
+    m.backup()
+    names = sorted(Path(x).name for x in said)
+    assert names == ["db-20261010T123005Z-1.sqlite3.gz", "db-20261010T123005Z-2.sqlite3.gz",
+                     "db-20261010T123005Z.sqlite3.gz"]
+    first = ctx.home / "backups" / "db-20261010T123005Z.sqlite3.gz"
+    first.write_bytes(b"good")
+    failing, _ = maint(ctx, FakeRun(1, "error: boom"))
+    with pytest.raises(ControlError):
+        failing.backup()
+    assert first.read_bytes() == b"good"
+
+
+@pytest.mark.parametrize("suffix", ["", "-wal", "-shm"])
+def test_backup_refuses_the_live_database_as_the_target(tmp_path, suffix):
+    ctx = make_ctx(tmp_path)
+    db = make_db(ctx)
+    live = Path(f"{db}{suffix}")
+    before = live.read_bytes() if live.exists() else None
+    run = FakeRun()
+    m, _ = maint(ctx, run)
+    with pytest.raises(ControlError, match="live database"):
+        m.backup(str(live))
+    assert run.calls == [] and (live.read_bytes() if live.exists() else None) == before
+
+
+def test_backup_refuses_a_symlink_to_the_live_database(tmp_path):
+    ctx = make_ctx(tmp_path)
+    make_db(ctx)
+    link = tmp_path / "alias.gz"
+    try:
+        link.symlink_to(ctx.home / "data" / control.DB_FILENAME)
+    except (OSError, NotImplementedError):
+        pytest.skip("no symlinks here")
+    m, _ = maint(ctx)
+    with pytest.raises(ControlError):
+        m.backup(str(link))
+
+
+def test_backup_refuses_a_folder_as_the_target(tmp_path):
+    ctx = make_ctx(tmp_path)
+    make_db(ctx)
+    run = FakeRun()
+    m, _ = maint(ctx, run)
+    with pytest.raises(ControlError, match="is a folder; give --out a file name\\.$"):
+        m.backup(str(tmp_path))
+    assert run.calls == []
+
+
+def test_rotation_never_deletes_the_snapshot_just_written(tmp_path):
+    ctx = make_ctx(tmp_path)
+    make_db(ctx)
+    future = 4_000_000_000
+    for i in range(6):  # six others, all "newer" than the one about to be written
+        old = ctx.home / "backups" / f"db-2099010{i}T000000Z.sqlite3.gz"
+        old.write_bytes(b"x")
+        os.utime(old, (future + i, future + i))
+    m, said = maint(ctx)
+    m.backup()
+    kept = list((ctx.home / "backups").glob("db-*.sqlite3.gz"))
+    assert len(kept) == 5 and Path(said[0]) in kept
+
+
 # --- migrate ------------------------------------------------------------------------------
+
+def test_migrate_reports_a_locked_database_in_one_sentence(tmp_path, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    from app.services import seeding
+
+    def locked():
+        raise OperationalError("stmt", {}, sqlite3.OperationalError("database is locked"))
+
+    monkeypatch.setattr(seeding, "run_migrations", locked)
+    m, _ = maint(make_ctx(tmp_path))
+    with pytest.raises(ControlError, match=r"^The database couldn't be migrated: database is locked\.$"):
+        m.migrate()
 
 @pytest.mark.parametrize("record", ["supervisor", "backend", "web"])
 def test_migrate_refuses_while_a_live_record_exists(tmp_path, record):
@@ -352,11 +455,11 @@ def hooked(h, env):
     seen.append({"app_config_loaded": "app.config" in sys.modules, "app_loaded": "app" in sys.modules})
     real(h, env)
 home.apply_env = hooked
-buf = io.StringIO()
-with contextlib.redirect_stdout(buf):
+buf, err = io.StringIO(), io.StringIO()
+with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
     code = cli.main(sys.argv[1:])
 from app.config import settings
-print(json.dumps({"code": code, "out": buf.getvalue(), "seen": seen, "cwd": os.getcwd(),
+print(json.dumps({"code": code, "out": buf.getvalue(), "err": err.getvalue(), "seen": seen, "cwd": os.getcwd(),
                   "data_dir": str(settings.data_dir), "database_url": settings.database_url}))
 """
 
@@ -396,3 +499,16 @@ def test_migrate_creates_the_schema_in_the_home_only(tmp_path):
         conn.close()
     again, _ = run_cli(tmp_path, "check")
     assert json.loads(again["out"])["db_revision"] == head_of_checkout()
+
+
+def test_migrate_on_a_database_from_a_newer_maestro_is_a_sentence_not_a_traceback(tmp_path):
+    run_cli(tmp_path, "migrate")
+    db = tmp_path / "home" / "data" / control.DB_FILENAME
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE alembic_version SET version_num = 'ffffffffffff'")
+    conn.commit()
+    conn.close()
+    result, _ = run_cli(tmp_path, "migrate")
+    assert result["code"] == 1
+    assert result["err"] == ("This database was made by a newer Maestro (revision ffffffffffff); "
+                             "install that version or newer.\n")

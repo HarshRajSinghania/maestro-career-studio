@@ -79,12 +79,33 @@ class Maintenance:
 
     # --- backup -------------------------------------------------------------------------
 
+    def _refuse_bad_target(self, target: Path) -> None:
+        live = {Path(f"{self.db_file}{suffix}").resolve() for suffix in ("", "-wal", "-shm", "-journal")}
+        if target.resolve() in live:
+            raise ControlError("That path is the live database; choose a different --out.")
+        if target.is_dir():
+            raise ControlError(f"{target} is a folder; give --out a file name.")
+        if target.exists():
+            raise ControlError(f"{target} already exists; choose a new file name.")
+
+    def _default_target(self) -> Path:
+        stem = default_backup_name(self.now()).removesuffix(".sqlite3.gz")
+        candidate, n = self.backups_dir / f"{stem}.sqlite3.gz", 0
+        while candidate.exists():  # two backups in one second must not share a file
+            n += 1
+            candidate = self.backups_dir / f"{stem}-{n}.sqlite3.gz"
+        return candidate
+
     def backup(self, out: str | None = None) -> int:
         if not self.db_file.is_file():
             self.say("Nothing to back up yet.")
             return 0
-        target = (Path(os.path.abspath(Path(out).expanduser())) if out
-                  else self.backups_dir / default_backup_name(self.now()))
+        if out:
+            target = Path(os.path.abspath(Path(out).expanduser()))
+            self._refuse_bad_target(target)
+        else:
+            target = self._default_target()
+        # Only a file this run creates may be removed on failure; the target did not exist.
         kwargs: dict[str, Any] = {"creationflags": subprocess.CREATE_NO_WINDOW} if WINDOWS else {}
         argv = [str(runtime.venv_python(windowless=False)), "-m", "app.tools.backup_db",
                 "--out", str(target)]
@@ -93,24 +114,26 @@ class Maintenance:
                             stdin=subprocess.DEVNULL, capture_output=True, text=True,
                             check=False, **kwargs)
         except OSError as exc:
+            target.unlink(missing_ok=True)
             raise ControlError(f"Couldn't run the backup: {exc.strerror or exc}.") from None
         if done.returncode != 0:
             target.unlink(missing_ok=True)  # never leave a half-written snapshot that looks real
             raise ControlError(_failure_sentence(done.stderr))
         if target.parent == self.backups_dir:  # an --out anywhere else is never touched
-            self._rotate()
+            self._rotate(keep=target)
         self.say(str(target))
         return 0
 
-    def _rotate(self) -> None:
+    def _rotate(self, keep: Path) -> None:
         def age(path: Path) -> tuple[int, str]:
             try:
                 return path.stat().st_mtime_ns, path.name
             except OSError:
                 return 0, path.name
 
-        found = sorted(self.backups_dir.glob(BACKUP_GLOB), key=age, reverse=True)
-        for old in found[KEEP_BACKUPS:]:
+        others = sorted((p for p in self.backups_dir.glob(BACKUP_GLOB) if p != keep),
+                        key=age, reverse=True)
+        for old in others[KEEP_BACKUPS - 1:]:  # the new snapshot is one of the five
             old.unlink(missing_ok=True)
 
     # --- migrate ------------------------------------------------------------------------
@@ -121,9 +144,25 @@ class Maintenance:
         self._enter_backend_env()
         from app.services import seeding  # noqa: PLC0415  (after apply_env, R8)
 
-        seeding.run_migrations()
+        from alembic.util.exc import CommandError  # noqa: PLC0415
+        from sqlalchemy.exc import OperationalError  # noqa: PLC0415
+
+        try:
+            seeding.run_migrations()
+        except CommandError as exc:
+            raise ControlError(self._newer_database_sentence(exc)) from None
+        except OperationalError as exc:
+            reason = str(getattr(exc, "orig", exc)).splitlines()[0].rstrip(".")
+            raise ControlError(f"The database couldn't be migrated: {reason}.") from None
         self.say("The database is up to date.")
         return 0
+
+    def _newer_database_sentence(self, exc: Exception) -> str:
+        revision = self._db_revision()
+        if revision and "locate revision" in str(exc).lower():
+            return (f"This database was made by a newer Maestro (revision {revision}); "
+                    "install that version or newer.")
+        return f"The database couldn't be migrated: {str(exc).splitlines()[0].rstrip('.')}."
 
     # --- check --------------------------------------------------------------------------
 

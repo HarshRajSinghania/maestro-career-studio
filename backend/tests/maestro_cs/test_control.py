@@ -343,6 +343,9 @@ def test_stop_writes_the_request_signals_and_waits(rig):
             assert (rig.ctx.run_dir / "stop.request").exists()
             rig.terms.append(proc.pid)
             sup.terminate()  # the supervisor exits on the request
+            # The fake clock advances on every sleep() without real time passing, so wait for the
+            # exit here: otherwise the stop loop can burn its whole budget before the process dies.
+            sup.wait(timeout=10)
 
         rig.ctl.send_term = term
         assert rig.ctl.stop() == 0
