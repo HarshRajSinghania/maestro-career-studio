@@ -380,6 +380,61 @@ jobs:
       - name: Run the maestro command tests
         run: cd backend && pytest tests/maestro_cs -q
 
+      # The unit tests above inject the system tools. These two steps hand the rendered files to
+      # the real ones once: the unit must pass `systemd-analyze --user verify` (skipped, with a
+      # notice, where that tool is missing) and the task XML must create, query and delete.
+      - name: Verify the rendered systemd unit (Linux)
+        if: runner.os == 'Linux'
+        shell: python
+        run: |
+          import shutil
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          from maestro_cs import autostart
+
+          if shutil.which("systemd-analyze") is None:
+              print("::notice::systemd-analyze is not installed here; the unit was not verified")
+              sys.exit(0)
+          with tempfile.TemporaryDirectory() as tmp:
+              unit = Path(tmp) / autostart.UNIT_NAME
+              # sys.executable stands in for the shim: verify checks that ExecStart exists
+              unit.write_text(autostart.render_unit(sys.executable, Path(tmp) / "Maestro Home"),
+                              encoding="utf-8")
+              print(unit.read_text(encoding="utf-8"))
+              subprocess.run(["systemd-analyze", "--user", "verify", str(unit)], check=True)
+
+      # The runner is an administrator, so this proves the XML is accepted and the task can be
+      # created, found and removed, NOT that a standard (non-admin) user can create it: that is
+      # the owner's check (plan gate G6).
+      - name: Create, query and delete the logon task from the rendered XML (Windows, admin runner)
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import getpass
+          import os
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          from maestro_cs import autostart
+
+          name = "Maestro CI Test"
+          domain = os.environ.get("USERDOMAIN", "")
+          user = f"{domain}\\{os.environ.get('USERNAME') or getpass.getuser()}" if domain else getpass.getuser()
+          with tempfile.TemporaryDirectory() as tmp:
+              xml = Path(tmp) / autostart.TASK_FILE
+              # UTF-16 LE with a BOM, exactly as `maestro autostart on` writes it
+              xml.write_bytes(("\ufeff" + autostart.render_task_xml(sys.executable, user)).encode("utf-16-le"))
+              try:
+                  subprocess.run(["schtasks", "/Create", "/TN", name, "/XML", str(xml), "/F"], check=True)
+                  subprocess.run(["schtasks", "/Query", "/TN", name], check=True)
+              finally:
+                  subprocess.run(["schtasks", "/Delete", "/TN", name, "/F"], check=False)
+
   # Builds the wheel once (Next standalone bundle inside it) for the smoke and upgrade jobs.
   # 0.0.0.dev1 is a throwaway version: it never collides with a release and sorts below all.
   uv-wheel:

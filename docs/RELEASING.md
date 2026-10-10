@@ -93,7 +93,10 @@ from it.
 - `backend/requirements.lock` must match `pyproject.toml`. The distribution was
   renamed, and `psutil`, `python-dotenv` and `nodejs-wheel-binaries` were added, so
   regenerate it in `python:3.12-slim` (the recipe in `backend/Dockerfile`, plus
-  `--unsafe-package nodejs-wheel-binaries`: containers never run Node).
+  `--unsafe-package nodejs-wheel-binaries`: containers never run Node). Until it is
+  regenerated, `psutil` and `python-dotenv` are not in the lock, and
+  `nodejs-wheel-binaries` never is, so `dependency-audit` does not cover them
+  (for Node, audit the wheel's pinned version by hand).
 
 ### 4. Tag and push
 

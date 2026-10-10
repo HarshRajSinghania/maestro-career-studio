@@ -23,6 +23,10 @@ uv tool install --python 3.12 maestro-career-studio
 
 If `maestro` is not found afterwards, run `uv tool update-shell` and open a new terminal.
 
+Best effort: on Windows ARM64 the PDF engine (typst) has no ARM64 wheel, so install an x64 Python under
+emulation: `uv tool install --python cpython-3.12-windows-x86_64-none maestro-career-studio`. Alpine and
+other musl Linux are not supported by the PDF engine's wheels; use a glibc distro or Docker.
+
 ## Run
 
 `maestro start`, then open http://localhost:3000. `maestro stop` closes it, `maestro update`

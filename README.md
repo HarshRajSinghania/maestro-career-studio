@@ -166,6 +166,10 @@ scoring model (about 100 MB, once) from Hugging Face, so allow a minute or two.
 If the terminal says `maestro` is not found, run `uv tool update-shell` and open a
 new terminal.
 
+Best effort, not tested: **Windows on ARM** has no PDF-engine (typst) wheel, so install an x64
+Python under emulation: `uv tool install --python cpython-3.12-windows-x86_64-none maestro-career-studio`.
+**Alpine and other musl Linux** are not supported by the PDF engine's wheels; use a glibc distro or Docker.
+
 | Command | What it does |
 |---|---|
 | `maestro start` | Start Maestro and open the app (`--no-browser`, `--skip-model`) |
@@ -192,7 +196,9 @@ port overrides):
 | Windows | `%APPDATA%\Maestro Career Studio` |
 | Linux | `$XDG_DATA_HOME/maestro-career-studio` (default `~/.local/share/maestro-career-studio`) |
 
-Uninstalling with `uv tool uninstall maestro-career-studio` leaves that folder;
+To uninstall, run `maestro autostart off` and `maestro stop` first (otherwise the
+login item keeps retrying a launcher that is gone), then
+`uv tool uninstall maestro-career-studio`. That leaves the folder above;
 deleting the folder deletes your data.
 
 - **Docker and uv are separate copies.** They keep separate data, and both want

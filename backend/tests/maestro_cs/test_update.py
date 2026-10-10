@@ -199,9 +199,15 @@ def test_find_uv_none_and_windows_names(tmp_path):
 
 def test_upgrade_commands():
     uv = Path("/x/uv")
-    assert update.upgrade_argv(uv, None) == ["/x/uv", "tool", "upgrade", "maestro-career-studio"]
-    assert update.upgrade_argv(uv, "/w/m.whl") == [
+    # The PyPI path installs exactly the version whose changelog was shown, and `--force` replaces
+    # a `==<old>` pin that a documented rollback leaves behind (`uv tool upgrade` honours it).
+    assert update.upgrade_argv(uv, None, "0.9.0") == [
+        "/x/uv", "tool", "install", "--force", "--python", "3.12", "maestro-career-studio==0.9.0"]
+    assert update.upgrade_argv(uv, "/w/m.whl", "0.9.0") == [
         "/x/uv", "tool", "install", "--force", "--python", "3.12", "/w/m.whl"]
+    assert update.manual_command(None, "0.9.0") == (
+        "uv tool install --force --python 3.12 maestro-career-studio==0.9.0")
+    assert update.manual_command("/w/m.whl", None) == "uv tool install --force --python 3.12 /w/m.whl"
     assert update.rollback_command("0.8.0") == (
         "uv tool install --force --python 3.12 maestro-career-studio==0.8.0")
     assert update.wheel_version("/d/maestro_career_studio-0.9.0-py3-none-any.whl") == "0.9.0"
@@ -227,7 +233,7 @@ class Rig:
     def __init__(self, tmp_path, monkeypatch, *, version="0.8.0", latest="0.9.0", running=True,
                  backup_error=None, db=True, uv="/bin/uv", uv_code=0, answers=("y",),
                  platform="linux", served_version=None, installed="0.9.0", changelog=CHANGELOG,
-                 start_code=0):
+                 start_code=0, blocked=()):
         home = tmp_path / "home"
         for name in ("logs", "run", "data"):
             (home / name).mkdir(parents=True, exist_ok=True)
@@ -271,6 +277,7 @@ class Rig:
             which=lambda name: uv, http_get=self.http_get, platform=platform,
             sleep=lambda s: None, launcher_pids=lambda: [4242, 4243],
             preload=lambda: self.events.append("preload"), user_home=tmp_path / "nohome",
+            blockers=lambda: list(blocked),
         )
 
     def ask(self, prompt):
@@ -333,7 +340,8 @@ def test_the_happy_path_orders_snapshot_stop_uv_start_verify(tmp_path, monkeypat
     assert rig.asked == ["Update from 0.8.0 to 0.9.0? [y/N] "]
     assert "Maestro is now version 0.9.0." in rig.text
     uv_argv = next(a for a, _ in rig.run_calls if Path(a[0]).name == "uv")
-    assert uv_argv[1:] == ["tool", "upgrade", "maestro-career-studio"]
+    assert uv_argv[1:] == ["tool", "install", "--force", "--python", "3.12",
+                           "maestro-career-studio==0.9.0"]
     start_argv = next(a for a, _ in rig.run_calls if a[1:] == ["start", "--no-browser"])
     assert Path(start_argv[0]).name == "maestro"  # the shim, a NEW process (this one has old code)
 
@@ -384,7 +392,7 @@ def test_a_failed_snapshot_aborts_with_nothing_stopped_and_no_uv(tmp_path, monke
 def test_missing_uv_prints_the_manual_command_before_touching_anything(tmp_path, monkeypatch):
     rig = Rig(tmp_path, monkeypatch, uv=None)
     assert rig.up.run(yes=True) == 1
-    assert "`uv tool upgrade maestro-career-studio`" in rig.text
+    assert "`uv tool install --force --python 3.12 maestro-career-studio==0.9.0`" in rig.text
     assert "https://docs.astral.sh/uv/" in rig.text and "Nothing was changed" in rig.text
     assert not any(e in rig.events for e in ("backup", "stop", "uv"))
 
@@ -521,14 +529,15 @@ WIN_SHIM = Path(r"C:\Users\Jo Doe\AppData\Roaming\uv\tools\maestro-career-studio
 
 def test_windows_script_quotes_every_path_and_waits_before_uv():
     script = update.windows_script(
-        wait_pids=[4242, 4243], uv_argv=update.upgrade_argv(Path(WIN_UV), None), shim=WIN_SHIM,
+        wait_pids=[4242, 4243], uv_argv=update.upgrade_argv(Path(WIN_UV), None, "0.9.0"), shim=WIN_SHIM,
         restart=True, snapshot=r"C:\Users\Jo Doe\100%\db (1).gz", old="0.8.0")
     lines = script.split("\r\n")
     assert lines[0] == "@echo off" and script.endswith("\r\n")
     assert 'tasklist /FI "PID eq 4242" /NH /FO CSV 2>nul | find ",""4242""," >nul' in lines
     assert 'tasklist /FI "PID eq 4243" /NH /FO CSV 2>nul | find ",""4243""," >nul' in lines
     assert "if %tries0% GEQ 30 goto done0" in lines
-    uv_line = r'"C:\Users\Jo Doe\.local\bin\uv.exe" "tool" "upgrade" "maestro-career-studio"'
+    uv_line = (r'"C:\Users\Jo Doe\.local\bin\uv.exe" "tool" "install" "--force" "--python" "3.12" '
+               r'"maestro-career-studio==0.9.0"')
     assert uv_line in lines
     assert lines.index('tasklist /FI "PID eq 4242" /NH /FO CSV 2>nul | find ",""4242""," >nul') < lines.index(uv_line)
     assert f'"{WIN_SHIM}" start --no-browser' in lines
@@ -541,7 +550,7 @@ def test_windows_script_quotes_every_path_and_waits_before_uv():
 
 def test_windows_script_doubles_percent_in_the_uv_line_and_checks_its_exit_code_next():
     uv = r"C:\Users\100%\.local\bin\uv.exe"
-    script = update.windows_script(wait_pids=[1], uv_argv=update.upgrade_argv(Path(uv), r"C:\w\50%.whl"),
+    script = update.windows_script(wait_pids=[1], uv_argv=update.upgrade_argv(Path(uv), r"C:\w\50%.whl", None),
                                    shim=WIN_SHIM, restart=False, snapshot=None, old="0.8.0")
     lines = script.split("\r\n")
     uv_line = next(ln for ln in lines if "uv.exe" in ln)
@@ -605,13 +614,30 @@ def test_windows_update_stops_then_hands_off_without_running_uv(tmp_path, monkey
     argv, kwargs = rig.popen_calls[0]
     assert argv == ["cmd", "/d", "/c", ".\\update.cmd"]
     assert kwargs["cwd"] == rig.ctx.logs_dir
-    assert kwargs["creationflags"] == detach.CREATE_NEW_PROCESS_GROUP | detach.CREATE_NO_WINDOW
+    assert kwargs["creationflags"] == (detach.CREATE_NEW_PROCESS_GROUP | detach.CREATE_NO_WINDOW
+                                       | detach.CREATE_BREAKAWAY_FROM_JOB)
     assert kwargs["stdin"] == subprocess.DEVNULL and kwargs["stderr"] == subprocess.STDOUT
     assert Path(kwargs["stdout"].name) == rig.ctx.logs_dir / "update.log"
     script = (rig.ctx.logs_dir / "update.cmd").read_text(encoding="utf-8")
     assert "4242" in script and "4243" in script and WIN_UV in script
     assert "Updating in the background; it takes about a minute. Don't run `maestro` until" in rig.text
     assert "update.log ends with \"finished\", then run `maestro status`." in rig.text
+
+
+def test_windows_handoff_retries_without_breakaway_when_the_job_forbids_it(tmp_path, monkeypatch):
+    rig = Rig(tmp_path, monkeypatch, platform="win32", uv=WIN_UV)
+    seen = []
+
+    def popen(argv, **kwargs):
+        seen.append(kwargs["creationflags"])
+        if kwargs["creationflags"] & detach.CREATE_BREAKAWAY_FROM_JOB:
+            raise PermissionError(5, "Access is denied")
+        return object()
+
+    rig.up.popen = popen
+    assert rig.up.run(yes=True) == 0
+    base = detach.CREATE_NEW_PROCESS_GROUP | detach.CREATE_NO_WINDOW
+    assert seen == [base | detach.CREATE_BREAKAWAY_FROM_JOB, base]
 
 
 def test_windows_handoff_failure_says_maestro_is_stopped(tmp_path, monkeypatch):
@@ -623,6 +649,97 @@ def test_windows_handoff_failure_says_maestro_is_stopped(tmp_path, monkeypatch):
     rig.up.popen = boom
     with pytest.raises(ControlError, match="run `maestro start`"):
         rig.up.run(yes=True)
+
+
+# --- other processes from the same venv (Windows cannot replace their files) ---------------------
+
+class FakeVenvProc:
+    def __init__(self, pid, exe, cmdline=(), denied=()):
+        self.pid, self._exe, self._cmd, self._denied = pid, exe, list(cmdline), denied
+
+    def exe(self):
+        if "exe" in self._denied:
+            raise psutil.AccessDenied(self.pid)
+        return self._exe
+
+    def cmdline(self):
+        if "cmdline" in self._denied:
+            raise psutil.AccessDenied(self.pid)
+        return self._cmd
+
+
+PREFIX = r"C:\Users\Jo\AppData\Roaming\uv\tools\maestro-career-studio"
+
+
+def find(procs, exclude=(), platform="win32", prefix=PREFIX):
+    return update.find_venv_processes(prefix, set(exclude), procs, platform, lambda p: p)
+
+
+def test_venv_processes_are_found_by_exe_under_the_prefix_case_insensitively_on_windows():
+    inside = FakeVenvProc(10, PREFIX.upper() + r"\Scripts\MAESTRO.EXE", ["maestro.exe", "mcp"])
+    elsewhere = FakeVenvProc(11, r"C:\Windows\System32\cmd.exe", ["cmd"])
+    sibling = FakeVenvProc(12, PREFIX + r"-other\Scripts\python.exe")  # a prefix match is not a path match
+    assert find([inside, elsewhere, sibling]) == [(10, ["maestro.exe", "mcp"])]
+
+
+def test_venv_processes_leave_out_the_excluded_and_tolerate_access_denied():
+    mine = FakeVenvProc(1, PREFIX + r"\Scripts\python.exe")
+    denied_exe = FakeVenvProc(2, PREFIX + r"\x.exe", denied=("exe",))
+    denied_cmd = FakeVenvProc(3, PREFIX + r"\Scripts\python.exe", denied=("cmdline",))
+    assert find([mine, denied_exe, denied_cmd], exclude={1}) == [(3, [])]
+
+
+def test_venv_processes_on_posix_compare_case_sensitively():
+    proc = FakeVenvProc(5, "/opt/tool/bin/maestro")
+    assert find([proc], platform="linux", prefix="/opt/tool") == [(5, [])]
+    assert find([proc], platform="linux", prefix="/OPT/tool") == []
+
+
+def test_blocked_message_names_maestro_mcp_or_lists_pids():
+    mcp = update.blocked_message([(10, ["maestro.exe", "mcp"]), (11, ["python.exe", "-m", "maestro_cs", "mcp"])])
+    assert mcp == ("Quit Claude Desktop (it runs `maestro mcp`) and stop other `maestro` commands, "
+                   "then run `maestro update`.")
+    other = update.blocked_message([(20, ["maestro.exe", "logs", "-f"]), (21, [])])
+    assert other == ("Stop the other `maestro` commands that are still running (process ids 20, 21), "
+                     "then run `maestro update`.")
+    both = update.blocked_message([(10, ["maestro", "mcp"]), (20, ["maestro", "logs"])])
+    assert both.startswith("Quit Claude Desktop (it runs `maestro mcp`)") and "process ids 20" in both
+
+
+def test_a_running_maestro_mcp_blocks_the_update_before_anything_changes(tmp_path, monkeypatch):
+    rig = Rig(tmp_path, monkeypatch, platform="win32", uv=WIN_UV, blocked=[(10, ["maestro.exe", "mcp"])])
+    with pytest.raises(ControlError, match=r"Quit Claude Desktop \(it runs `maestro mcp`\)"):
+        rig.up.run(yes=True)
+    assert not any(e in rig.events for e in ("backup", "stop", "uv", "handoff"))
+    assert rig.popen_calls == [] and rig.run_calls == []
+
+
+def test_posix_replaces_files_in_place_so_it_never_looks_for_blockers(tmp_path, monkeypatch):
+    rig = Rig(tmp_path, monkeypatch, blocked=[(10, ["maestro", "mcp"])])
+    assert rig.up.run(yes=True) == 0
+
+
+def test_the_default_blockers_skip_this_process_its_launchers_and_the_servers_stop_will_stop(
+        tmp_path, monkeypatch):
+    rig = Rig(tmp_path, monkeypatch, platform="win32", uv=WIN_UV)
+    run_dir = rig.ctx.run_dir
+    for name, pid in (("supervisor", 500), ("web", 501), ("backend", 502)):
+        (run_dir / f"{name}.json").write_text(json.dumps({"pid": pid, "create_time": 1.0}))
+
+    class Live:
+        def __init__(self, pid, kids=()):
+            self.pid, self._kids = pid, kids
+
+        def children(self, recursive=False):
+            return [Live(k) for k in self._kids]
+
+    monkeypatch.setattr(update.procs, "live_process",
+                        lambda record: Live(record["pid"], [600] if record["pid"] == 500 else []))
+    seen = [FakeVenvProc(pid, PREFIX + r"\Scripts\python.exe") for pid in
+            (4242, 4243, 500, 501, 502, 600, 700)]
+    up = update.Updater(rig.ctx, platform="win32", launcher_pids=lambda: [4242, 4243],
+                        process_iter=lambda: seen, prefix=PREFIX, resolve=lambda p: p)
+    assert up._venv_blockers() == [(700, [])]
 
 
 # --- the command line --------------------------------------------------------------------------

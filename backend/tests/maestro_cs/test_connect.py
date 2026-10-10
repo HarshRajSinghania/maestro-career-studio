@@ -158,6 +158,37 @@ def test_a_profile_adds_the_profile_argument(tmp_path):
     assert entry["args"] == ["mcp", "--profile", "hunt"]
 
 
+def test_a_custom_maestro_home_is_pinned_in_the_desktop_entry(tmp_path):
+    custom = tmp_path / "my maestro"
+    conn, _ = make_connector(tmp_path, environ={"MAESTRO_HOME": str(custom)})
+    assert conn.connect("claude-desktop") == 0
+    entry = json.loads(desktop_config(conn).read_text())["mcpServers"]["maestro-career-studio"]
+    assert entry == {**ENTRY, "env": {"MAESTRO_HOME": str(conn.ctx.home)}}
+    assert Path(entry["env"]["MAESTRO_HOME"]).is_absolute()
+    # the printed snippet shows it too
+    rec_text = []
+    conn.say = lambda *a, **k: rec_text.append(" ".join(map(str, a)))
+    conn.connect("claude-desktop", print_only=True)
+    assert "MAESTRO_HOME" in "\n".join(rec_text)
+
+
+def test_the_waiters_pinned_default_folder_adds_no_env(tmp_path):
+    # spawn_detached always pins MAESTRO_HOME, so the waiter must judge by the folder, not the variable.
+    conn, _ = make_connector(tmp_path)
+    default = Path(os.path.abspath(
+        connect.home_mod.default_home("darwin", {}, conn.user_home)))
+    conn.ctx = Context(default, {}, Ports(18001, 13000), {"MAESTRO_HOME": str(default)}, "9.9.9")
+    assert conn._entry("full") == ENTRY
+
+
+def test_the_default_install_folder_adds_no_env_to_the_desktop_entry(tmp_path):
+    conn, _ = make_connector(tmp_path)
+    conn.connect("claude-desktop")
+    assert json.loads(desktop_config(conn).read_text())["mcpServers"]["maestro-career-studio"] == ENTRY
+    assert connect.desktop_entry("full", SHIM) == ENTRY
+    assert connect.desktop_entry("hunt", SHIM, Path("/h"))["env"] == {"MAESTRO_HOME": str(Path("/h"))}
+
+
 def test_an_entry_that_is_already_right_is_left_alone(tmp_path):
     conn, rec = make_connector(tmp_path)
     path = write_config(conn, {"mcpServers": {"maestro-career-studio": ENTRY}})
@@ -434,6 +465,43 @@ def test_the_claude_code_command_is_exactly_what_the_card_shows(tmp_path):
     assert "--scope user" in card.value
 
 
+def _applying_maestro_env(monkeypatch):
+    """An `apply` that puts maestro.env secrets into os.environ, as the real `apply_env` does."""
+    def apply(home, env):
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-from-maestro-env")
+    return apply
+
+
+@pytest.mark.parametrize("client, binary", [("claude-code", "claude"), ("codex", "codex")])
+def test_the_agent_cli_never_inherits_the_secrets_from_maestro_env(tmp_path, monkeypatch, client, binary):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    rec = Recorder(which={binary: f"/usr/bin/{binary}"})
+    conn, _ = make_connector(tmp_path, rec, environ={"MARKER": "parent"})
+    conn._apply = _applying_maestro_env(monkeypatch)
+    assert conn.connect(client) == 0
+    assert os.environ["OPENAI_API_KEY"] == "sk-from-maestro-env"  # apply really ran
+    env = rec.ran[0][1]["env"]
+    assert "OPENAI_API_KEY" not in env and env["MARKER"] == "parent"
+    assert env == dict(conn.ctx.environ)
+
+
+def test_the_browser_opener_never_inherits_the_secrets_and_the_environment_comes_back(tmp_path, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    rec = Recorder()
+    conn, _ = make_connector(tmp_path, rec, environ={"MARKER": "parent"})
+    conn._apply = _applying_maestro_env(monkeypatch)
+    seen = {}
+
+    def opener(url):
+        seen["key"] = os.environ.get("OPENAI_API_KEY")
+        seen["marker"] = os.environ.get("MARKER")
+
+    conn.open_url = opener
+    assert conn.connect("cursor") == 0
+    assert seen == {"key": None, "marker": "parent"}
+    assert os.environ["OPENAI_API_KEY"] == "sk-from-maestro-env"  # restored after the call
+
+
 @pytest.mark.parametrize("client", ["claude-code", "codex"])
 def test_print_never_runs_anything(tmp_path, client):
     rec = Recorder(which={"claude": "/usr/bin/claude", "codex": "/usr/bin/codex"})
@@ -577,7 +645,8 @@ def test_claude_config_dir_and_codex_home_are_honoured(tmp_path):
 @pytest.mark.parametrize("platform, flags", [
     ("linux", {"start_new_session": True}),
     ("darwin", {"start_new_session": True}),
-    ("win32", {"creationflags": detach.CREATE_NEW_PROCESS_GROUP | detach.CREATE_NO_WINDOW}),
+    ("win32", {"creationflags": detach.CREATE_NEW_PROCESS_GROUP | detach.CREATE_NO_WINDOW
+               | detach.CREATE_BREAKAWAY_FROM_JOB}),
 ])
 def test_detach_spawns_the_package_module_with_the_right_flags(tmp_path, platform, flags):
     calls = []
@@ -600,6 +669,30 @@ def test_detach_spawns_the_package_module_with_the_right_flags(tmp_path, platfor
     if platform != "win32":
         assert "creationflags" not in kwargs
     assert log.exists()
+
+
+def test_detach_on_windows_retries_without_breakaway_when_the_job_forbids_it(tmp_path):
+    calls = []
+
+    def popen(argv, **kwargs):
+        calls.append(kwargs["creationflags"])
+        if kwargs["creationflags"] & detach.CREATE_BREAKAWAY_FROM_JOB:
+            raise PermissionError(5, "Access is denied")
+        return "child"
+
+    got = detach.spawn_detached(["a"], log=tmp_path / "x.log", home=tmp_path, popen=popen,
+                                platform="win32", executable=r"C:\v\Scripts\python.exe")
+    base = detach.CREATE_NEW_PROCESS_GROUP | detach.CREATE_NO_WINDOW
+    assert got == "child" and calls == [base | detach.CREATE_BREAKAWAY_FROM_JOB, base]
+
+
+def test_a_failure_that_is_not_about_the_job_still_surfaces_after_the_retry(tmp_path):
+    def broken(argv, **kwargs):
+        raise OSError(2, "No such file or directory")
+
+    with pytest.raises(detach.DetachError, match="No such file or directory"):
+        detach.spawn_detached(["a"], log=tmp_path / "x.log", home=tmp_path, popen=broken,
+                              platform="win32", executable=r"C:\nope\python.exe")
 
 
 def test_detach_on_windows_uses_the_console_interpreter(tmp_path):

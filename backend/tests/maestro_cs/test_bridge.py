@@ -272,15 +272,21 @@ def test_hunt_selects_mcp_hunt_and_full_selects_mcp():
     assert paths == ["/mcp/hunt", "/mcp"]
 
 
+def test_the_bridge_dials_the_ipv4_loopback_address_not_localhost(tmp_path):
+    # `localhost` can resolve to ::1 first on Windows, where the refusal costs about two seconds.
+    url = bridge.backend_url_from({"MAESTRO_HOME": str(tmp_path / "home")})
+    assert url == "http://127.0.0.1:8001" and "localhost" not in url
+
+
 def test_the_backend_port_comes_from_the_process_env_then_maestro_env_then_the_default(tmp_path):
     home = tmp_path / "home"
     environ = {"MAESTRO_HOME": str(home)}
-    assert bridge.backend_url_from(environ) == "http://localhost:8001"
+    assert bridge.backend_url_from(environ) == "http://127.0.0.1:8001"
     assert not home.exists(), "reading the port never creates the install folder"
     home.mkdir()
     (home / "maestro.env").write_text("MAESTRO_PORT=18123\n", encoding="utf-8")
-    assert bridge.backend_url_from(environ) == "http://localhost:18123"
-    assert bridge.backend_url_from({**environ, "MAESTRO_PORT": "18124"}) == "http://localhost:18124"
+    assert bridge.backend_url_from(environ) == "http://127.0.0.1:18123"
+    assert bridge.backend_url_from({**environ, "MAESTRO_PORT": "18124"}) == "http://127.0.0.1:18124"
 
 
 def test_http_failures_and_non_json_bodies_emit_json_rpc_errors_never_raw_text():

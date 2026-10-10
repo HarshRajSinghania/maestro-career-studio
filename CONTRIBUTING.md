@@ -172,6 +172,8 @@ source .venv/bin/activate
 pip install -e ".[dev,mcp]"
 ```
 
+If your venv still has the old `maestro-career-studio-backend` (the distribution was renamed `maestro-career-studio`), `pip uninstall maestro-career-studio-backend` first.
+
 *Gotcha reminder (SYSTEM.md §9):* Beware of stale `.pth` files in virtual environments if you switch across Git worktrees or branches. Reinstall editable dependencies and restart clients (such as Claude Desktop) if imports unexpectedly point to older workspace directories.
 
 ### Frontend Setup

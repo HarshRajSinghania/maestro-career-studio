@@ -9,7 +9,7 @@ from pathlib import Path
 import psutil
 import pytest
 
-from maestro_cs import control, procs, runtime
+from maestro_cs import control, detach, procs, runtime
 from maestro_cs.control import Context, ControlError, Controller
 from maestro_cs.home import Ports
 
@@ -160,8 +160,28 @@ def test_start_on_windows_uses_a_hidden_new_process_group(rig, monkeypatch):
     monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
     rig.ctl.start(no_browser=True, skip_model=True)
     kwargs = rig.spawned[0][1]
-    assert kwargs["creationflags"] == 0x200 | 0x08000000
+    # first try leaves the parent's job object (a logon task or a terminal may kill the job's members)
+    assert kwargs["creationflags"] == 0x200 | 0x08000000 | detach.CREATE_BREAKAWAY_FROM_JOB
     assert "start_new_session" not in kwargs
+
+
+def test_start_on_windows_retries_without_breakaway_when_the_job_forbids_it(rig, monkeypatch):
+    monkeypatch.setattr(runtime, "web_dir_ok", lambda environ=None: True)
+    monkeypatch.setattr(control, "WINDOWS", True)
+    monkeypatch.setattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200, raising=False)
+    monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    plain = rig.spawn
+
+    def strict(argv, **kwargs):
+        if kwargs["creationflags"] & detach.CREATE_BREAKAWAY_FROM_JOB:
+            rig.spawned.append((argv, kwargs))
+            raise PermissionError(5, "Access is denied")
+        return plain(argv, **kwargs)
+
+    rig.ctl.spawn = strict
+    assert rig.ctl.start(no_browser=True, skip_model=True) == 0
+    flags = [kwargs["creationflags"] for _, kwargs in rig.spawned]
+    assert flags == [0x200 | 0x08000000 | detach.CREATE_BREAKAWAY_FROM_JOB, 0x200 | 0x08000000]
 
 
 def test_start_when_running_says_so_and_spawns_nothing(rig):

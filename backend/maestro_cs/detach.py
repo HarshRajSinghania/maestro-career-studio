@@ -19,6 +19,22 @@ from maestro_cs import runtime
 # subprocess.CREATE_* exist only on Windows; the values are fixed by the Win32 API.
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 CREATE_NO_WINDOW = 0x08000000
+CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
+
+def popen_windows(popen: Callable[..., Any], argv: list[str], creationflags: int,
+                  **kwargs: Any) -> Any:
+    """Start a Windows child outside the parent's job object when the job allows it.
+
+    A job (Task Scheduler's logon task, some terminals and CI runners) can kill every member when
+    it ends. Breaking away needs the job's permission, so the first try asks for it and an
+    `OSError` (access denied) is answered by the same start without it; a second failure is the
+    caller's to report.
+    """
+    try:
+        return popen(argv, creationflags=creationflags | CREATE_BREAKAWAY_FROM_JOB, **kwargs)
+    except OSError:
+        return popen(argv, creationflags=creationflags, **kwargs)
 
 
 class DetachError(Exception):
@@ -44,18 +60,19 @@ def spawn_detached(
     argv = [str(runtime.venv_python(platform, windowless=False, executable=executable)),
             "-m", "maestro_cs", *args]
     child_env = {**(os.environ if env is None else env), "MAESTRO_HOME": str(home)}
-    kwargs: dict[str, Any] = (
-        {"creationflags": CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW}
-        if platform == "win32" else {"start_new_session": True}
-    )
+    windows = platform == "win32"
     try:
         handle = open(log, "ab")  # noqa: SIM115  (closed below; the child keeps its own copy)
     except OSError as exc:
         raise DetachError(f"Couldn't open {log}: {exc.strerror or exc}.") from None
     with handle:
         try:
-            return popen(argv, cwd=home, env=child_env, stdin=subprocess.DEVNULL,
-                         stdout=handle, stderr=subprocess.STDOUT, **kwargs)
+            common: dict[str, Any] = {"cwd": home, "env": child_env, "stdin": subprocess.DEVNULL,
+                                      "stdout": handle, "stderr": subprocess.STDOUT}
+            if windows:
+                return popen_windows(popen, argv, CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
+                                     **common)
+            return popen(argv, start_new_session=True, **common)
         except OSError as exc:
             raise DetachError(
                 f"Couldn't start a background step: {argv[0]} could not be run "

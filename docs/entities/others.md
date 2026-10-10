@@ -808,16 +808,20 @@
     stripped. The web process gets the shell minus `_WEB_STRIPPED`, `HOSTNAME=127.0.0.1`, `NEXT_TELEMETRY_DISABLED=1`, and
     `FRONTEND_ALLOWED_HOSTS` from the file.
   - **Run and stop**: `maestro start` preflights both ports, seeds the demo resume, downloads the scoring model into an empty
-    `fastembed_cache/` (skip: `--skip-model`), detaches `maestro run` and waits for both health URLs. `maestro stop` writes
+    `fastembed_cache/` (skip: `--skip-model`), detaches `maestro run` (on Windows with `CREATE_BREAKAWAY_FROM_JOB` first, without it when the job forbids that: `detach.popen_windows`) and waits for both health URLs. `maestro stop` writes
     `run/stop.request`; the supervisor stops each child (SIGTERM to its session on POSIX, `CTRL_BREAK_EVENT` on Windows), then a tree kill after 10 s.
   - **Update**: `maestro update` checks PyPI, prints the changelog's `### Breaking changes`, asks, writes a verified snapshot
-    (`backups/db-*.sqlite3.gz`, newest five kept), stops, runs `uv tool upgrade` (or `install --force --python 3.12 WHEEL` for
-    `--source`), starts, and compares versions. On Windows the running executables are locked, so a detached `cmd` script
+    (`backups/db-*.sqlite3.gz`, newest five kept), stops, runs `uv tool install --force --python 3.12 maestro-career-studio==NEW` (or the WHEEL for
+    `--source`; `--force` clears a rollback pin), starts, and compares versions. On Windows the running executables are locked: `update` first refuses (nothing changed) while any other
+    process runs from the venv (Claude Desktop's `maestro mcp`, `maestro logs -f`; `update.find_venv_processes`), then a detached `cmd` script
     (`logs/update.cmd`, log `logs/update.log`) waits for this process to exit and does the upgrade.
   - **Connect and bridge**: `maestro connect` reuses `app.services.connect.build`, the connect card's own strings. Claude Desktop's
-    config gets `{"command": <absolute shim>, "args": ["mcp"]}`; when Desktop runs, a detached waiter writes after it quits. `maestro mcp`
-    is a stdio-to-HTTP bridge (one total deadline per request, session replay) that imports no `app` module.
+    config gets `{"command": <absolute shim>, "args": ["mcp"]}` (plus `"env": {"MAESTRO_HOME": …}` for a non-default folder); when Desktop
+    runs, a detached waiter writes after it quits. The `claude`/`codex` runners and the browser opener get the parent environment, never
+    maestro.env's keys. `maestro mcp` is a stdio-to-HTTP bridge (dials `127.0.0.1`, one total deadline per request, session replay) that
+    imports no `app` module.
   - **Autostart**: launchd agent (macOS), systemd user unit (Linux), Task Scheduler logon task from XML for the current user (Windows).
-  - **CI**: `maestro-cli` (`tests/maestro_cs` on the three OSes), `uv-wheel`, `uv-smoke` (`scripts/smoke_uv_install.py`: install, start, score over
+  - **CI**: `maestro-cli` (`tests/maestro_cs` on the three OSes, plus `systemd-analyze --user verify` of the rendered unit on Linux and a
+    schtasks create/query/delete of the rendered XML on Windows, admin runner), `uv-wheel`, `uv-smoke` (`scripts/smoke_uv_install.py`: install, start, score over
     `/mcp`, backup, loopback and Host/Origin checks, stop), `uv-upgrade` (`scripts/upgrade_check.py`: old wheel to new via `update --source`);
     `pypi.yml` repeats build and smoke on a tag, then publishes through PyPI trusted publishing.

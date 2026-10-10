@@ -38,7 +38,9 @@ In order:
 4. **Saves a verified snapshot** of your database to `backups/` in your Maestro
    folder, as `db-<timestamp>.sqlite3.gz`, and keeps the newest five. If the
    snapshot fails, nothing is stopped or changed.
-5. **Stops Maestro**, runs `uv tool upgrade maestro-career-studio`, and **starts it
+5. **Stops Maestro**, runs `uv tool install --force --python 3.12
+   maestro-career-studio==Y` (exactly the version whose changelog it showed; the
+   `--force` also clears a version pin left by a rollback), and **starts it
    again** if it was running. Then it asks the running server for its version and
    compares it with the one it installed.
 
@@ -48,8 +50,10 @@ the command prints what to run by hand and changes nothing. If the new version
 fails to start, or reports a different version, it prints where the snapshot is and
 the rollback line below.
 
-**On Windows**, a running `maestro.exe` can't be replaced, so after the snapshot
-and the stop, `maestro update` hands the upgrade to a background step and returns.
+**On Windows**, a running `maestro.exe` can't be replaced. Claude Desktop keeps
+`maestro mcp` running while it is open, and so does any other `maestro` command
+(`maestro logs -f`), so `maestro update` first refuses, changing nothing, until
+you quit Claude Desktop and stop them. After the snapshot and the stop, `maestro update` hands the upgrade to a background step and returns.
 It finishes in about a minute. Don't run `maestro` commands meanwhile: files are
 still being replaced. Watch `logs\update.log` in your Maestro folder (path in the
 README) until its last line says `finished`, then run `maestro status`.

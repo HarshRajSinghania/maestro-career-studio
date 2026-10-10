@@ -183,6 +183,10 @@ Linux and Windows (x64), natively; on Windows you do not need WSL for this route
    so give it a minute or two. If the terminal says `maestro` is not found, run
    `uv tool update-shell` and open another new terminal.
 
+   Best effort, untested: on **Windows ARM64** the PDF engine (typst) has no ARM64 wheel, so use
+   `uv tool install --python cpython-3.12-windows-x86_64-none maestro-career-studio`
+   (x64 Python under emulation). **Alpine and other musl Linux** are not supported; use a glibc distro or Docker.
+
 Then carry on with step 3. The commands you will use:
 
 | Command | What it does |
@@ -206,9 +210,10 @@ Then carry on with step 3. The commands you will use:
 
 It holds the database, your resumes and settings, `backups/`, `logs/` and
 `maestro.env`, the one settings file (API keys and, if ever needed, port
-overrides; `maestro restart` after editing it). Uninstalling with
-`uv tool uninstall maestro-career-studio` leaves the folder; deleting the folder
-deletes your data. Add your AI key in the app (Settings › AI & models), as in the
+overrides; `maestro restart` after editing it). To uninstall, run
+`maestro autostart off` and `maestro stop` first (otherwise the login item keeps
+retrying a launcher that is gone), then `uv tool uninstall maestro-career-studio`.
+That leaves the folder; deleting the folder deletes your data. Add your AI key in the app (Settings › AI & models), as in the
 Docker route.
 
 - **Don't run a Docker install and a uv install at the same time.** They are
@@ -457,7 +462,7 @@ To keep that work going while your laptop is off, see
 **Installed with uv?** Run `maestro update`. It checks PyPI, shows any breaking
 changes from the changelog, saves a snapshot of your data to `backups/` in your
 Maestro folder, and only then stops Maestro, updates it and starts it again
-(on Windows the update finishes in the background in about a minute: watch
+(on Windows, quit Claude Desktop first, since it keeps `maestro mcp` running; the update finishes in the background in about a minute: watch
 `logs\update.log` in your Maestro folder for `finished`, then run `maestro status`). The reload-the-extension and restart-your-assistant steps below
 apply here too. [UPDATING.md](UPDATING.md#updating-a-uv-install) has the detail.
 

@@ -16,13 +16,14 @@ upgrade is handed to a detached `cmd` script that waits for this process to exit
 from __future__ import annotations
 
 import contextlib
+import ntpath
 import os
 import re
 import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,7 @@ from typing import Any
 import httpx
 import psutil
 
-from maestro_cs import control, detach, maintenance, runtime
+from maestro_cs import control, detach, maintenance, procs, runtime
 from maestro_cs.control import Context, ControlError
 
 PACKAGE = "maestro-career-studio"
@@ -167,15 +168,14 @@ def find_uv(environ: Mapping[str, str], platform: str = sys.platform,
     return next((p for p in places if p.is_file()), None)
 
 
-def upgrade_argv(uv: Path, source: str | None) -> list[str]:
-    if source:
-        return [str(uv), "tool", "install", "--force", "--python", PYTHON, source]
-    return [str(uv), "tool", "upgrade", PACKAGE]
+def upgrade_argv(uv: Path, source: str | None, new: str | None) -> list[str]:
+    """Always `uv tool install --force`: it installs exactly the version whose changelog was shown
+    and clears the `==<old>` pin a documented rollback leaves (`uv tool upgrade` honours it)."""
+    return [str(uv), "tool", "install", "--force", "--python", PYTHON, source or f"{PACKAGE}=={new}"]
 
 
-def manual_command(source: str | None) -> str:
-    return (f"uv tool install --force --python {PYTHON} {source}" if source
-            else f"uv tool upgrade {PACKAGE}")
+def manual_command(source: str | None, new: str | None) -> str:
+    return f"uv tool install --force --python {PYTHON} {source or f'{PACKAGE}=={new}'}"
 
 
 def rollback_command(old: str) -> str:
@@ -248,6 +248,55 @@ def windows_handoff_argv() -> list[str]:
     return ["cmd", "/d", "/c", ".\\update.cmd"]
 
 
+# --- other processes from this venv ---------------------------------------------------------
+
+Found = tuple[int, list[str]]
+
+
+def find_venv_processes(prefix: str, exclude: set[int], processes: Iterable[Any],
+                        platform: str = sys.platform,
+                        resolve: Callable[[str], str] = os.path.realpath) -> list[Found]:
+    """(pid, command line) of live processes whose executable is inside `prefix`.
+
+    Windows paths compare case-insensitively. A process that vanishes or won't say (AccessDenied)
+    is skipped, or listed without a command line, never an error.
+    """
+    windows = platform == "win32"
+    sep = "\\" if windows else "/"
+
+    def norm(path: str) -> str:
+        return ntpath.normcase(resolve(path)) if windows else resolve(path)
+
+    root = norm(prefix).rstrip(sep) + sep
+    found: list[Found] = []
+    for proc in processes:
+        if proc.pid in exclude:
+            continue
+        try:
+            exe = proc.exe()
+        except psutil.Error:
+            continue
+        if not exe or not (norm(exe) + sep).startswith(root):
+            continue
+        try:
+            cmdline = list(proc.cmdline())
+        except psutil.Error:
+            cmdline = []
+        found.append((proc.pid, cmdline))
+    return sorted(found, key=lambda item: item[0])
+
+
+def blocked_message(found: list[Found]) -> str:
+    """One sentence naming what keeps uv from replacing the venv's files."""
+    ids = ", ".join(str(pid) for pid, args in found if "mcp" not in args)
+    others = f" (process ids {ids})" if ids else ""
+    if any("mcp" in args for _, args in found):
+        return (f"Quit Claude Desktop (it runs `maestro mcp`) and stop other `maestro` commands"
+                f"{others}, then run `maestro update`.")
+    return (f"Stop the other `maestro` commands that are still running{others}, "
+            "then run `maestro update`.")
+
+
 # --- the flow ---------------------------------------------------------------------------------
 
 def _preload() -> None:
@@ -281,6 +330,10 @@ class Updater:
         launcher_pids: Callable[[], list[int]] | None = None,
         preload: Callable[[], None] = _preload,
         user_home: Path | None = None,
+        blockers: Callable[[], list[Found]] | None = None,
+        process_iter: Callable[[], Iterable[Any]] = psutil.process_iter,
+        prefix: str = sys.prefix,
+        resolve: Callable[[str], str] = os.path.realpath,
     ) -> None:
         self.ctx, self.fetch, self.run_cmd, self.popen = ctx, fetch or fetch_text, run, popen
         self.ask, self.say = ask, say
@@ -288,6 +341,8 @@ class Updater:
         self.http_get, self.platform, self.sleep = http_get, platform, sleep
         self.launcher_pids = launcher_pids or self._own_pids
         self.preload, self.user_home = preload, user_home
+        self.blockers = blockers or self._venv_blockers
+        self.process_iter, self.prefix, self.resolve = process_iter, prefix, resolve
 
     # --- steps --------------------------------------------------------------------------
 
@@ -370,6 +425,24 @@ class Updater:
                 pids.append(node.pid)
         return pids
 
+    def _will_be_stopped(self) -> set[int]:
+        """Pids `stop` ends (the supervisor, its servers and their children): not blockers."""
+        pids: set[int] = set()
+        for name in ("supervisor", "web", "backend"):
+            live = procs.live_process(procs.read_json(self.ctx.run_dir / f"{name}.json"))
+            if live is None:
+                continue
+            pids.add(live.pid)
+            with contextlib.suppress(psutil.Error):
+                pids.update(child.pid for child in live.children(recursive=True))
+        return pids
+
+    def _venv_blockers(self) -> list[Found]:
+        """Other processes running from this venv: they lock files uv must replace (Windows)."""
+        exclude = {*self.launcher_pids(), *self._will_be_stopped()}
+        return find_venv_processes(self.prefix, exclude, self.process_iter(), self.platform,
+                                   self.resolve)
+
     def _windows_handoff(self, uv_argv: list[str], shim: Path, restart: bool,
                          snapshot: str | None, old: str) -> int:
         logs = self.ctx.logs_dir
@@ -380,9 +453,10 @@ class Updater:
             with open(logs / "update.log", "ab") as log:
                 # Built here, not via detach.spawn_detached: that runs the venv's python, which
                 # uv is about to replace. `cmd.exe` is outside the venv.
-                self.popen(windows_handoff_argv(), cwd=logs, stdin=subprocess.DEVNULL,
-                           stdout=log, stderr=subprocess.STDOUT,
-                           creationflags=detach.CREATE_NEW_PROCESS_GROUP | detach.CREATE_NO_WINDOW)
+                detach.popen_windows(
+                    self.popen, windows_handoff_argv(),
+                    detach.CREATE_NEW_PROCESS_GROUP | detach.CREATE_NO_WINDOW,
+                    cwd=logs, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
         except OSError as exc:
             raise ControlError(f"Couldn't hand the update to a background step: "
                                f"{exc.strerror or exc}. Maestro is stopped; run `maestro start`.") from None
@@ -456,6 +530,10 @@ class Updater:
         if isinstance(checked, int):
             return checked
         new = checked or None  # a wheel with an unrecognised name: version unknown
+        if self.platform == "win32":  # POSIX replaces open files in place; Windows cannot
+            blocking = self.blockers()
+            if blocking:
+                raise ControlError(blocked_message(blocking))
         if not source and new:
             self._show_notes(old, new)
         target = new or source or "the new version"
@@ -464,7 +542,7 @@ class Updater:
             return 0
         uv = find_uv(ctx.environ, self.platform, self.which, self.user_home)
         if uv is None:
-            self.say(f"Maestro can't update itself: `uv` wasn't found. Run `{manual_command(source)}` "
+            self.say(f"Maestro can't update itself: `uv` wasn't found. Run `{manual_command(source, new)}` "
                      f"in a terminal (install uv first: {UV_HELP}). Nothing was changed.")
             return 1
         snapshot = self._snapshot()  # raises ControlError "The backup failed: …": nothing stopped
@@ -472,7 +550,7 @@ class Updater:
         was_running = control.running_supervisor(ctx) is not None
         if was_running:
             self.make_controller(ctx).stop()
-        argv = upgrade_argv(uv, source)
+        argv = upgrade_argv(uv, source, new)
         if self.platform == "win32":
             return self._windows_handoff(argv, shim, was_running, snapshot, old)
         self.preload()

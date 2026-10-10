@@ -679,7 +679,7 @@ with the failure mode that bought it. Code citing "§8" lands here.
   (version = `backend/pyproject.toml`) plus the Next standalone bundle (`maestro_cs/web/`; `scripts/build_wheel.py`, gated by
   `check_wheel.py`) and Node from `nodejs-wheel-binaries`. `maestro start` detaches `maestro run`, a foreground supervisor owning
   uvicorn (127.0.0.1:8001) and `node server.js` (:3000); stop = `run/stop.request` + a signal; process identity = pid + psutil
-  create_time. `maestro update` = verified snapshot → stop → `uv tool upgrade` (Windows: a detached `cmd` script) → start. The web
+  create_time. `maestro update` = verified snapshot → stop → `uv tool install --force …==NEW` (Windows: a detached `cmd` script) → start. The web
   process gets no API keys (`home._WEB_STRIPPED`). CI: `maestro-cli`, `uv-wheel`, `uv-smoke`, `uv-upgrade`; `pypi.yml` publishes on
   `v*` tags. Detail: `docs/entities/others.md`, "The uv install".
 - **Native run (no Docker)** — `docs/native-install.md`: `backend/scripts/native/` runs one loopback worker under `$MAESTRO_HOME`; URLs follow the MCP rule above, `MCPB_BUNDLE_PATH` uses the checkout's `mcpb/maestro-career-studio.mcpb` (`tests/test_native_scripts.py`).

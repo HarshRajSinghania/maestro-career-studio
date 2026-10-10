@@ -32,7 +32,7 @@ import sys
 import time
 import tomllib
 import webbrowser
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -173,10 +173,34 @@ def _servers(config: dict[str, Any], path: Path) -> dict[str, Any]:
     return servers
 
 
-def desktop_entry(profile: str, shim: Path) -> dict[str, Any]:
-    """The absolute launcher path: a GUI app does not have `~/.local/bin` on PATH (R10)."""
+def desktop_entry(profile: str, shim: Path, home: Path | None = None) -> dict[str, Any]:
+    """The absolute launcher path: a GUI app does not have `~/.local/bin` on PATH (R10).
+
+    `home` is given only for a custom `MAESTRO_HOME`: Desktop's environment lacks the shell's, so
+    without it the bridge would read the default folder's `maestro.env` and ports.
+    """
     args = ["mcp"] + ([] if profile == "full" else ["--profile", profile])
-    return {"command": str(shim), "args": args}
+    entry: dict[str, Any] = {"command": str(shim), "args": args}
+    if home is not None:
+        entry["env"] = {"MAESTRO_HOME": str(home)}
+    return entry
+
+
+@contextlib.contextmanager
+def parent_environ(original: Mapping[str, str]) -> Iterator[None]:
+    """Run a child launcher (the browser opener) with the environment this command started with.
+
+    `apply_env` put maestro.env's secrets into `os.environ` for the card's strings; an opener
+    spawned meanwhile would inherit them. The applied environment comes back afterwards.
+    """
+    applied = dict(os.environ)
+    os.environ.clear()
+    os.environ.update(original)
+    try:
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(applied)
 
 
 def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
@@ -304,8 +328,9 @@ class Connector:
             return 0
         argv = [exe, *shlex.split(command)[1:]]
         try:
+            # The original environment: `apply_env` has put maestro.env's API keys in os.environ.
             done = self.run(argv, capture_output=True, text=True, timeout=COMMAND_TIMEOUT,
-                            stdin=subprocess.DEVNULL, check=False)
+                            stdin=subprocess.DEVNULL, check=False, env=dict(self.ctx.environ))
         except subprocess.TimeoutExpired:
             raise ControlError(f"{label} didn't answer within {COMMAND_TIMEOUT:g} seconds. "
                                f"Run this yourself: {command}") from None
@@ -328,7 +353,8 @@ class Connector:
             return 0
         self.say(f"Opening {LABELS[client]}. Confirm the install there.")
         try:
-            opened = self.open_url(link)
+            with parent_environ(self.ctx.environ):
+                opened = self.open_url(link)
         except Exception:  # noqa: BLE001  (a missing handler must not fail the command)
             opened = False
         if opened is False:
@@ -339,7 +365,7 @@ class Connector:
 
     def _claude_desktop(self, profile: str, print_only: bool, now: bool) -> int:
         path = self.desktop_config
-        entry = desktop_entry(profile, self.shim())
+        entry = self._entry(profile)
         if print_only:
             self.say(f"Add this under mcpServers in {path}:")
             self.say(json.dumps({"mcpServers": {SERVER_NAME: entry}}, indent=2))
@@ -360,6 +386,15 @@ class Connector:
             self.say("Open Claude Desktop to load Maestro.")
             self._old_bundle_hint()
         return code
+
+    def _entry(self, profile: str) -> dict[str, Any]:
+        # The detached waiter always has MAESTRO_HOME pinned (spawn_detached), so "set" is not
+        # enough: only a folder other than the default one needs to be named.
+        pinned = bool((self.ctx.environ.get("MAESTRO_HOME") or "").strip())
+        default = Path(os.path.abspath(
+            home_mod.default_home(self.platform, self.ctx.environ, self.user_home)))
+        return desktop_entry(profile, self.shim(),
+                             self.ctx.home if pinned and self.ctx.home != default else None)
 
     def _stop_previous_waiter(self) -> None:
         """One waiter at a time: any new call replaces a live earlier one."""
@@ -396,7 +431,7 @@ class Connector:
         path = Path(os.path.realpath(self.desktop_config))
         config = read_desktop_config(path)
         servers = _servers(config, path)
-        entry = desktop_entry(profile, self.shim())
+        entry = self._entry(profile)
         if servers.get(SERVER_NAME) == entry:
             self.say("Maestro is already in Claude Desktop's config.")
             return 0

@@ -27,7 +27,7 @@ from typing import Any
 
 import psutil
 
-from maestro_cs import package_version, procs, runtime
+from maestro_cs import detach, package_version, procs, runtime
 from maestro_cs.home import (
     Ports,
     backend_env,
@@ -374,14 +374,15 @@ class Controller:
         # its own visible console and turn every stop into a hard kill (review of de8d215b).
         argv = [str(runtime.venv_python(windowless=False)), "-m", "maestro_cs", "run"]
         env = {**ctx.environ, "MAESTRO_HOME": str(ctx.home)}
-        kwargs: dict[str, Any] = (
-            {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
-            if WINDOWS else {"start_new_session": True}
-        )
         try:
             with open(ctx.logs_dir / "supervisor.log", "ab") as log:
-                return self.spawn(argv, cwd=ctx.home, env=env, stdin=subprocess.DEVNULL,
-                                  stdout=log, stderr=subprocess.STDOUT, **kwargs)
+                common: dict[str, Any] = {"cwd": ctx.home, "env": env, "stdin": subprocess.DEVNULL,
+                                          "stdout": log, "stderr": subprocess.STDOUT}
+                if WINDOWS:
+                    return detach.popen_windows(
+                        self.spawn, argv,
+                        subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW, **common)
+                return self.spawn(argv, start_new_session=True, **common)
         except OSError as exc:
             raise ControlError(f"Couldn't start Maestro: {argv[0]} could not be run "
                                f"({exc.strerror or exc}).") from None

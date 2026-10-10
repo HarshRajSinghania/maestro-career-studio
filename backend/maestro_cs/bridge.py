@@ -152,7 +152,8 @@ def backend_url_from(environ: dict[str, str] | None = None) -> str:
     """The URL this install's backend answers on; never creates or changes the folder."""
     environ = dict(os.environ if environ is None else environ)
     settings = read_env_file(resolve_home(environ) / "maestro.env")
-    return f"http://localhost:{ports_from(settings, environ).backend}"
+    # The address, not `localhost`: on Windows `localhost` tries ::1 first and its refusal costs ~2 s.
+    return f"http://127.0.0.1:{ports_from(settings, environ).backend}"
 
 
 def run(url: str | None, profile: str = "full") -> int:

@@ -92,6 +92,39 @@ def test_maestro_cli_unit_job_runs_on_all_three_oses():
     assert "pytest tests/maestro_cs -q" in runs
 
 
+def _named_step(job: dict, prefix: str) -> dict:
+    found = [s for s in _steps(job) if s.get("name", "").startswith(prefix)]
+    assert len(found) == 1, f"expected one step named {prefix!r}, found {len(found)}"
+    return found[0]
+
+
+def test_maestro_cli_verifies_the_rendered_unit_with_systemd_analyze_on_linux():
+    """Plan gate G6 claims this runs; nothing else in CI calls systemd-analyze."""
+    step = _named_step(_workflow("ci.yml")["jobs"]["maestro-cli"], "Verify the rendered systemd unit")
+    assert (step["if"], step["shell"]) == ("runner.os == 'Linux'", "python")
+    run = step["run"]
+    assert "autostart.render_unit(" in run
+    assert '["systemd-analyze", "--user", "verify", str(unit)], check=True' in run
+    assert 'shutil.which("systemd-analyze")' in run  # a missing tool: a notice, not a failure
+
+
+def test_maestro_cli_creates_queries_and_deletes_the_logon_task_on_windows():
+    step = _named_step(_workflow("ci.yml")["jobs"]["maestro-cli"], "Create, query and delete the logon task")
+    assert (step["if"], step["shell"]) == ("runner.os == 'Windows'", "python")
+    assert "admin runner" in step["name"]  # it does not prove the standard-user case
+    run = step["run"]
+    assert 'name = "Maestro CI Test"' in run
+    assert "autostart.render_task_xml(" in run
+    assert '"/XML", str(xml), "/F"], check=True' in run
+    assert '"utf-16-le"' in run  # the encoding `autostart on` writes
+
+
+def test_the_windows_task_is_created_then_queried_then_deleted_even_after_a_failure():
+    run = _named_step(_workflow("ci.yml")["jobs"]["maestro-cli"], "Create, query and delete the logon task")["run"]
+    create, query, delete = (run.index(f'"/{verb}"') for verb in ("Create", "Query", "Delete"))
+    assert create < query < run.index("finally:") < delete
+
+
 def test_wheel_job_builds_dev1_with_node_24_python_312_and_uv():
     job = _workflow("ci.yml")["jobs"]["uv-wheel"]
     assert job["runs-on"] == "ubuntu-latest"

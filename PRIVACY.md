@@ -233,8 +233,9 @@ Your data stays until you remove it; there is no server-side copy.
   to delete, as are `.playwright-mcp/` and the rendered-PDF folder (which also
   holds page-preview PNGs of the PDFs).
 - Removing the folder and its Docker volumes removes the software and its data.
-  On a uv install, `uv tool uninstall maestro-career-studio` removes the software
-  and leaves your Maestro folder; deleting that folder removes the data.
+  On a uv install, run `maestro autostart off` and `maestro stop`, then
+  `uv tool uninstall maestro-career-studio`: that removes the software and leaves
+  your Maestro folder; deleting that folder removes the data.
 - Data already sent to an AI provider or assistant is kept under that provider's
   policy. Ask them to delete it.
 - **Clear** under Job-site login in Settings › Connected agents removes the

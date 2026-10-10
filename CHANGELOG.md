@@ -88,6 +88,9 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 - **The frontend image runs `node server.js`** from Next's standalone output
   instead of `next start`, with image optimization off (nothing uses it) and no
   `sharp`. `npm start` does the same outside Docker. Same ports, same behavior.
+- **Any venv that installs the backend now also pulls Node 24** through
+  `nodejs-wheel-binaries` (about 200 MB installed): the native always-on scripts,
+  the stdio MCP server, and `pip install -e backend` for development.
 - `/health/memory` and the sync file reads work on Windows. On Windows, a sync file
   read no longer refuses a symlink at open (there is no `O_NOFOLLOW`); the
   regular-file check and the packer's symlink check still apply.
