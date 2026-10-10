@@ -144,8 +144,10 @@ def autostart_enabled() -> bool | None:
 
 
 def latest_version(timeout: float = 3.0) -> str | None:
-    """The newest release on PyPI. TODO(Task 11): call update.latest_version(timeout)."""
-    return None
+    """The newest release on PyPI (None when it couldn't be read)."""
+    from maestro_cs import update  # lazy: update imports this module
+
+    return update.latest_version(timeout)
 
 
 def web_cmd_override(environ: Mapping[str, str]) -> list[str] | None:
