@@ -7,8 +7,10 @@
 Stdlib only; runs on Linux, macOS and Windows (the CI `uv-upgrade` job runs it on Ubuntu and
 Windows). It installs OLD with `uv tool install`, starts it, creates a base resume through the
 REST API, runs `maestro update --source NEW --yes`, then polls `maestro status --json` until the
-backend reports the new version (Windows runs the upgrade in a detached batch file after the
-command returns, so the poll is the only way to know), and asserts: the backend version moved,
+backend reports the new version. Windows runs the upgrade in a detached batch file after the
+command returns and must not be disturbed by launching maestro.exe meanwhile, so there it waits
+for the batch file's own log (logs/update.log), then asks the server over HTTP, then runs `status`
+once. It asserts: the backend version moved,
 the base resume is still there, and a verified snapshot is in `backups/`. It finishes with
 `maestro stop`.
 
@@ -39,6 +41,9 @@ import tempfile
 import time
 from collections.abc import Iterator
 from pathlib import Path
+
+if sys.version_info < (3, 12):
+    raise SystemExit("upgrade_check.py needs Python 3.12 or newer (this is %d.%d)." % sys.version_info[:2])
 
 WINDOWS = sys.platform == "win32"
 SLUG = "upgrade_check"
@@ -88,6 +93,40 @@ def reports_version(report: dict | None, version: str) -> bool:
 
 def snapshots(home: Path) -> list[str]:
     return sorted(p.name for p in (home / "backups").glob(BACKUP_GLOB))
+
+
+UPDATE_FINISHED = "[update] finished"  # the last line of the Windows update.cmd (update.py windows_script)
+UPDATE_FAILED = "[update] The upgrade failed"  # uv failed; the script still restarts, then finishes
+
+
+def update_log_state(text: str) -> str:
+    """"failed", "finished" or "running" for the Windows update script's log. A failure line wins:
+    the script restarts the old version and still prints the finished line."""
+    if UPDATE_FAILED in text:
+        return "failed"
+    return "finished" if UPDATE_FINISHED in text else "running"
+
+
+def wait_for_update_log(path: Path, timeout: float, *, sleep=time.sleep, clock=time.monotonic) -> str:
+    """Wait for logs/update.log to say the Windows update script is done, reading only the file:
+    launching maestro.exe or the venv python meanwhile would lock the files uv is replacing.
+    Returns the log text; raises Failure on the failure line (at once) or on timeout."""
+    deadline = clock() + timeout
+    text = ""
+    while True:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        state = update_log_state(text)
+        if state == "failed":
+            raise Failure("the update script reported a failed upgrade:\n" + "\n".join(text.splitlines()[-LOG_TAIL:]))
+        if state == "finished":
+            return text
+        if clock() >= deadline:
+            raise Failure(f"{path.name} did not reach '{UPDATE_FINISHED}' within {timeout:g} s; "
+                          "last lines:\n" + "\n".join(text.splitlines()[-LOG_TAIL:]))
+        sleep(2.0)
 
 
 def tail_lines(path: Path, count: int = LOG_TAIL) -> list[str]:
@@ -207,6 +246,9 @@ class Check:
                        f"expected a line ending in {self.old_version}")
 
     def start(self) -> None:
+        busy = [p for p in (self.backend_port, self.web_port) if port_listening(p)]
+        self.expect_ok(not busy, f"port {busy[0] if busy else ''} already answers; pick spare ports with "
+                       "MAESTRO_PORT and MAESTRO_WEB_PORT so this check never touches a running Maestro.")
         cache = self.home / "fastembed_cache"
         seed = Path(self.model_seed) if self.model_seed else None
         cache.mkdir(parents=True, exist_ok=True)
@@ -254,9 +296,39 @@ class Check:
         for line in (done.stdout + done.stderr).strip().splitlines()[-8:]:
             self.say(f"      | {line}")
         if WINDOWS:
-            self.facts["update"] = "detached batch file; polled `maestro status --json`"
+            self.facts["update"] = "detached batch file; waited on logs/update.log, then HTTP, then one status"
 
     def wait_for_new(self) -> None:
+        started = time.monotonic()
+        if WINDOWS:
+            # update.cmd runs `uv tool install --force` while we wait; any maestro.exe or venv
+            # python we launched now would hold the files uv replaces. So: read the log only, then
+            # ask the server over HTTP, and run the shim once everything has settled.
+            wait_for_update_log(self.home / "logs" / "update.log", self.wait)
+            self.wait_for_http_version()
+            done = self.maestro("status", "--json", "--offline", timeout=60, expect_code=None)
+            report = parse_status(done.stdout)
+            self.expect_ok(reports_version(report, self.new_version),
+                           f"`maestro status --json` does not report backend {self.new_version}: {report!r}")
+        else:
+            self.poll_status()
+        self.facts["update took (s)"] = round(time.monotonic() - started, 1)
+
+    def wait_for_http_version(self) -> None:
+        deadline = time.monotonic() + self.wait
+        seen: object = None
+        while time.monotonic() < deadline:
+            try:
+                status, body = http_json(self.backend_port, "GET", "/api/version", timeout=5.0)
+                seen = body.get("version") if status == 200 and isinstance(body, dict) else f"HTTP {status}"
+            except OSError:
+                seen = "no answer"
+            if seen == self.new_version:
+                return
+            time.sleep(2.0)
+        raise Failure(f"GET /api/version did not report {self.new_version} within {self.wait:g} s; last: {seen!r}")
+
+    def poll_status(self) -> None:
         deadline = time.monotonic() + self.wait
         report = None
         while time.monotonic() < deadline:
@@ -264,9 +336,8 @@ class Check:
                 done = self.maestro("status", "--json", "--offline", timeout=60, expect_code=None)
                 report = parse_status(done.stdout)
             except (OSError, subprocess.TimeoutExpired):
-                report = None  # the launcher is being replaced under us (Windows)
+                report = None
             if reports_version(report, self.new_version):
-                self.facts["update took (s)"] = round(self.wait - (deadline - time.monotonic()), 1)
                 return
             time.sleep(2.0)
         raise Failure(f"`maestro status --json` did not report backend {self.new_version} within "

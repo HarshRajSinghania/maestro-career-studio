@@ -159,6 +159,17 @@ def test_pypi_build_checks_the_tag_against_the_project_version():
     assert job["outputs"]["version"]
 
 
+def test_pypi_release_workflow_queues_and_uses_no_shared_caches():
+    doc = _workflow("pypi.yml")
+    assert doc["concurrency"] == {"group": "pypi-${{ github.ref }}", "cancel-in-progress": False}
+    for name, job in doc["jobs"].items():
+        for step in _steps(job):
+            if str(step.get("uses", "")).startswith("actions/setup-node@"):
+                assert "cache" not in step.get("with", {}), f"{name}: no npm cache in a release build"
+            if str(step.get("uses", "")).startswith("actions/cache@"):
+                assert name == "smoke", "only the smoke job may use the model cache"
+
+
 def test_pypi_smoke_runs_on_all_three_oses_before_any_publish():
     jobs = _workflow("pypi.yml")["jobs"]
     smoke = jobs["smoke"]
@@ -172,7 +183,13 @@ def test_pypi_publish_is_tag_only_trusted_and_token_free():
     jobs = doc["jobs"]
     publish = jobs["publish"]
     assert publish["needs"] == "smoke"
-    assert publish["if"] == "startsWith(github.ref, 'refs/tags/v')"
+    # a manual run started from a tag must stay a dry run
+    assert publish["if"] == "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')"
+    assert "github.event_name == 'push'" in publish["if"]
+    assert not [s for s in _steps(publish) if "run" in s], "publish only downloads and publishes"
+    assert not [s for s in _steps(publish) if str(s.get("uses", "")).startswith("actions/checkout@")]
+    upload = _step_using(jobs["build"], "actions/upload-artifact")["with"]["name"]
+    assert _step_using(publish, "actions/download-artifact")["with"]["name"] == upload
     assert publish["environment"]["name"] == "pypi"
     assert publish["permissions"] == {"id-token": "write"}
     assert doc["permissions"] == {"contents": "read"}
@@ -229,6 +246,71 @@ def test_snapshots_lists_only_backup_files(tmp_path):
     (folder / "db-20261010-120000.sqlite3.gz").write_bytes(b"x")
     (folder / "notes.txt").write_text("not a snapshot")
     assert upgrade_check.snapshots(tmp_path) == ["db-20261010-120000.sqlite3.gz"]
+
+
+def test_update_log_state_reads_the_windows_scripts_own_lines():
+    assert upgrade_check.update_log_state("") == "running"
+    assert upgrade_check.update_log_state("[update] running uv\r\n") == "running"
+    assert upgrade_check.update_log_state("[update] upgraded\n[update] finished\n") == "finished"
+    failed = "[update] The upgrade failed. Your data is untouched.\n[update] finished\n"
+    assert upgrade_check.update_log_state(failed) == "failed"  # it restarts the old version, then finishes
+
+
+def test_update_script_lines_match_what_upgrade_check_waits_for():
+    from maestro_cs import update
+
+    script = update.windows_script(wait_pids=[1], uv_argv=["uv"], shim=Path("m.exe"), restart=True,
+                                   snapshot=None, old="0.0.0.dev1")
+    assert upgrade_check.UPDATE_FINISHED in script
+    assert upgrade_check.UPDATE_FAILED in script
+
+
+class _Clock:
+    def __init__(self):
+        self.now = 0.0
+
+    def clock(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+def test_wait_for_update_log_returns_when_the_script_finishes(tmp_path):
+    log = tmp_path / "update.log"
+    ticks = _Clock()
+    log.write_text("[update] running uv\n", encoding="utf-8")
+
+    def sleep(seconds):
+        ticks.sleep(seconds)
+        log.write_text("[update] running uv\n[update] upgraded\n[update] finished\n", encoding="utf-8")
+
+    text = upgrade_check.wait_for_update_log(log, 60, sleep=sleep, clock=ticks.clock)
+    assert "[update] upgraded" in text
+
+
+def test_wait_for_update_log_fails_at_once_on_the_failure_line(tmp_path):
+    log = tmp_path / "update.log"
+    log.write_text("[update] running uv\n[update] The upgrade failed. Your data is untouched.\n", encoding="utf-8")
+    ticks = _Clock()
+    with pytest.raises(upgrade_check.Failure, match="failed upgrade"):
+        upgrade_check.wait_for_update_log(log, 60, sleep=ticks.sleep, clock=ticks.clock)
+    assert ticks.now == 0.0  # did not wait
+
+
+def test_wait_for_update_log_times_out_with_the_log_tail(tmp_path):
+    log = tmp_path / "update.log"
+    ticks = _Clock()
+    log.write_text("[update] waiting for maestro to exit (4)\n", encoding="utf-8")
+    with pytest.raises(upgrade_check.Failure, match=r"(?s)did not reach .*waiting for maestro to exit"):
+        upgrade_check.wait_for_update_log(log, 10, sleep=ticks.sleep, clock=ticks.clock)
+    assert ticks.now >= 10
+
+
+def test_wait_for_update_log_survives_a_log_that_does_not_exist_yet(tmp_path):
+    ticks = _Clock()
+    with pytest.raises(upgrade_check.Failure, match="did not reach"):
+        upgrade_check.wait_for_update_log(tmp_path / "update.log", 4, sleep=ticks.sleep, clock=ticks.clock)
 
 
 def test_upgrade_check_backup_pattern_matches_the_maintenance_module():
