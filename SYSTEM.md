@@ -664,9 +664,9 @@ with the failure mode that bought it. Code citing "§8" lands here.
   JD skill names only, never resume text. `python -m scripts.ats_calibration monotonicity` (same env)
   asserts "adding true evidence never lowers the score" over the whole corpus — run it after ANY matcher or
   tier change, not just a scoring-weight one.
-- Backend tests: `pytest tests/ mcp_server/tests/ -q -n auto --dist loadfile` from `backend/` (CI's command; a bare
-  `tests/` skips the MCP suite). `-n` is pytest-xdist (~15 → ~3.5 min); `loadfile` keeps `tests/browser`'s Chromium
-  per file. conftest makes a throwaway SQLite file per process and worker (`TEST_DATABASE_URL` may name another,
+- Backend tests: `pytest tests/ mcp_server/tests/ -q -n auto --dist loadfile` from `backend/`; bare `tests/` skips MCP.
+  CI cold-installs `.[mcp]`, checks six stdio profiles and `/mcp` + `/mcp/hunt` over HTTP. xdist (~15 → ~3.5 min)
+  uses `loadfile` to keep browser tests per file. conftest makes a SQLite file per process/worker (`TEST_DATABASE_URL` may name another,
   never under `data/` or with `-n`) and blanks `OPENAI_API_KEY`/`GEMINI_API_KEY`: a worker's `load_dotenv()` finds the
   nearest `.env`, so unstubbed tests made billed calls. Parity tests (`tests/node_ts.py`) need node 24: skip locally, FAIL in `CI`.
 - **Deploying a local change = rebuilding BOTH images** (MAINTAINER path, MAIN checkout):

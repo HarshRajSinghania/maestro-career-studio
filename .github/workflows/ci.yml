@@ -89,8 +89,8 @@ jobs:
     name: MCP Server Cold Install (documented user command)
     runs-on: ubuntu-latest
 
-    # The backend job installs ".[dev,mcp]" together and only ever IMPORTS the
-    # server through the test suite. Neither matches what a user actually does.
+    # The backend job installs ".[dev,mcp]" together; this job exercises both
+    # transports without dev dependencies supplying a missing runtime package.
     #
     # This is the command in the README, run in a clean environment with no dev
     # extra to accidentally supply a missing dependency, and it launches the
@@ -126,6 +126,83 @@ jobs:
             BACKEND_URL="http://localhost:8001" \
               maestro-career-studio-mcp < /dev/null
           done
+
+      - name: Smoke full and hunt MCP profiles over HTTP
+        env:
+          BACKEND_URL: "http://127.0.0.1:8011"
+          MAESTRO_CS_MCP_PROFILE: "full"
+          ALLOWED_HOSTS: "127.0.0.1,localhost"
+          NO_PROXY: "127.0.0.1,localhost"
+          no_proxy: "127.0.0.1,localhost"
+          SYNC_KEY_FILE: ""
+          SYNC_REMOTE_URL: ""
+          SYNC_PUBLIC_HOST: ""
+          OPENAI_API_KEY: ""
+          GEMINI_API_KEY: ""
+          OPENAI_BASE_URL: ""
+          JEV_API_KEY: ""
+          LANGFUSE_PUBLIC_KEY: ""
+          LANGFUSE_SECRET_KEY: ""
+          LANGFUSE_HOST: ""
+        run: |
+          set -euo pipefail
+          cd backend
+          export DATA_DIR="$RUNNER_TEMP/mcp-http/data"
+          export DATABASE_URL="sqlite:///$DATA_DIR/maestro_cs.sqlite3"
+          for directory in APPLICATIONS SETTINGS LOGS EXPORTS BASE_RESUMES KB_DOCUMENTS MAESTRO_CS_PDF MAESTRO_CS_UPLOAD; do
+            export "${directory}_DIR=$RUNNER_TEMP/mcp-http/$directory"
+          done
+          mkdir -p "$DATA_DIR"
+          mcp_log="$RUNNER_TEMP/mcp-http-uvicorn.log"
+          uvicorn app.main:app --host 127.0.0.1 --port 8011 --workers 1 > "$mcp_log" 2>&1 &
+          mcp_pid=$!
+          cleanup() {
+            mcp_exit=$?
+            kill "$mcp_pid" 2>/dev/null || true
+            wait "$mcp_pid" 2>/dev/null || true
+            if [ "$mcp_exit" -ne 0 ]; then cat "$mcp_log"; fi
+          }
+          trap cleanup EXIT
+          for attempt in {1..60}; do
+            if curl --fail --silent --max-time 1 "$BACKEND_URL/health" > /dev/null; then break; fi
+            kill -0 "$mcp_pid"
+            sleep 1
+          done
+          curl --fail --silent --max-time 1 "$BACKEND_URL/health"
+          python - <<'PY'
+          import asyncio
+          import os
+
+          import httpx
+          from mcp import ClientSession
+          from mcp.client.streamable_http import streamable_http_client
+
+          from mcp_server.profiles import HUNT_TOOLS
+          from mcp_server.server import list_registered_tool_names
+
+          async def tool_names(path):
+              async with httpx.AsyncClient(trust_env=False) as http_client:
+                  async with streamable_http_client(
+                      os.environ["BACKEND_URL"] + path, http_client=http_client
+                  ) as (read, write, _):
+                      async with ClientSession(read, write) as session:
+                          await session.initialize()
+                          result = await session.list_tools()
+                          return [tool.name for tool in result.tools]
+
+          async def smoke():
+              full = await tool_names("/mcp")
+              assert len(full) == len(list_registered_tool_names()), full
+              hunt = await tool_names("/mcp/hunt")
+              assert len(hunt) == len(HUNT_TOOLS), hunt
+              assert set(hunt) == HUNT_TOOLS, hunt
+              print(f"HTTP MCP: {len(full)} full tools; {len(hunt)} hunt tools")
+
+          async def main():
+              await asyncio.wait_for(smoke(), timeout=30)
+
+          asyncio.run(main())
+          PY
 
   shellcheck:
     name: Shellcheck
