@@ -931,7 +931,12 @@ server holds no data. Log what the Windows CI job observes.)
      (it imports `app.services.ats.embeddings` and builds the configured model — find the exact
      loader, `_model(load_config().…)`, and call it; no new download code). On failure print "The
      scoring model didn't download; the first score will try again." and continue.
-  5. Detach `[sys.executable, "-m", "maestro_cs", "run"]`: POSIX `start_new_session=True`;
+  5. Detach `[venv_python(windowless=False), "-m", "maestro_cs", "run"]` — always the console
+     `python.exe` on Windows, never `sys.executable` (which is `pythonw.exe` when autostart runs
+     `start`): CREATE_NO_WINDOW gives a console program a hidden console that the children inherit,
+     which is what lets the supervisor's `CTRL_BREAK_EVENT` reach them and keeps their windows
+     hidden; a GUI-subsystem supervisor would give each child its own visible console and turn every
+     stop into a hard kill (review of de8d215b). POSIX `start_new_session=True`;
      Windows `creationflags=CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`; stdin/stdout/stderr →
      DEVNULL / `logs/supervisor.log`; env = parent env + `MAESTRO_HOME` (the supervisor loads the
      rest itself).
@@ -1217,8 +1222,11 @@ Pure render functions (tested by snapshot-style asserts) + an injected `runner` 
   `systemctl --user daemon-reload`, `systemctl --user enable maestro-career-studio.service`, then
   `loginctl enable-linger <user>` (warn, don't fail, if refused: "Maestro will start when you log
   in, not at boot."). off: disable, delete, daemon-reload. No `systemctl` → one sentence.
-- **Windows:** `schtasks /Create /TN "Maestro Career Studio" /SC ONLOGON /RL LIMITED /F /TR "<pythonw.exe> -m maestro_cs run"`
-  (`venv_python(windowless=True)` so no console window appears at logon); off: `schtasks /Delete /TN … /F`.
+- **Windows:** `schtasks /Create /TN "Maestro Career Studio" /SC ONLOGON /RL LIMITED /F /TR "<pythonw.exe> -m maestro_cs start --no-browser"`
+  (`venv_python(windowless=True)` so no console window appears at logon; it runs **`start`, not
+  `run`**: `start` detaches the supervisor under console `python.exe` with a hidden console — see
+  Task 6 step 5 — so stops stay graceful and no child window appears). No restart-on-crash at this
+  level on Windows; the supervisor restarts its children. off: `schtasks /Delete /TN … /F`.
   Quote the `/TR` value for paths with spaces (test it).
 - `is_enabled()` for `status`. Off by default. The platforms differ on "now", and the messages
   say so: **macOS** `bootstrap` of a `RunAtLoad` plist starts Maestro immediately ("Maestro will
