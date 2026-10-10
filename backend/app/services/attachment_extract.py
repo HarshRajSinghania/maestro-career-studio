@@ -146,7 +146,19 @@ def _docx_text(data: bytes) -> str:
     from xml.etree import ElementTree
 
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        root = ElementTree.fromstring(archive.read("word/document.xml"))
+        part = "word/document.xml"
+        try:
+            rels = ElementTree.fromstring(archive.read("_rels/.rels"))
+        except (KeyError, ElementTree.ParseError):
+            pass
+        else:
+            for relationship in rels:
+                if relationship.get("Type", "").endswith("/officeDocument"):
+                    part = relationship.get("Target", part).lstrip("/")
+                    break
+        if archive.getinfo(part).file_size > 50 * 1024 * 1024:
+            raise UnreadableFile("This Word file is too large to read.")
+        root = ElementTree.fromstring(archive.read(part))
     body = root.find(f"{_W}body")
     if body is None:
         return ""
@@ -164,6 +176,8 @@ def _docx_text(data: bytes) -> str:
                 merge = tc.find(f"{_W}tcPr/{_W}vMerge")
                 # Horizontal spans repeat the cell; vertical continuations use the cell above.
                 if merge is not None and merge.get(f"{_W}val", "continue") == "continue":
+                    if column not in previous:
+                        raise UnreadableFile("This file isn't a readable Word document.")
                     text = previous[column]
                 else:
                     text = "\n".join(_w_text(p) for p in tc.findall(f"{_W}p"))
