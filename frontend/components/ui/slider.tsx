@@ -40,14 +40,4 @@ function Slider({
   )
 }
 
-function SliderValue({ className, ...props }: SliderPrimitive.Value.Props) {
-  return (
-    <SliderPrimitive.Value
-      data-slot="slider-value"
-      className={cn("text-body-medium tabular-nums text-muted-foreground", className)}
-      {...props}
-    />
-  )
-}
-
-export { Slider, SliderValue }
+export { Slider }

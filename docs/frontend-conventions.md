@@ -1526,10 +1526,8 @@
   (`busy`) the textarea is `readOnly`, Escape and Cancel do nothing, and Save
   stays focusable. Quick capture submits through `useSingleFlight`. Pinned by
   `test_frontend_kb_editors.py`.
-- **Analytics** (was "Explore"): route `/analytics` (`/explore` is a 307
-  redirect — `app/explore/page.tsx` is a stub that `redirect()`s and nothing
-  else, NOT a next.config rule; the charts live in
-  `components/charts/` and `components/analytics/`;
+- **Analytics** (was "Explore"): route `/analytics` (there is no `/explore` route; the
+  charts live in `components/charts/` and `components/analytics/`;
   the API prefix stays `/api/explore` and the seven MCP-wrapped chart endpoints
   keep their paths). Four `?tab=` deep-linkable tabs: Overview (KPI tiles,
   activity, pipeline chips, teasers), Job market, Resume fit, Skill gaps

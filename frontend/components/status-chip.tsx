@@ -164,11 +164,6 @@ export function LaneDot({ status, className }: { status: string; className?: str
   return <span aria-hidden="true" className={cn("size-1.5 shrink-0 rounded-full", dot, className)} />;
 }
 
-/** Label-only view, for callers that bring their own container. */
-export function proposalStatusLabel(status: string): string {
-  return PROPOSAL_STATUS_CHIP[status]?.label ?? "Unknown";
-}
-
 const AGENT_LANE_CHIP = PROPOSAL_STATUS_CHIP;
 
 export function SavedJobChip({

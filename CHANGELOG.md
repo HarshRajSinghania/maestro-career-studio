@@ -74,6 +74,7 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
   `GET /api/kb/extra-section-presets`, `GET /api/resume-versions/{kind}/{key}/{number}/diff`,
   and `POST /api/kb/consolidate`. Word-bank reset still saves through `PUT /wording`;
   the preset catalog, version-detail diffs, and onboarding import remain available.
+- The `/explore` redirect (Analytics has lived at `/analytics` since July).
 
 ## [0.8.0] — 2026-10-07
 

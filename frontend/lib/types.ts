@@ -654,11 +654,6 @@ export interface KBEntityPatch {
   section_title?: string | null;
 }
 
-export interface KBPointCreate {
-  text: string;
-  tags?: string[];
-}
-
 export interface KBPointPatch {
   text?: string | null;
   state?: KBPointState | null;

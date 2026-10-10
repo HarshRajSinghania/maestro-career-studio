@@ -186,7 +186,7 @@ rather than left buried in a table.
 | TanStack Query | MIT |
 | Monaco Editor, `@monaco-editor/react` | MIT |
 | Recharts | MIT |
-| react-hook-form, `@hookform/resolvers`, Zod | MIT |
+| Zod | MIT |
 | react-markdown, remark-gfm, remark-breaks | MIT |
 | Sonner, next-themes, clsx, class-variance-authority | MIT |
 | lucide-react | ISC |

@@ -210,13 +210,6 @@ function sameFormattingValue(a: unknown, b: unknown): boolean {
   return a === b;
 }
 
-/** Diff against the plain defaults — the base-editor case. */
-export function diffFromDefaults(
-  value: Partial<ResumeFormatting>,
-): Partial<ResumeFormatting> | null {
-  return diffFrom(FORMATTING_DEFAULTS, value);
-}
-
 /**
  * The Formatting panel's baseline, and whether EVERY layer of it has loaded.
  *

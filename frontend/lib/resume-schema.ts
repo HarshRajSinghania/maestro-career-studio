@@ -176,5 +176,3 @@ export const resumeDataSchema = z.object({
   certifications: z.array(z.string()).default([]),
   extra_sections: extraSectionsArraySchema.default([]),
 });
-
-export type ResumeDataInput = z.input<typeof resumeDataSchema>;

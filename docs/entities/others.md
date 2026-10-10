@@ -513,8 +513,7 @@
   three-bullet cap — an entry's bullets are one unit of evidence. A strong (`analogue`) cold bullet
   gets no ask. Editors render no amber zone wash and make no "read first by a recruiter" claim (a
   fixed positional heuristic must not be stated as fact about a reader); the marker survives ONLY on
-  the health report, labelled `Higher priority`. `lib/health-zones.ts` mirrors the Python; update both
-  together.
+  the health report, labelled `Higher priority`.
 - **ApplicationProposal + ConsentEvent** (auto-apply ledger; migrations
   `56ade310b259` + `11b61fe1ace9`, lifecycle fields `0c677ba4cbcb`, filer
   `9a5744f9b9d9`, the one revision after the SQLite baseline): the

@@ -14,7 +14,6 @@ _FRONTEND = Path(__file__).resolve().parents[2] / "frontend"
 _PAGE = (_FRONTEND / "components/resume-health/health-report-page.tsx").read_text()
 _CARDS = (_FRONTEND / "components/resume-health/finding-cards.tsx").read_text()
 _TYPES = (_FRONTEND / "lib/types.ts").read_text()
-_ZONES = (_FRONTEND / "lib/health-zones.ts").read_text()
 _HELPERS = (_FRONTEND / "lib/health-report.ts").read_text()
 _BADGES = (_FRONTEND / "components/resume-health/health-badges.tsx").read_text()
 _GALLERY = (_FRONTEND / "components/base-resumes/base-resume-gallery.tsx").read_text()
@@ -102,13 +101,12 @@ def test_close_the_loop_round2_surfaces():
     ).read_text()
 
 
-def test_level_values_mirrored_in_health_zones():
-    assert '"direct": 1.0' in _ZONES or "direct: 1.0" in _ZONES
-    assert "analogue: 0.8" in _ZONES
-    assert "adjacent: 0.5" in _ZONES
-    assert "implied: 0.3" in _ZONES
-    assert "unaddressed: 0.0" in _ZONES
+def test_level_values_mirrored_in_health_report():
     assert "direct: 1.0" in _HELPERS
+    assert "analogue: 0.8" in _HELPERS
+    assert "adjacent: 0.5" in _HELPERS
+    assert "implied: 0.3" in _HELPERS
+    assert "unaddressed: 0.0" in _HELPERS
 
 
 def test_collapsed_row_cannot_overflow_on_a_long_entry_label():

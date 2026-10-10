@@ -223,7 +223,7 @@ def test_analytics_never_calls_the_top_skills_mandatory():
 
 def test_status_maps_never_print_a_key():
     chip = _read("components/status-chip.tsx")
-    assert chip.count('?? "Unknown"') == 2
+    assert chip.count('?? "Unknown"') == 1
     assert "?? status;" not in chip
 
 

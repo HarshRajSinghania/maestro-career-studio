@@ -18,8 +18,7 @@ def test_nav_links_carry_aria_current():
 
 
 def _menu_button_base() -> str:
-    # The cva BASE string only: `SidebarMenuSubButton` further down still
-    # carries shadcn's neutral active style, and the app never renders it.
+    # The cva BASE string only (the variants follow it in the same call).
     start = _UI.index("const sidebarMenuButtonVariants = cva(")
     open_quote = _UI.index('"', start)
     return _UI[open_quote + 1 : _UI.index('"', open_quote + 1)]

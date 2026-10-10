@@ -35,7 +35,6 @@ export function ProjectEditor({
   onChange: (next: ProjectEntry[]) => void;
   /** When set (base resume editor), each project can be copied to another base resume. */
   sourceSlug?: string;
-  /** Location keys of the recruiter/ATS "hot zone" (from lib/health-zones). */
 }) {
   const [portIndex, setPortIndex] = useState<number | null>(null);
 

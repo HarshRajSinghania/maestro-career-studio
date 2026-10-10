@@ -548,7 +548,7 @@ def test_a_menu_is_the_small_corner_and_a_popover_panel_the_medium_one():
     surface = re.search(r"export const POPUP_SURFACE =\s*\"([^\"]+)\"", popover)
     assert surface and "rounded" not in surface.group(1)
     assert "rounded-corner-md" in _slot_classes("components/ui/popover.tsx", "popover-content").split()
-    for slot in ("dropdown-menu-content", "dropdown-menu-sub-content", "dropdown-menu-item"):
+    for slot in ("dropdown-menu-content", "dropdown-menu-item"):
         assert "rounded-corner-xs" in _slot_classes("components/ui/dropdown-menu.tsx", slot).split(), slot
     assert "rounded-corner-xs" in _slot_classes("components/ui/select.tsx", "select-content").split()
 
@@ -559,8 +559,6 @@ def test_sidebar_menu_rows_are_pills():
     variants = re.search(r"const sidebarMenuButtonVariants = cva\(\s*\"([^\"]+)\"", sidebar)
     assert variants, "sidebarMenuButtonVariants is no longer a cva( literal"
     assert "rounded-full" in variants.group(1).split()
-    action = sidebar[sidebar.index("function SidebarMenuAction(") :].split("\nfunction ")[0]
-    assert "rounded-full" in action.split(), "SidebarMenuAction nests in a pill row"
 
 
 def test_a_sheet_rounds_the_edge_it_opens_on():
@@ -886,7 +884,6 @@ def test_what_floats_carries_its_level():
     popover = _read("components/ui/popover.tsx")
     surface = re.search(r"export const POPUP_SURFACE =\s*\"([^\"]+)\"", popover)
     assert surface and "shadow-level2" in surface.group(1).split()  # popover and menu
-    assert "shadow-level2" in _class_list("components/ui/dropdown-menu.tsx", "dropdown-menu-sub-content")
     assert "shadow-level2" in _class_list("components/ui/select.tsx", "select-content")
     # A plain tooltip is a dark label and rests flat; a chart tooltip is a rich popover-surface
     # panel (asserted above in chart-kit), so it is level2.

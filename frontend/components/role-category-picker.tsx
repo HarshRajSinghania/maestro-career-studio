@@ -11,7 +11,6 @@ import {
   MAX_ROLE_LABEL_CHARS,
   RolePicker,
 } from "@/components/role-picker";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -66,25 +65,6 @@ export function displayRoleTag(
 ) {
   if (roleLabelText) return roleLabelText;
   return roleLabel(roleCategory, options);
-}
-
-/** Read-only role badge. `unknown` is styled as an invitation, not an error —
- *  it is a legitimate state, and the design's promise is that it is always
- *  visible and always one click from being fixed. */
-export function RoleBadge({
-  role,
-  roleLabel: label,
-}: {
-  role: string;
-  roleLabel?: string | null;
-}) {
-  const { data: options } = useRoleCategories();
-  const undeclared = role === "unknown" && !label;
-  return (
-    <Badge variant={undeclared ? "outline" : "secondary"} className="text-body-small">
-      {undeclared ? "Role not set" : displayRoleTag(role, label, options)}
-    </Badge>
-  );
 }
 
 /** Inline picker. Writes through PATCH /identity, which is metadata-only —
@@ -176,7 +156,6 @@ export function RoleCategoryPicker({
     </div>
   );
 }
-
 
 /** The studio ⋯ item that opens the Target dialog, naming the role when one is set ("Target: Data
  *  Scientist"). With none it reads "Target", the dialog's name. */

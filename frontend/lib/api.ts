@@ -18,7 +18,6 @@ import type {
   KBAdaptApplyRequest,
   KBAdaptProposal,
   KBAdaptRequest,
-  KBPointCreate,
   KBPointOut,
   KBPointPatch,
   KBPortRequest,
@@ -464,13 +463,6 @@ export function mergeKbEntity(entityId: UUID, targetId: UUID) {
   return apiFetch<KBEntityDetail>(`/api/kb/entities/${entityId}/merge`, {
     method: "POST",
     body: JSON.stringify({ target_id: targetId }),
-  });
-}
-
-export function createKbPoint(entityId: UUID, payload: KBPointCreate) {
-  return apiFetch<KBPointOut>(`/api/kb/entities/${entityId}/points`, {
-    method: "POST",
-    body: JSON.stringify(payload),
   });
 }
 

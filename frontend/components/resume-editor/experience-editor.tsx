@@ -29,7 +29,6 @@ export function ExperienceEditor({
 }: {
   value: ExperienceEntry[];
   onChange: (next: ExperienceEntry[]) => void;
-  /** Location keys of the recruiter/ATS "hot zone" (from lib/health-zones). */
 }) {
   const { setEditingIndex, entryEditingProps, update } = useEntryEditing(
     value,

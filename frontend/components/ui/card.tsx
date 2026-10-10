@@ -14,7 +14,7 @@ function Card({
       className={cn(
         // ring-foreground/5, not /10: the page/card tonal step now carries the
         // containment, so the ring only needs to crisp the edge.
-        "group/card flex flex-col gap-4 overflow-hidden rounded-corner-md bg-card py-4 text-body-medium text-card-foreground ring-1 ring-foreground/5 has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-corner-md *:[img:last-child]:rounded-b-corner-md",
+        "group/card flex flex-col gap-4 overflow-hidden rounded-corner-md bg-card py-4 text-body-medium text-card-foreground ring-1 ring-foreground/5 has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 *:[img:first-child]:rounded-t-corner-md *:[img:last-child]:rounded-b-corner-md",
         className
       )}
       {...props}
@@ -81,19 +81,6 @@ function CardContent({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-footer"
-      className={cn(
-        "flex items-center rounded-b-corner-md border-t bg-surface-container-low p-4 group-data-[size=sm]/card:p-3",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
 /**
  * The second level of containment — a bounded region INSIDE a Card.
  *
@@ -120,7 +107,6 @@ function CardSection({ className, ...props }: React.ComponentProps<"div">) {
 export {
   Card,
   CardHeader,
-  CardFooter,
   CardTitle,
   CardAction,
   CardDescription,

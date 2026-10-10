@@ -2,8 +2,7 @@
  * Pure helpers for the health report page. Keep this file free of React so
  * Node's type-stripped test runner can import it.
  *
- * LEVEL_VALUES is duplicated in health-zones.ts (the designated Python
- * mirror) — both must stay in lockstep with health_score.LEVEL_VALUES.
+ * LEVEL_VALUES must stay in lockstep with health_score.LEVEL_VALUES.
  */
 
 import type { ResumeData, WordingBody, WordingRead } from "./types";

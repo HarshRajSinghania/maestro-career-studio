@@ -137,5 +137,3 @@ export function useFocusSection() {
 
   return focus;
 }
-
-export default useFocusSection;
