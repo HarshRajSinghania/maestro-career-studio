@@ -21,6 +21,21 @@ def in_both_windows(unfocused_xfail=None):
     return pytest.mark.parametrize("window", ["page", unfocused], ids=["focused", "unfocused"])
 
 
+OPS = "window.careerStudioCompanion.fillOps"
+
+
+def inv(page, **opts):
+    return {f["question"]: f for f in page.evaluate(f"async (o) => (await {OPS}.inventory(o)).fields", opts)}
+
+
+def apply(page, f, **action):
+    return page.evaluate(f"(a) => {OPS}.apply([a])", {"fid": f["fid"], "fp": f["fp"], **action})[0]
+
+
+def explore(page, f, term=None):
+    return page.evaluate(f"(r) => {OPS}.explore([r])", {"fid": f["fid"], "fp": f["fp"], "term": term})[f["fid"]]
+
+
 def oracle(page, key):
     return page.evaluate("""(k) => {
       const o = window.__oracle;
@@ -208,5 +223,40 @@ SELECT_ON_CLOSE = """<label id='l'>Willing to move?</label>
   });
   document.addEventListener("click", close);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+})();
+</script>"""
+
+
+# A press appends a ROLE-LESS list with its first row highlighted; an Enter
+# on the button would accept it. `__oracle.team` is what the fake app holds.
+# A second button ignores the press and ArrowDown, and an Enter commits "Yes"
+# with no list at all; nothing gives it back.
+ENTER_PICKS = """<label id='l'>Team</label>
+<div><button id='team' aria-haspopup='listbox' aria-labelledby='l'>Select One</button><input type='hidden' value=''></div>
+<label id='m'>Relocate?</label>
+<div><button id='blind' aria-haspopup='listbox' aria-labelledby='m'>Select One</button><input type='hidden' value=''></div>
+<script>
+(() => {
+  const oracle = (window.__oracle = window.__oracle || {});
+  oracle.team = ""; oracle.blind = "";
+  const team = document.getElementById('team');
+  window.teamKeys = [];
+  team.addEventListener('keydown', (e) => window.teamKeys.push(e.key));
+  team.addEventListener('click', () => {
+    if (document.querySelector('.rows')) return;
+    const rows = document.createElement('div');
+    rows.className = 'rows'; rows.innerHTML = "<div class='hl'>Red</div><div>Blue</div>";
+    document.body.append(rows);
+  });
+  team.addEventListener('keydown', (e) => {
+    const hl = document.querySelector('.rows .hl');
+    if (e.key !== 'Enter' || !hl) return;
+    team.textContent = hl.textContent; team.nextElementSibling.value = hl.textContent; oracle.team = hl.textContent;
+  });
+  const blind = document.getElementById('blind');
+  blind.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    blind.textContent = 'Yes'; blind.nextElementSibling.value = 'Yes'; oracle.blind = 'Yes';
+  });
 })();
 </script>"""

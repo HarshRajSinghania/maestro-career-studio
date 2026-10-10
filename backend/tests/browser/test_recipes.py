@@ -23,8 +23,7 @@ import time
 import pytest
 
 from tests.browser.conftest import ENGINE_SOURCES, EXTENSION, fixture_html
-from tests.browser.pages import oracle
-from tests.browser.test_fill_core import ENTER_PICKS, apply, explore, inv
+from tests.browser.pages import ENTER_PICKS, apply, explore, inv, oracle
 from tests.browser.test_fill_end_to_end import _finish, _start
 
 BOOK = "window.careerStudioCompanion.recipeBook"

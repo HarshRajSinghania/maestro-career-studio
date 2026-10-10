@@ -16,8 +16,7 @@ import pytest
 
 from app.services import autofill_catalog
 from tests.browser.conftest import fixture_html
-from tests.browser.pages import list_shown, oracle
-from tests.browser.test_fill_core import apply, explore, inv
+from tests.browser.pages import apply, explore, inv, list_shown, oracle
 from tests.browser.test_fill_end_to_end import _run, real_backend
 from tests.browser.test_fill_loop import JOBS, actions, adds, bodies, f, opt, row, run, section, site, statuses, work
 
