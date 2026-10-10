@@ -52,6 +52,7 @@ anything here that contradicts the Goal Card. Scope is never self-expanded.
 | Signing | Designed now as a CI switch: Developer ID + notarization when the secrets exist, ad-hoc otherwise. The first PUBLIC desktop release waits for the Developer ID. |
 | Existing installs | One-time import from a Docker checkout; the old install is left untouched. |
 | Before building | Branch 0: an evidence-first trim of dead code, unused dependencies, ledger debt and test bloat. |
+| Until the app is signed (2026-10-10) | Branch B′: a `uv tool` install from PyPI with a `maestro` command, right after branch A. Priorities: frictionless install, close & restart, update, MCP connecting. |
 
 ## What changed since the step 2 design (drift audit, HEAD aa2b155f)
 
@@ -83,12 +84,13 @@ anything here that contradicts the Goal Card. Scope is never self-expanded.
 
 ## Sequence
 
-Four branches, each merged and verified before the next starts.
+Five branches, each merged and verified before the next starts (0 → A → B′ → B → C).
 
 | Branch | Delivers | Release |
 |---|---|---|
 | 0 `trim` | Less code, fewer dependencies, a faster suite; no behaviour change | folded into the next release |
 | A `mcp-http` | `/mcp` in the backend, the Node bridge `.mcpb`, Connect your assistant, Web Store readiness | v0.9.0 |
+| B′ `uv-install` | `uv tool install maestro-career-studio` from PyPI; one `maestro` command (start/stop/status/logs/update/autostart/connect/mcp); no Docker, no system Node | v0.10.0 |
 | B `desktop-sidecar` | A frozen macOS backend and a Next standalone server, smoke-tested in CI | (internal) |
 | C `desktop-shell` | The Electron app, import, updater, signed release pipeline | first desktop release |
 
@@ -325,6 +327,67 @@ clients, legacy stdio for one release); README; SECURITY.md; native-install;
 bot-setup; PRIVACY.md; CHANGELOG. SYSTEM.md §2, §3, §6, §7, §9, §12, §13
 rewritten in place, staying under the cap by moving §7's transport detail
 into `docs/entities/others.md`. Release v0.9.0, eight version places.
+
+## Branch B′: `uv-install` (the interim, Docker-free install)
+
+**Goal:** until the signed app exists, a technical user installs, runs, restarts,
+updates and connects Maestro with no Docker and no system Node, in two commands:
+`curl -LsSf https://astral.sh/uv/install.sh | sh` and
+`uv tool install maestro-career-studio`. B′ is branch B without the freeze: every
+piece it builds is reused by B and C, and it remains the CLI/Linux channel after C.
+
+1. **Package.** One PyPI distribution `maestro-career-studio` (name free on
+   2026-10-10), a pure-Python wheel carrying the backend, `mcp_server`, alembic
+   data, the demo resume and the prebuilt Next standalone server (JS only;
+   `sharp` excluded — design D1 moves here from B). Node comes from the
+   `nodejs-wheel-binaries` dependency (Node 24, platform wheels on PyPI), so
+   no user installs Node. The `tracing` extra stays optional.
+2. **Paths.** Branch B §1–2 land here: `MAESTRO_HOME` (default
+   `~/Library/Application Support/Maestro Career Studio`, the XDG data dir on
+   Linux, `%APPDATA%` on Windows), `maestro.env` the only env file, absolute
+   `script_location`, demo seeding into an empty `base_resumes/`, the MCP upload
+   dir under home. The signed app (C) uses the same folder, so it inherits a B′
+   install's data with no import.
+3. **`maestro` command** (`[project.scripts]`):
+   - `start` — backend on 127.0.0.1:8001 + `node server.js` on 127.0.0.1:3000 as
+     a supervised background pair (pidfile with process identity, the
+     `native/start.sh` lessons), wait for health, open the browser; refuses with
+     a clear sentence if 8001/3000 already answer as a Maestro (Docker).
+   - `stop`, `restart`, `status` (versions, ports, engines, newer release
+     available), `logs`, `open`.
+   - `autostart on|off` — launchd agent (macOS), systemd user unit (Linux),
+     Startup entry (Windows), restarting on crash; off by default.
+   - `update` — verified SQLite snapshot (`backup`, newest 5 kept) → `uv tool
+     upgrade maestro-career-studio` → restart (migrations run at boot); prints
+     the CHANGELOG's Breaking entries for the new version first.
+   - `connect claude-code|codex|cursor|vscode|claude-desktop` — runs or prints the
+     branch A `/api/setup/connect` strings; for Claude Desktop writes the
+     `claude_desktop_config.json` entry `{"command": "maestro", "args": ["mcp"]}`.
+   - `mcp` — a stdio↔HTTP bridge to `/mcp[/profile]` in Python (the same
+     protocol as branch A's Node bridge, session replay on restart), so Claude
+     Desktop needs no `.mcpb` and no Docker.
+   - `backup`, `migrate`, `check` — branch B §4's entry-point verbs, shared.
+4. **Embedding model.** Downloaded once on first `start` into
+   `$MAESTRO_HOME/fastembed_cache` (pinned snapshot), with a progress line; the
+   bundled-model approach stays for C.
+5. **Release.** The release workflow builds the frontend standalone, assembles
+   the wheel, and publishes to PyPI with trusted publishing (no token in the
+   repo). The package version becomes a tenth version location
+   (`docs/RELEASING.md` §2). A CI job installs the built wheel with `uv tool
+   install` on macOS and Linux runners and smoke-tests `maestro start` →
+   `/health`, `/api/version`, `/mcp` `initialize`, a Typst render, a score,
+   `maestro stop`.
+6. **Docs.** README gains "Install without Docker (uv)" as the first route for
+   technical users; GETTING_STARTED, UPDATING (`maestro update`), the MCP
+   section (`maestro connect`), PRIVACY (PyPI is where the code comes from; the
+   update check reads PyPI/GitHub), SYSTEM.md §9 (the B′ route). Docker stays the
+   contributor and server route; native scripts stay for the always-on bot until
+   they can call `maestro` too (a later §13 row).
+7. **Windows.** Branch B §8's `import resource` guard is required here; Windows
+   is supported best-effort (CI smoke on windows-latest is a stretch goal), with
+   §11 item 39 updated to say what was verified.
+
+Not in B′: PyInstaller, Electron, signing, a GUI tray. Those stay B and C.
 
 ## Branch B: `desktop-sidecar`
 
