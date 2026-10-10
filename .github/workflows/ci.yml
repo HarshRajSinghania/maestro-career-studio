@@ -179,24 +179,22 @@ jobs:
 
       # The .mcpb is a committed build artifact so users can install it out of
       # their own clone. Its predictable failure is silent staleness: edit the
-      # manifest or the shim, forget to re-pack, and the bundle keeps installing
+      # manifest or the bridge, forget to re-pack, and the bundle keeps installing
       # older behaviour while everything looks fine. Compares contents, not
       # bytes, so a no-op re-pack does not fail on zip timestamps. Stdlib only,
       # so this needs no Node toolchain in the job.
       - name: Check the committed .mcpb matches its source
         run: python3 scripts/check_mcpb_bundle.py
 
-      # The shim's tests existed but nothing ran them, which is the same as not
-      # having them: they cover the two Desktop-only traps that made the first
-      # extension fail — a minimal PATH with no docker on it, and an unfilled
-      # user_config field arriving as its literal ${...} placeholder. Node's
-      # built-in runner, no dependencies to install.
+      # Bridge tests cover HTTP sessions, restart replay, deadlines, JSON-RPC
+      # output and literal user_config placeholders. In-test HTTP servers and
+      # Node's built-in runner need no Docker or dependencies to install.
       - name: Setup Node.js 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
 
-      - name: Run the .mcpb shim tests
+      - name: Run the .mcpb bridge tests
         run: node --test mcpb/tests/*.test.js
 
   frontend:

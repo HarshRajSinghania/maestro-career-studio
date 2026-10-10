@@ -3,6 +3,47 @@
 "use strict";
 
 const readline = require("node:readline");
+const http = require("node:http");
+const https = require("node:https");
+
+const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+const TIMEOUT_MESSAGE = "Maestro Career Studio did not answer within 10 minutes. The request may still finish in the app.";
+
+function postBody(url, headers, line, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let timer;
+    const finish = (error, response) => {
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(response);
+    };
+    try {
+      const target = new URL(url);
+      const transport = target.protocol === "http:" ? http : target.protocol === "https:" ? https : null;
+      if (!transport) throw Object.assign(new Error("Invalid MCP URL"), { code: "ERR_INVALID_URL" });
+      const request = transport.request(target, { method: "POST", headers }, (response) => {
+        let text = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => { text += chunk; });
+        response.on("error", finish);
+        response.on("aborted", () => finish(Object.assign(new Error("Response interrupted"), { code: "ECONNRESET" })));
+        response.on("end", () => finish(null, {
+          status: response.statusCode, sessionId: response.headers["mcp-session-id"], text,
+        }));
+      });
+      request.on("error", finish);
+      // One deadline covers DNS, connection, headers and the complete body.
+      timer = setTimeout(() => {
+        const error = Object.assign(new Error(TIMEOUT_MESSAGE), { code: "MAESTRO_CS_BRIDGE_TIMEOUT" });
+        finish(error);
+        request.destroy(error);
+      }, timeoutMs);
+      request.end(line);
+    } catch (error) {
+      finish(error);
+    }
+  });
+}
 
 // Unfilled user_config values can arrive as literal placeholders.
 const setting = (name) => {
@@ -18,6 +59,9 @@ const mcpUrl = (
 async function main() {
   const backendUrl = setting("MAESTRO_CS_BACKEND_URL") || "http://localhost:8001";
   const url = mcpUrl(backendUrl);
+  const configuredTimeout = Number(setting("MAESTRO_CS_BRIDGE_TIMEOUT_MS"));
+  const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+    ? configuredTimeout : DEFAULT_TIMEOUT_MS;
   let sessionId;
   let initializeLine;
   let initializedLine;
@@ -29,7 +73,7 @@ async function main() {
   const write = (body) => process.stdout.write(JSON.stringify(body) + "\n");
   const fail = (request, message) => {
     const requests = Array.isArray(request) ? request : [request];
-    const errors = requests.filter((item) => item && Object.hasOwn(item, "id"))
+    const errors = requests.filter((item) => item && Object.hasOwn(item, "method") && Object.hasOwn(item, "id"))
       .map(({ id }) => ({ jsonrpc: "2.0", id, error: { code: -32000, message } }));
     if (errors.length) write(Array.isArray(request) ? errors : errors[0]);
   };
@@ -41,21 +85,22 @@ async function main() {
     };
     if (sessionId) headers["Mcp-Session-Id"] = sessionId;
     let response;
-    let text;
     try {
-      response = await fetch(url, { method: "POST", headers, body: line });
-      text = await response.text();
-    } catch {
-      const message = `Maestro Career Studio is not running at ${backendUrl}. Start it (docker compose up -d, or open the app) and try again.`;
+      response = await postBody(url, headers, line, timeoutMs);
+    } catch (error) {
+      const connectionFailure = ["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ERR_INVALID_URL", "ERR_INVALID_PROTOCOL"].includes(error.code);
+      const message = error.code === "MAESTRO_CS_BRIDGE_TIMEOUT" ? TIMEOUT_MESSAGE : connectionFailure
+        ? `Maestro Career Studio is not running at ${backendUrl}. Start it (docker compose up -d, or open the app) and try again.`
+        : "Maestro Career Studio could not complete the request. The request may still finish in the app.";
       process.stderr.write(message + "\n");
       throw new Error(message);
     }
     let body;
     if (response.status === 200) {
-      try { body = JSON.parse(text); }
+      try { body = JSON.parse(response.text); }
       catch { throw new Error("Maestro Career Studio returned an invalid JSON response."); }
     }
-    return { status: response.status, sessionId: response.headers.get("mcp-session-id"), body };
+    return { status: response.status, sessionId: response.sessionId, body };
   }
 
   function accepted(response) {
@@ -72,7 +117,11 @@ async function main() {
     let request;
     try { request = JSON.parse(line); }
     catch {
-      fail({ id: null }, "The MCP request is not valid JSON.");
+      write({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
+      continue;
+    }
+    if (request === null || typeof request !== "object") {
+      process.stderr.write("The MCP message must be a JSON object or array.\n");
       continue;
     }
     if (request.method === "initialize") initializeLine = line;

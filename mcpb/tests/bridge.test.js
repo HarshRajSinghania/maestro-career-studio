@@ -49,8 +49,7 @@ function startBridge(t, url, env = {}) {
   const child = spawn(process.execPath, [BRIDGE], {
     env: {
       PATH: "", MAESTRO_CS_BACKEND_URL: url, MAESTRO_CS_MCP_PROFILE: "full",
-      // The old shim must fail without trying to start Docker in the red run.
-      MAESTRO_CS_DOCKER: "/nonexistent/docker", ...env,
+      ...env,
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -70,13 +69,17 @@ function startBridge(t, url, env = {}) {
   return { child, done };
 }
 
-async function runBridge(t, url, messages, env) {
+async function runBridgeLines(t, url, lines, env) {
   const { child, done } = startBridge(t, url, env);
-  child.stdin.end(messages.map((message) => JSON.stringify(message) + "\n").join(""));
+  child.stdin.end(lines.map((line) => line + "\n").join(""));
   const result = await done;
   assert.equal(result.code, 0, result.stderr);
   assert.equal(result.signal, null);
   return result;
+}
+
+async function runBridge(t, url, messages, env) {
+  return runBridgeLines(t, url, messages.map((message) => JSON.stringify(message)), env);
 }
 
 function stdoutMessages(result) {
@@ -178,6 +181,108 @@ test("connection refusal for a notification produces only stderr", async (t) => 
   const result = await runBridge(t, "http://127.0.0.1:1", [INITIALIZED]);
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /^Maestro Career Studio is not running at /);
+});
+
+const TIMEOUT_MESSAGE = "Maestro Career Studio did not answer within 10 minutes. The request may still finish in the app.";
+
+test("an unanswered request times out without saying the app is stopped or retrying", async (t) => {
+  const server = await fakeServer(t, () => {});
+  const result = await runBridge(t, server.url, [LIST], { MAESTRO_CS_BRIDGE_TIMEOUT_MS: "50" });
+  assert.deepEqual(stdoutMessages(result), [
+    { jsonrpc: "2.0", id: 2, error: { code: -32000, message: TIMEOUT_MESSAGE } },
+  ]);
+  assert.equal(result.stderr, TIMEOUT_MESSAGE + "\n");
+  assert.equal(server.requests.length, 1, "a timeout never retries work that may still finish");
+});
+
+test("the overall deadline includes a response body that keeps sending data", async (t) => {
+  const server = await fakeServer(t, (_req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.write(" ");
+    const interval = setInterval(() => res.write(" "), 10);
+    res.on("close", () => clearInterval(interval));
+    t.after(() => clearInterval(interval));
+  });
+  const result = await runBridge(t, server.url, [LIST], { MAESTRO_CS_BRIDGE_TIMEOUT_MS: "80" });
+  assert.equal(stdoutMessages(result)[0].error.message, TIMEOUT_MESSAGE);
+  assert.equal(result.stderr, TIMEOUT_MESSAGE + "\n");
+  assert.equal(server.requests.length, 1);
+});
+
+test("a dropped connection does not claim that Maestro is not running", async (t) => {
+  const server = await fakeServer(t, (_req, res) => res.destroy());
+  const result = await runBridge(t, server.url, [LIST]);
+  const [message] = stdoutMessages(result);
+  assert.equal(message.id, 2);
+  assert.equal(message.error.code, -32000);
+  assert.doesNotMatch(message.error.message, /not running/);
+  assert.match(message.error.message, /request may still finish/);
+  assert.equal(result.stderr, message.error.message + "\n");
+  assert.equal(server.requests.length, 1);
+});
+
+test("an invalid backend URL keeps the connection-failure sentence", async (t) => {
+  for (const url of ["not a URL", "ftp://localhost:8001"]) {
+    const result = await runBridge(t, url, [LIST]);
+    const message = `Maestro Career Studio is not running at ${url}. Start it (docker compose up -d, or open the app) and try again.`;
+    assert.deepEqual(stdoutMessages(result), [
+      { jsonrpc: "2.0", id: 2, error: { code: -32000, message } },
+    ]);
+    assert.equal(result.stderr, message + "\n");
+  }
+});
+
+test("JSON null and primitive lines are ignored with one sentence each, then processing continues", async (t) => {
+  const result = await runBridge(t, "not a URL", [null, true, false, 42, "text", LIST]);
+  const messages = stdoutMessages(result);
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].id, 2);
+  assert.equal(messages[0].error.code, -32000);
+  const stderr = result.stderr.trimEnd().split("\n");
+  assert.equal(stderr.length, 6);
+  for (const sentence of stderr.slice(0, 5)) {
+    assert.equal(sentence, "The MCP message must be a JSON object or array.");
+  }
+});
+
+test("failed HTTP posts of client responses never echo an error with the response id", async (t) => {
+  const server = await fakeServer(t, (_req, res) => {
+    res.writeHead(500);
+    res.end("Backend error");
+  });
+  const responses = [
+    { jsonrpc: "2.0", id: "client-result", result: {} },
+    { jsonrpc: "2.0", id: "client-error", error: { code: -32601, message: "Unknown method" } },
+  ];
+  const result = await runBridge(t, server.url, responses);
+  assert.equal(result.stdout, "");
+  assert.deepEqual(server.requests.map(({ body }) => body), responses);
+});
+
+test("connection failures answer only requests with a method and id, including batches", async (t) => {
+  const responses = [
+    { jsonrpc: "2.0", id: "client-result", result: {} },
+    { jsonrpc: "2.0", id: "client-error", error: { code: -32601, message: "Unknown method" } },
+  ];
+  const result = await runBridge(t, "not a URL", [
+    ...responses, [...responses, INITIALIZED, null, { ...LIST, id: 0 }],
+  ]);
+  const messages = stdoutMessages(result);
+  assert.equal(messages.length, 1);
+  assert.ok(Array.isArray(messages[0]));
+  assert.equal(messages[0].length, 1);
+  assert.equal(messages[0][0].id, 0);
+  assert.equal(messages[0][0].error.code, -32000);
+});
+
+test("unparseable input returns Parse error with id null and continues to the next line", async (t) => {
+  const result = await runBridgeLines(t, "not a URL", ["{", JSON.stringify(LIST)]);
+  const messages = stdoutMessages(result);
+  assert.deepEqual(messages[0], {
+    jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" },
+  });
+  assert.equal(messages.length, 2);
+  assert.equal(messages[1].id, 2);
 });
 
 test("hunt selects /mcp/hunt and an unexpanded profile selects /mcp", async (t) => {
