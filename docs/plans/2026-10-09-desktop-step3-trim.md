@@ -44,30 +44,29 @@ Never expand scope.
 
 ## Ground rules for every task
 
-- Work in `/Users/ajeyds/Projects/maestro-career-studio/.claude/worktrees/desktop-app-phase-three-a2c0b5`.
+- Work in `<worktree>` (this branch's git worktree). `$SP` below is a scratch directory outside the repo.
   Never `cd` into the main checkout; verify with `git -C <worktree> status`.
 - Read `SYSTEM.md` first (repo rule). Integrate doc changes in place (present tense, no dated
   paragraphs outside §11–§13).
-- Python: `/opt/anaconda3/bin/python3`, run from `backend/` (cwd wins on `sys.path`).
-- Full suite (always xdist): `cd backend && MAESTRO_SKIP_SLOW=1 /opt/anaconda3/bin/python3 -m pytest tests/ mcp_server/tests/ -q -n auto --dist loadfile -p no:cacheprovider`
+- Python: `python3` (the backend's interpreter), run from `backend/` (cwd wins on `sys.path`).
+- Full suite (always xdist): `cd backend && MAESTRO_SKIP_SLOW=1 python3 -m pytest tests/ mcp_server/tests/ -q -n auto --dist loadfile -p no:cacheprovider`
   Baseline 2026-10-09: 11,087 passed, 6 skipped, ~244 s.
-- Lint: `cd backend && /opt/anaconda3/bin/python3 -m ruff check .`
+- Lint: `cd backend && python3 -m ruff check .`
 - Frontend gates (node_modules exists in this worktree; else `npm ci` first):
   `cd frontend && npx tsc --noEmit && npm run lint && npm run build`
 - Docs gate: `python3 scripts/check_system_md.py` (repo root).
-- Slop ratchet, per surface touched: `python3 ~/.claude/skills/ai-slop-detector/scripts/slop_scan.py check <backend|frontend|extension>`
+- Slop ratchet, per surface touched: the maintainer's ai-slop-detector `slop_scan.py check <backend|frontend|extension>` (not shipped)
   from the repo root. If it fails only because a COUNT metric moved down or hotspots moved,
   re-baseline with `... baseline <surface>` and say why in the commit.
-- **CI-shaped venv for any task that removes a dependency (6, 7, 9).** The shared anaconda env
+- **CI-shaped venv for any task that removes a dependency (6, 7, 9).** The shared dev env
   still has every package, so it cannot catch a missing one; CI installs `pip install -e ".[dev,mcp]"`
-  (`.github/workflows/ci.yml:48`), not the lock. Build a throwaway venv exactly like CI under the
-  scratchpad and run the suite there (KB "Agent lessons" e354b9bb / a6240360):
+  (`.github/workflows/ci.yml:48`), not the lock. Build a throwaway venv exactly like CI under
+  `$SP` and run the suite there (KB "Agent lessons" e354b9bb / a6240360):
   ```bash
-  SP=/private/tmp/claude-501/-Users-ajeyds-Projects-maestro-career-studio--claude-worktrees-desktop-app-phase-three-a2c0b5/56b3260b-72d9-445f-b6d1-91985eb85172/scratchpad
-  ~/.langflow/uv/uv venv -p 3.12 $SP/ci-venv && VIRTUAL_ENV=$SP/ci-venv ~/.langflow/uv/uv pip install -e "backend[dev,mcp]"
+  uv venv -p 3.12 $SP/ci-venv && VIRTUAL_ENV=$SP/ci-venv uv pip install -e "backend[dev,mcp]"
   cd backend && MAESTRO_SKIP_SLOW=1 $SP/ci-venv/bin/python -m pytest tests/ mcp_server/tests/ -q -n auto --dist loadfile -p no:cacheprovider
   ```
-  (`uv` lives at `~/.langflow/uv/uv` on this machine; `-p 3.12` matches CI's Python.)
+  (`-p 3.12` matches CI's Python.)
 - Commit after every task. End each message with:
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` (or the executing model's line).
 
@@ -133,7 +132,7 @@ def test_get_prompt_without_a_session_never_writes(db_session, tmp_path, monkeyp
     assert db_session.get(Setting, "prompt.qa") is None
 ```
 
-**Step 2:** `cd backend && /opt/anaconda3/bin/python3 -m pytest tests/test_prompts_service.py -q`
+**Step 2:** `cd backend && python3 -m pytest tests/test_prompts_service.py -q`
 Expected: the new test FAILS (the row exists).
 
 **Step 3: Implement** — replace the body of `get_prompt` with:
@@ -197,7 +196,7 @@ defaults to `[VENDORED_FONTS_DIR]` at `config.py:224`.) Update the comment above
 `settings` from `app.config` the way the file's other tests reach it via `tv.settings`), BEFORE
 `ensure_seed_templates`. `_preview_path` lives under `base_resumes_dir/template_previews`.
 
-**Step 3:** `/opt/anaconda3/bin/python3 -m pytest tests/test_typst_classic_seed.py -q -rs`
+**Step 3:** `python3 -m pytest tests/test_typst_classic_seed.py -q -rs`
 Expected: no skips on a host with pdflatex (MacTeX present locally); on a TeX-less host the
 revalidate test may still skip with the explicit reason — that is correct.
 
@@ -342,7 +341,7 @@ Note on order: python-docx's `document.paragraphs` are the BODY's direct `w:p` c
 
 **Files:**
 - Modify: `backend/app/services/attachment_extract.py:119-127`
-- Create: `backend/tests/fixtures/docx/` (two or three small real `.docx` files: plain paragraphs; a table; tabs/line breaks). Generate them ONCE with python-docx BEFORE removing it, via a throwaway script in the scratchpad, and commit the binaries.
+- Create: `backend/tests/fixtures/docx/` (two or three small real `.docx` files: plain paragraphs; a table; tabs/line breaks). Generate them ONCE with python-docx BEFORE removing it, via a throwaway script under `$SP`, and commit the binaries.
 - Test: `backend/tests/test_attachment_extract_docx.py` (new)
 - Modify: `backend/tests/test_attachment_extract.py:19` — `_make_docx_bytes` imports python-docx;
   rewrite it to build a minimal `.docx` with `zipfile` (a `[Content_Types].xml`, `_rels/.rels` and
@@ -416,7 +415,7 @@ surface the same way the old code failed — check how callers handle `_docx_tex
 (`UnreadableFile` mapping) and keep that contract; add a test with a non-zip payload.
 
 **Step 4:** Rewrite `_make_docx_bytes` (above). Remove `python-docx` from `pyproject.toml`;
-`pip uninstall` in the anaconda env is NOT allowed (shared env). Verify:
+`pip uninstall` in the shared dev env is NOT allowed (shared env). Verify:
 `git grep -n "import docx\|from docx" backend` → nothing (today it finds
 `app/services/attachment_extract.py:120` AND `tests/test_attachment_extract.py:19`). Then run the
 new test file and every `git grep -l attachment_extract backend/tests` file in the **CI-shaped
@@ -652,7 +651,7 @@ text), `extension/` and `docs/`.
 - F3 delete the unused shadcn primitive exports knip listed in `components/ui/` (sidebar ~210 LOC,
   dropdown-menu ~168, plus card, sheet, table, slider, select, popover, dialog). Re-run knip after
   to confirm none were used (`npx -y knip@5` with a scratch config:
-  `/private/tmp/claude-501/-Users-ajeyds-Projects-maestro-career-studio--claude-worktrees-desktop-app-phase-three-a2c0b5/56b3260b-72d9-445f-b6d1-91985eb85172/scratchpad/frontend-audit/knip.json`
+  `$SP/frontend-audit/knip.json`
   if it still exists, else write one there with the Next file-convention entries). In
   `backend/tests/test_frontend_design_tokens.py:561-563` remove the two `SidebarMenuAction` lines
   from `test_sidebar_menu_rows_are_pills` (the component is gone; the cva assertion stays).
@@ -709,11 +708,11 @@ must re-check these names.
 **Step 2:** `npm run build`; `du -sh public/monaco` (expect ~9 MB, was ~25 MB).
 
 **Step 3: Browser check** (SYSTEM.md §9: never against the compose stack). Start a fresh backend
-per the worktree recipe (uvicorn on a free port, all `*_DIR` under the scratchpad) and
+per the worktree recipe (uvicorn on a free port, all `*_DIR` under `$SP`) and
 `API_PROXY_BACKEND=http://127.0.0.1:<port> npx next dev -p 3100`. The worktree sits inside the main
 checkout, so dotenv can pick up the main `.env`: start uvicorn with the sync and AI-key variables
 blanked (`SYNC_REMOTE_URL= SYNC_PUBLIC_HOST= OPENAI_API_KEY= GEMINI_API_KEY=`) as well as every
-`*_DIR` under the scratchpad (KB "Agent lessons" 2e89fc15). Before opening the browser,
+`*_DIR` under `$SP` (KB "Agent lessons" 2e89fc15). Before opening the browser,
 `ls public/monaco/vs/language` must show only `json`. Open
 `http://localhost:3100`. Open (a) the JSON editor (a base resume's JSON/advanced view) and (b) the
 LaTeX template editor (Templates → a LaTeX template → edit). In each: the editor renders, typing
@@ -754,7 +753,7 @@ Every symbol: `git grep` across `extension/` AND `backend/tests/` (the node harn
 - E10 delete the `chrome.storage.session` existence guards (`panel/panel.js:3463,3472`; minimum
   Chrome is 114, the API shipped in 102).
 
-**Steps:** one commit per item; after each run `MAESTRO_SKIP_SLOW=1 /opt/anaconda3/bin/python3 -m pytest tests/ -q -n auto --dist loadfile -k "extension"`;
+**Steps:** one commit per item; after each run `MAESTRO_SKIP_SLOW=1 python3 -m pytest tests/ -q -n auto --dist loadfile -k "extension"`;
 at the end run the full suite and the extension slop check.
 
 ---
@@ -804,7 +803,7 @@ at the end run the full suite and the extension slop check.
   accident → only a caller-supplied session seeds; startup seeds the rest."
 - CHANGELOG "Unreleased": Removed (env aliases, `/explore`, four test-only endpoints), Changed
   (Langfuse extra, runtime-only Docker image, smaller frontend public/), Fixed (prompt lock wait).
-- Run: `python3 scripts/check_system_md.py`; `python3 ~/.claude/skills/ai-slop-detector/scripts/ledger_check.py . --strict`;
+- Run: `python3 scripts/check_system_md.py`; the maintainer's `ledger_check.py . --strict` (ai-slop-detector scripts; not shipped);
   all three slop checks (re-baseline any count-only movement with a reason); ruff; the full
   suite; frontend `tsc`/lint/build.
 - Commit: `docs: SYSTEM.md, ledgers and CHANGELOG for the trim`.
