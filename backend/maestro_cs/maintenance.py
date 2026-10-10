@@ -66,12 +66,12 @@ class Maintenance:
         ctx = self.ctx
         return home_mod.backend_env(ctx.home, ctx.settings, ctx.environ, ctx.ports, ctx.version)
 
-    def _enter_backend_env(self) -> None:
+    def enter_backend_env(self) -> None:
         """R8: look like the backend child before anything imports `app`."""
         apply = self._apply or home_mod.apply_env  # looked up now so a test can wrap it
         apply(self.ctx.home, self._backend_env())
 
-    def _is_running(self) -> bool:
+    def is_running(self) -> bool:
         return any(
             procs.live_process(procs.read_json(self.ctx.run_dir / f"{name}.json"))
             for name in ("supervisor", "backend", "web")
@@ -96,10 +96,10 @@ class Maintenance:
             candidate = self.backups_dir / f"{stem}-{n}.sqlite3.gz"
         return candidate
 
-    def backup(self, out: str | None = None) -> int:
+    def snapshot(self, out: str | None = None) -> Path | None:
+        """Write a verified snapshot and return its path (None when there is no database yet)."""
         if not self.db_file.is_file():
-            self.say("Nothing to back up yet.")
-            return 0
+            return None
         if out:
             target = Path(os.path.abspath(Path(out).expanduser()))
             self._refuse_bad_target(target)
@@ -121,7 +121,11 @@ class Maintenance:
             raise ControlError(_failure_sentence(done.stderr))
         if target.parent == self.backups_dir:  # an --out anywhere else is never touched
             self._rotate(keep=target)
-        self.say(str(target))
+        return target
+
+    def backup(self, out: str | None = None) -> int:
+        target = self.snapshot(out)
+        self.say("Nothing to back up yet." if target is None else str(target))
         return 0
 
     def _rotate(self, keep: Path) -> None:
@@ -139,9 +143,9 @@ class Maintenance:
     # --- migrate ------------------------------------------------------------------------
 
     def migrate(self) -> int:
-        if self._is_running():
+        if self.is_running():
             raise ControlError("Stop Maestro first; it migrates itself at start.")
-        self._enter_backend_env()
+        self.enter_backend_env()
         from app.services import seeding  # noqa: PLC0415  (after apply_env, R8)
 
         from alembic.util.exc import CommandError  # noqa: PLC0415
@@ -191,7 +195,7 @@ class Maintenance:
         return out if done.returncode == 0 and out else None
 
     def check(self) -> int:
-        self._enter_backend_env()
+        self.enter_backend_env()
         # Imported only now, after apply_env (R8).
         from alembic.config import Config  # noqa: PLC0415
         from alembic.script import ScriptDirectory  # noqa: PLC0415

@@ -8,10 +8,12 @@ roll back. Everything below the uv sections is the Docker route.
 
 **A Docker install and a uv install are separate copies.** Each has its own data
 and its own updates, and both use ports 8001 and 3000, so don't run both at once.
-Updating one never touches the other.
+Updating one never touches the other. To move a Docker install's data into a uv
+install once, see [Move from Docker to the uv install](#move-from-docker-to-the-uv-install).
 
 **Contents:** [Updating a uv install](#updating-a-uv-install) ·
 [Rolling back a uv install](#rolling-back-a-uv-install) ·
+[Move from Docker to the uv install](#move-from-docker-to-the-uv-install) ·
 [What the script does](#what-the-script-does) ·
 [Updating by hand](#updating-by-hand) ·
 [What happens to your data](#what-happens-to-your-data) ·
@@ -86,6 +88,44 @@ the snapshot with 7-Zip, or run
 from the Maestro folder. Delete the two helper files as shown: they belong to
 the database you just replaced. Never copy the database file while Maestro is
 running; `maestro backup` is safe on a running copy.
+
+## Move from Docker to the uv install
+
+A new uv install starts empty. `maestro import-docker` copies your Docker install's
+data into it, once. The Docker folder is only read: nothing in it is changed,
+moved or deleted, so you can go back to it.
+
+1. Update the Docker install to the same version as the uv one (`./scripts/update.sh`,
+   then `maestro --version` to compare). A database from an older or newer
+   release is refused with the version to update to.
+2. Stop it: `docker compose down` in the Docker folder. Stop the uv copy too
+   (`maestro stop`).
+3. Look first: `maestro import-docker /path/to/maestro-career-studio --dry-run`
+   prints what it would copy, rewrite and carry over, and changes nothing.
+4. Run it without `--dry-run`, then `maestro start`.
+
+What it does, in order:
+
+- Refuses, in one sentence and changing nothing, if either install is running,
+  the Docker database is not at this version's schema, or the uv install already
+  holds your jobs, applications or resumes (add `--replace` to overwrite them).
+- Saves a verified snapshot of the uv install's current database
+  (`backups/db-*.sqlite3.gz`, the undo point) and prints its path.
+- Builds the new database from a copy of the Docker one using SQLite's online
+  backup, rewrites the stored file locations (`/app/applications/...` becomes
+  your Maestro folder) in one transaction, and checks every table has the same
+  row count. If anything fails after this point your earlier database is put back.
+- Copies `applications/`, `base_resumes/`, `kb_documents/`, `exports/` and
+  `settings/` (the Docker files win when a name exists in both), never following
+  a symlink. Old snapshots (`data/backups/`) and `data/handoff/` stay behind.
+- Places the sync key where the uv install reads it.
+- Adds the settings Maestro understands from the Docker `.env` (API keys, models,
+  proxy, sync host) to `maestro.env`, keeping any you already set there. Ports,
+  paths and other Docker-only entries are left out. Only names are printed.
+
+Afterwards, **don't start the Docker install again alongside this one**: both
+would share one sync identity. The Docker folder is still yours; delete it when
+you are sure.
 
 ## What the script does
 

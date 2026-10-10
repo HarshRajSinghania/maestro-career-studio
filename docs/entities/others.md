@@ -820,6 +820,19 @@
     runs, a detached waiter writes after it quits. The `claude`/`codex` runners and the browser opener get the parent environment, never
     maestro.env's keys. `maestro mcp` is a stdio-to-HTTP bridge (dials `127.0.0.1`, one total deadline per request, session replay) that
     imports no `app` module.
+  - **Import from Docker** (`maestro_cs/importer.py`, `maestro import-docker CHECKOUT [--replace] [--dry-run]`): refuses (one sentence,
+    nothing changed) when the checkout lacks `data/maestro_cs.sqlite3` or `docker-compose.yml`, any uv process runs, a port answers
+    (the uv ports and the checkout `.env`'s `BACKEND_HOST_PORT`/`FRONTEND_HOST_PORT`), its alembic revision is not this code's head, or the
+    uv home holds a job/application/base resume other than `example` (without `--replace`). The checkout is never opened: its database
+    (+ `-wal`/`-shm`) is byte-copied to a temp folder, because even a `mode=ro` connection creates `-wal`/`-shm` beside a WAL file; a file that
+    changes mid-copy aborts. Then: snapshot of the uv DB (`Maintenance.snapshot`, the undo point); `app.tools.backup_db.snapshot` of the copy
+    into `data/.importing/`; rewrite of every TEXT column value that STARTS with `/app/<dir>/` (dir in applications, base_resumes,
+    kb_documents, exports, settings, data; native separators on Windows) in one transaction, any other `/app/` start aborts; row counts
+    compared; journal mode set to DELETE (the backend sets WAL at first start). Files of the five folders merge in (Docker wins,
+    symlinks never followed, owner-only modes; `settings/secrets/sync-key` goes to `<home>/sync-key` only). The staged DB replaces the
+    old one last (old `db`, `-wal`, `-shm` move aside first and come back on ANY later failure). `.env` keys that are `app.config.Settings`
+    fields (plus proxy names) and not path/host/port/journal entries are appended to `maestro.env`; keys already set there are kept;
+    values are never printed. Verification: revision == head, equal row counts, sample of rewritten paths exist.
   - **Autostart**: launchd agent (macOS), systemd user unit (Linux), Task Scheduler logon task from XML for the current user (Windows).
   - **CI**: `maestro-cli` (`tests/maestro_cs` on the three OSes, plus `systemd-analyze --user verify` of the rendered unit on Linux and a
     schtasks create/query/delete of the rendered XML on Windows, admin runner), `uv-wheel`, `uv-smoke` (`scripts/smoke_uv_install.py`: install, start, score over

@@ -32,6 +32,15 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 None.
 
+### Added
+
+- **`maestro import-docker CHECKOUT`** moves a Docker install's data into the uv
+  install, once: the database (with stored file locations rewritten), resumes,
+  applications, knowledge-base files, settings, the sync key and the settings in
+  its `.env` that Maestro understands. It reads the Docker folder and changes
+  nothing in it, saves a snapshot of the uv database first, and puts it back if
+  anything fails. `--dry-run` shows the plan. See `docs/UPDATING.md`.
+
 ## [0.9.0] — 2026-10-10
 
 ### Breaking changes

@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from maestro_cs import autostart, bridge, connect, control, maintenance, package_version, update
+from maestro_cs import autostart, bridge, connect, control, importer, maintenance, package_version, update
 from maestro_cs.home import HomeError
 
 DESCRIPTION = "Maestro Career Studio, run from a uv install."
@@ -47,7 +47,17 @@ def build_parser() -> argparse.ArgumentParser:
                          help="install this wheel file instead of the newest release (offline)")
     login = sub.add_parser("autostart", help="start Maestro when you log in (on, off, status)")
     login.add_argument("action", choices=autostart.ACTIONS, help="on, off or status")
+    move = sub.add_parser("import-docker", help="move your data from a Docker install into this one")
+    move.add_argument("checkout", metavar="CHECKOUT", help="the Docker install's folder (it is only read)")
+    move.add_argument("--replace", action="store_true",
+                      help="replace data this install already holds (a snapshot is saved first)")
+    move.add_argument("--dry-run", action="store_true", help="show what would happen; change nothing")
     sub.add_parser("run", help="run Maestro in the foreground (used by autostart)")
+    _add_agent_verbs(sub)
+    return parser
+
+
+def _add_agent_verbs(sub: argparse._SubParsersAction) -> None:
     mcp = sub.add_parser("mcp", help="connect an agent over stdio (used by Claude Desktop)")
     mcp.add_argument("--profile", default="full", help="tool profile (default: full)")
     mcp.add_argument("--url", help="backend URL (default: this install's, from maestro.env)")
@@ -62,7 +72,6 @@ def build_parser() -> argparse.ArgumentParser:
     waiter = sub.add_parser(connect.WAITER_VERB)  # no help=: argparse then leaves it out of --help
     waiter.add_argument("--profile", default="full")
     waiter.add_argument("--timeout", type=float, default=connect.WAIT_SECONDS)
-    return parser
 
 
 def _dispatch(args: argparse.Namespace) -> int:
@@ -75,6 +84,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return autostart.Autostart(ctx.home, ctx.environ).handle(args.action)
     if args.command == "update":
         return update.Updater(ctx).run(args.source, args.yes)
+    if args.command == "import-docker":
+        return importer.Importer(ctx).run(args.checkout, args.replace, args.dry_run)
     if args.command == "connect":
         return connect.Connector(ctx).connect(args.client, args.profile, args.print_only, args.now)
     if args.command == connect.WAITER_VERB:
