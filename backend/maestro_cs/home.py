@@ -33,7 +33,12 @@ _STRIPPED = (
 _WEB_STRIPPED = _STRIPPED + (
     "OPENAI_API_KEY", "GEMINI_API_KEY", "OPENAI_BASE_URL", "LANGFUSE_PUBLIC_KEY",
     "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST", "SYNC_REMOTE_URL", "SYNC_KEY_FILE",
+    # frontend/lib/api.ts reads INTERNAL_API_URL before API_PROXY_BACKEND; only ours may apply.
+    "INTERNAL_API_URL", "BACKEND_URL",
 )
+
+
+_ORIGINS = "ALLOWED_WEB_ORIGINS"
 
 
 class HomeError(Exception):
@@ -75,9 +80,10 @@ def prepare_home(home: Path) -> None:
         if env_file.is_symlink():
             raise HomeError(f"{env_file} is a symlink. Replace it with a regular file.")
         if not env_file.exists():
+            template = TEMPLATE.read_text(encoding="utf-8")  # before O_EXCL: no empty file on failure
             fd = os.open(env_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(TEMPLATE.read_text(encoding="utf-8"))
+                handle.write(template)
         elif POSIX:
             env_file.chmod(0o600)
     except OSError as exc:
@@ -86,14 +92,15 @@ def prepare_home(home: Path) -> None:
 
 def read_env_file(path: Path) -> dict[str, str]:
     """KEY=value lines; a blank value means unset (SYSTEM.md's scrub rule)."""
-    values = dotenv_values(path) if path.is_file() else {}
+    # interpolate=False: `${HOME}/x` and `pa$$word` are the user's literal values.
+    values = dotenv_values(path, interpolate=False) if path.is_file() else {}
     return {k: v.strip() for k, v in values.items() if v is not None and v.strip()}
 
 
 def _port(value: str | None, default: int, name: str) -> int:
     if value is None:
         return default
-    if not value.isdigit() or not 0 < int(value) <= 65535:
+    if not (value.isascii() and value.isdigit()) or not 0 < int(value) <= 65535:
         raise HomeError(f"{name} must be a port number from 1 to 65535.")
     return int(value)
 
@@ -112,14 +119,14 @@ def ports_from(settings: Mapping[str, str], environ: Mapping[str, str] = os.envi
     return ports
 
 
+def _without(values: Mapping[str, str], upper_names: set[str]) -> dict[str, str]:
+    """Drop names case-insensitively: pydantic-settings reads `database_url` as DATABASE_URL."""
+    return {k: v for k, v in values.items() if k.upper() not in upper_names}
+
+
 def backend_env(home: Path, settings: Mapping[str, str], environ: Mapping[str, str],
                 ports: Ports, version: str) -> dict[str, str]:
-    env = {k: v for k, v in environ.items() if k not in _STRIPPED}
-    env.update({k: v for k, v in settings.items() if k not in _STRIPPED})
-    env.setdefault(
-        "ALLOWED_WEB_ORIGINS", f"http://localhost:{ports.web},http://127.0.0.1:{ports.web}"
-    )
-    env.update({
+    enforced = {
         "MAESTRO_HOME": str(home),
         "DATA_DIR": str(home / "data"),
         "APPLICATIONS_DIR": str(home / "applications"),
@@ -138,23 +145,37 @@ def backend_env(home: Path, settings: Mapping[str, str], environ: Mapping[str, s
         "MAESTRO_INSTALL": "uv",
         "APP_VERSION": version,
         "PYTHONUNBUFFERED": "1",
-    })
+    }
+    # The origins come from maestro.env or the default, never from the inherited shell.
+    origins = next((v for k, v in settings.items() if k.upper() == _ORIGINS), None) or (
+        f"http://localhost:{ports.web},http://127.0.0.1:{ports.web}"
+    )
+    blocked = set(_STRIPPED) | set(enforced) | {_ORIGINS}
+    env = _without(environ, blocked)
+    env.update(_without(settings, blocked))
+    env[_ORIGINS] = origins
+    env.update(enforced)
     return env
 
 
 def web_env(settings: Mapping[str, str], environ: Mapping[str, str], ports: Ports) -> dict[str, str]:
     # Built from the parent environment (Node needs PATH, SYSTEMROOT, proxy variables), never
     # from maestro.env, and minus every secret the backend reads.
-    env = {k: v for k, v in environ.items() if k not in _WEB_STRIPPED and k not in settings}
-    if settings.get("FRONTEND_ALLOWED_HOSTS"):
-        env["FRONTEND_ALLOWED_HOSTS"] = settings["FRONTEND_ALLOWED_HOSTS"]
-    env.update({
+    enforced = {
         "PORT": str(ports.web),
         "HOSTNAME": "127.0.0.1",
         "API_PROXY_BACKEND": f"http://127.0.0.1:{ports.backend}",
         "NODE_ENV": "production",
         "NEXT_TELEMETRY_DISABLED": "1",
-    })
+    }
+    blocked = (
+        set(_WEB_STRIPPED) | set(enforced) | {k.upper() for k in settings} | {"FRONTEND_ALLOWED_HOSTS"}
+    )
+    env = _without(environ, blocked)
+    hosts = next((v for k, v in settings.items() if k.upper() == "FRONTEND_ALLOWED_HOSTS"), None)
+    if hosts:
+        env["FRONTEND_ALLOWED_HOSTS"] = hosts
+    env.update(enforced)
     return env
 
 
@@ -165,7 +186,9 @@ def apply_env(home: Path, env: Mapping[str, str]) -> None:
     at import, and `Settings(env_file=".env")` would otherwise read a `.env` from the caller's
     folder. Moving into the home folder makes that file impossible to find.
     """
-    for name in _STRIPPED:
-        os.environ.pop(name, None)
+    wanted = {k.upper() for k in env}
+    for name in list(os.environ):
+        if name.upper() in _STRIPPED or (name.upper() in wanted and name not in env):
+            del os.environ[name]
     os.environ.update(env)
     os.chdir(home)

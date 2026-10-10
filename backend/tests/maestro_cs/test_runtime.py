@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 from maestro_cs import runtime as R
 
 
@@ -19,8 +21,6 @@ def test_node_path_default_is_inside_the_wheel_package():
 
 def test_the_default_node_exists_in_this_environment():
     # nodejs-wheel-binaries is a core dependency of the distribution.
-    if sys.platform == "win32":
-        return
     assert R.node_path().is_file()
 
 
@@ -69,3 +69,23 @@ def test_venv_python(tmp_path):
     assert R.venv_python("win32", windowless=True, executable=exe) == Path("C:/v/Scripts/pythonw.exe")
     assert R.venv_python("win32", executable=exe) == Path(exe)
     assert R.venv_python("linux", windowless=True, executable="/v/bin/python") == Path("/v/bin/python")
+
+
+def test_shim_path_follows_the_uv_tool_layout(tmp_path):
+    # uv puts a symlink in ~/.local/bin that points into the tool's venv.
+    venv = tmp_path / "tools" / "maestro-career-studio"
+    (venv / "bin").mkdir(parents=True)
+    real = venv / "bin" / "maestro"
+    real.write_text("#!/bin/sh\n", encoding="utf-8")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    link = bindir / "maestro"
+    try:
+        link.symlink_to(real)
+    except OSError:
+        pytest.skip("symlinks not permitted")
+    got = R.shim_path("linux", which=lambda _n: str(link), prefix=str(venv))
+    assert got.is_absolute() and got.resolve() == real.resolve()
+    elsewhere = tmp_path / "other-venv"
+    got = R.shim_path("linux", which=lambda _n: str(link), prefix=str(elsewhere))
+    assert got == elsewhere / "bin" / "maestro"

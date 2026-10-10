@@ -1,5 +1,6 @@
 import os
 import stat
+import subprocess
 import sys
 from pathlib import Path
 
@@ -227,10 +228,14 @@ def test_web_env_never_receives_a_key_from_the_env_file_even_if_also_exported(tm
 
 def test_apply_env_sets_strips_and_chdirs(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path.parent)
+    backend = {"DATA_DIR": str(tmp_path / "data"), "MAESTRO_INSTALL": "uv", "KEEP_ME": "2"}
+    # setenv registers each name's original state, so teardown restores the worker's environment
+    # even though apply_env itself writes and deletes os.environ directly.
+    for name in (*H._STRIPPED, *backend, "STALE_FROM_SHELL"):
+        monkeypatch.setenv(name, "x")
     monkeypatch.setenv("DATABASE_URL", "sqlite:////other.db")
     monkeypatch.setenv("KEEP_ME", "1")
     monkeypatch.setenv("STALE_FROM_SHELL", "1")
-    backend = {"DATA_DIR": str(tmp_path / "data"), "MAESTRO_INSTALL": "uv", "KEEP_ME": "2"}
     H.apply_env(tmp_path, backend)
     assert os.environ["DATA_DIR"] == str(tmp_path / "data")
     assert os.environ["MAESTRO_INSTALL"] == "uv"
@@ -238,3 +243,80 @@ def test_apply_env_sets_strips_and_chdirs(tmp_path, monkeypatch):
     assert os.environ["STALE_FROM_SHELL"] == "1"
     assert "DATABASE_URL" not in os.environ
     assert Path.cwd().resolve() == tmp_path.resolve()
+
+
+def test_apply_env_drops_a_differently_cased_spelling(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    if sys.platform == "win32":
+        pytest.skip("Windows environment names are case-insensitive")
+    for name in (*H._STRIPPED, "data_dir", "DATA_DIR", "database_url", "DATABASE_URL"):
+        monkeypatch.setenv(name, "/x")  # registers the original so teardown restores it
+    H.apply_env(tmp_path, {"DATA_DIR": str(tmp_path / "data")})
+    assert "data_dir" not in os.environ and "database_url" not in os.environ
+    assert os.environ["DATA_DIR"] == str(tmp_path / "data")
+
+
+def test_backend_env_ignores_lowercase_spellings_of_enforced_and_stripped_names(tmp_path):
+    lowered = {"database_url": "sqlite:////evil.db", "data_dir": "/evil", "Test_Database_Url": "x"}
+    for env in (_backend(tmp_path, settings=lowered), _backend(tmp_path, environ=lowered)):
+        assert not {"database_url", "data_dir", "Test_Database_Url"} & set(env)
+        assert env["DATA_DIR"] == str(tmp_path / "data")
+        assert "DATABASE_URL" not in env
+        spellings = [k for k in env if k.upper() == "DATA_DIR"]
+        assert spellings == ["DATA_DIR"]
+
+
+def test_lowercase_overrides_cannot_move_the_database(tmp_path):
+    lowered = {"database_url": "sqlite:////evil.db", "data_dir": "/evil"}
+    env = _backend(tmp_path, settings=lowered, environ={**lowered, "PATH": os.environ.get("PATH", "")})
+    if sys.platform == "win32":
+        env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+    code = "from app.config import settings; print(settings.data_dir); print(settings.database_url)"
+    out = subprocess.run(
+        [sys.executable, "-I", "-c", code], env=env, cwd=tmp_path,
+        capture_output=True, text=True, check=True,
+    ).stdout.split("\n")
+    assert Path(out[0]) == tmp_path / "data"
+    assert str(tmp_path) in out[1] and "evil" not in out[1]
+
+
+def test_allowed_web_origins_ignores_the_shell(tmp_path):
+    shell = {"ALLOWED_WEB_ORIGINS": "http://evil", "allowed_web_origins": "http://evil2"}
+    env = _backend(tmp_path, environ=shell)
+    assert env["ALLOWED_WEB_ORIGINS"] == "http://localhost:3000,http://127.0.0.1:3000"
+    assert "allowed_web_origins" not in env
+    env = _backend(tmp_path, settings={"ALLOWED_WEB_ORIGINS": "http://mine"}, environ=shell)
+    assert env["ALLOWED_WEB_ORIGINS"] == "http://mine"
+
+
+def test_web_env_ignores_the_internal_url_variables():
+    shell = {"INTERNAL_API_URL": "http://evil", "BACKEND_URL": "http://evil", "PATH": "/bin"}
+    env = H.web_env({}, shell, Ports(18001, 18000))
+    assert "INTERNAL_API_URL" not in env and "BACKEND_URL" not in env
+    assert env["API_PROXY_BACKEND"] == "http://127.0.0.1:18001"
+    assert "INTERNAL_API_URL" in H._WEB_STRIPPED and "BACKEND_URL" in H._WEB_STRIPPED
+
+
+def test_web_env_enforced_values_beat_lowercase_shell_spellings():
+    env = H.web_env({}, {"port": "1", "node_env": "development"}, Ports(18001, 18000))
+    assert not {"port", "node_env"} & set(env)
+    assert env["PORT"] == "18000" and env["NODE_ENV"] == "production"
+
+
+def test_read_env_file_does_not_interpolate(tmp_path):
+    path = tmp_path / "maestro.env"
+    path.write_text("A=${HOME}/y\nB=pa$$word${X}z\n", encoding="utf-8")
+    assert H.read_env_file(path) == {"A": "${HOME}/y", "B": "pa$$word${X}z"}
+
+
+def test_failed_template_read_leaves_no_env_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(H, "TEMPLATE", tmp_path / "missing.template")
+    with pytest.raises(HomeError):
+        H.prepare_home(tmp_path / "h")
+    assert not (tmp_path / "h" / "maestro.env").exists()
+
+
+@pytest.mark.parametrize("bad", ["\u00b2", "\u0663\u0660\u0660\u0660"])
+def test_ports_reject_non_ascii_digits(bad):
+    with pytest.raises(HomeError, match="MAESTRO_PORT"):
+        H.ports_from({}, {"MAESTRO_PORT": bad})
