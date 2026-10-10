@@ -19,6 +19,9 @@ fi
     >/dev/null 2>&1 || native_error 'The native venv needs a working Python 3.12+.'
 
 # Installer/migration output can contain authenticated URLs or env values.
+# Old name of this package: left in place it shares bin/maestro-career-studio-mcp with the
+# new one, and uninstalling it later would delete the working command.
+"$NATIVE_PYTHON" -m pip uninstall -y maestro-career-studio-backend >/dev/null 2>&1 || true
 "$NATIVE_PYTHON" -m pip install -e "${NATIVE_BACKEND}[mcp,tracing]" >/dev/null 2>&1 \
     || native_error 'Native dependency installation failed; check package access locally.'
 cd -- "$NATIVE_BACKEND"

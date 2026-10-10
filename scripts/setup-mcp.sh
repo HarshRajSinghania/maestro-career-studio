@@ -124,6 +124,9 @@ if [ "$SKIP_INSTALL" -eq 0 ]; then
   fi
   note "installing the mcp extra (quiet; this can take a minute on a cold venv)"
   "$VENV/bin/pip" install -q --upgrade pip
+  # Old name of this package: left in place it shares bin/maestro-career-studio-mcp with the
+  # new one, and uninstalling it later would delete the working command.
+  "$VENV/bin/pip" uninstall -y maestro-career-studio-backend >/dev/null 2>&1 || true
   ( cd "$BACKEND" && "$VENV/bin/pip" install -q -e ".[mcp]" )
 fi
 
