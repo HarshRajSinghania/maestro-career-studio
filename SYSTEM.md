@@ -569,8 +569,9 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   conventions live in chat_system.txt. The router resolves the model client before the
   capability check (no key → a 422 "The Assistant needs an API key…") and hands it to
   `run_turn`; working chips are words (`TOOL_PHRASES`), and deleting a chat asks first.
-  Prompt-file changes need the DB `prompt.chat_system` Setting row reset to take effect
-  (Settings › AI & models › AI instructions → Reset to default, or delete the row); a deploy ships one with a
+  Prompt rows seed at startup. `prompts.get_prompt` lazy-seeds only with a caller's session; its own session reads
+  the file default without writing when a row is absent. Prompt-file changes need the DB `prompt.chat_system` row
+  reset (Settings › AI & models › AI instructions → Reset to default, or delete the row); a deploy uses a
   SQLite-chain migration that deletes the row only while it still equals the previous default
   (`4022b54933e6` did it for `chat_system`; `tests/test_prompt_sync_guard.py` explains the mechanic).
 - **Chrome extension** (`extension/`; on screen **the Companion**): MV3; the **side panel**
@@ -858,6 +859,8 @@ citation. Priority lives in the item text, not in the ordinal.
 
 ## 12. Gotchas that have bitten before
 
+- **Owned-session prompt reads never seed** (2026-10-10): a lazy INSERT waited out `busy_timeout` behind a caller's
+  write and hid a mocked outage → only caller-supplied sessions seed; startup seeds the rest (`tests/test_prompts_service.py`).
 - **Guard files before commit** (2026-10-06): refusal still deleted documents/changed previews → check before disk I/O, including helpers (`tests/sync/test_guard.py`).
 - **Retry keys must identify controls** (2026-09-25): rule attempts use composite labels, collection uses clean
   questions, so `country | field-12` never reaches the `country` retry → use element identity and stable descriptors;

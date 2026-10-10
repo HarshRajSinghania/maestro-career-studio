@@ -59,16 +59,21 @@ def _get_setting(session: Session, key: str) -> Setting | None:
 
 
 def get_prompt(key: str, session: Session | None = None) -> str:
+    """The stored prompt, else its file default.
+
+    Only a caller-supplied session seeds the missing row. An owned session never
+    writes: startup (`seeding.seed_prompts`) seeds every prompt, and a lazy INSERT
+    here would queue behind any open write transaction on the caller's side
+    (SQLite has one write lock) and fail after `busy_timeout`."""
     owns_session = session is None
     session = session or SessionLocal()
     try:
         existing = _get_setting(session, key)
         if existing is not None:
             return existing.value or ""
-
         value = _file_default(key)
-        row = Setting(key=_setting_key(key), value=value)
-        hooks.seed_setting(session, row)
+        if not owns_session:
+            hooks.seed_setting(session, Setting(key=_setting_key(key), value=value))
         return value
     finally:
         if owns_session:

@@ -19,7 +19,7 @@ def _skill_preamble() -> str:
     """The tailoring judgment doc, prepended (not $-substituted) into the writing
     prompts. Prepend, not placeholder: safe_substitute silently drops unknown
     $vars and a DB-seeded prompt row would never gain a new one, so a placeholder
-    would vanish on seeded deployments. get_prompt lazy-seeds its own key.
+    would vanish on seeded deployments. An unseeded key reads its file default.
 
     The health check's word bank rides along as one appended line, built in
     code so a customized `prompt.tailoring_skill` row still carries it."""

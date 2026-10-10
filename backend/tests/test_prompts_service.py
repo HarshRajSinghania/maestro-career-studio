@@ -54,3 +54,15 @@ def test_cold_message_prompt_retired():
     # file must go together (seed_prompts reads a file per registered key).
     assert "cold_message" not in prompts.VALID_PROMPTS
     assert not (prompts.PROMPT_DIR / "cold_message.txt").exists()
+
+
+def test_get_prompt_without_a_session_never_writes(db_session, tmp_path, monkeypatch):
+    """An owned-session read must not INSERT: a caller holding the SQLite write lock
+    (an open transaction) would make that INSERT wait out busy_timeout, then fail."""
+    monkeypatch.setattr(prompts, "PROMPT_DIR", tmp_path)
+    (tmp_path / "qa.txt").write_text("file default", encoding="utf-8")
+
+    assert prompts.get_prompt("qa") == "file default"
+
+    db_session.expire_all()
+    assert db_session.get(Setting, "prompt.qa") is None

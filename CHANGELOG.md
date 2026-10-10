@@ -40,6 +40,12 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
   when a round is still running after its wait; check later with
   `sync.sh --now`.
 
+### Fixed
+
+- Prompt reads that open their own session use the file default without writing
+  when no saved prompt exists, avoiding a SQLite lock wait behind another
+  transaction. Startup seeding and caller-supplied sessions still seed defaults.
+
 ## [0.8.0] — 2026-10-07
 
 ### Breaking changes
