@@ -1447,6 +1447,7 @@ Run each, record in the Gate table (with numbers), fix or log anything red.
 
 | Gate | Pass condition | Result |
 |---|---|---|
+| G0 baseline | Task 0 | 42839099 (+ plan-only commits): tests/ 10,699 passed / 3 skipped (208 s) + mcp_server/tests 526 passed = 11,225 / 3; Next 16.3.8, nodejs-wheel-binaries 24.19.0, uv 0.9.28; `--scope user` proposal: owner did not object → yes |
 | G1 suite | Full suite (both trees) + `tests/maestro_cs` green; ruff; check_system_md; slop; ledger; frontend tsc/lint/build | |
 | G2 wheel | `build_wheel.py` + `check_wheel.py` pass; `py3-none-any`; size ≤ 30 MB (spike: 10.6 MB) | |
 | G3 smoke | `smoke_uv_install.py` green on macOS (local) and on the CI macOS/Ubuntu/Windows jobs | |
