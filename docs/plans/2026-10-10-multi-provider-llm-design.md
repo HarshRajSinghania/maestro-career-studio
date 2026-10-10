@@ -1,6 +1,9 @@
 # Multi-provider LLM layer with native Claude — design
 
-Status: approved in brainstorm 2026-10-10, awaiting the implementation plan.
+Status: approved in brainstorm 2026-10-10. Implementation plan:
+`2026-10-10-multi-provider-llm.md`; its "Planning decisions" section refines §1 (two stream
+event kinds), §5 (replay rule per provider; no persisted image part; context block in the user
+turn) and adds a signature-400 retry and history repair. Where they differ, the plan wins.
 Research behind it: `docs/research/2026-10-10-multi-provider-llm.md` (local;
 open-source app survey, library comparison, OpenRouter privacy, replay rules).
 
