@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from app.config import VENDORED_FONTS_DIR, settings
 from app.schemas.formatting import ResumeFormatting, validate_formatting
 from app.services import pdf_render, template_registry as reg, template_validation as tv
 from app.services.template_validation import SAMPLE_RESUME
@@ -11,12 +12,8 @@ from app.services.template_validation import SAMPLE_RESUME
 pytest.importorskip("typst")
 pytest.importorskip("pdfplumber")
 
-# Real XCharter install used for the font-resolution assertion below. When it is
-# absent (portable CI without texlive), the seed still compiles via typst's
-# embedded fallback, but the "no fallback font" check is meaningless, so skip it.
-_XCHARTER_DIR = Path(
-    "/usr/local/texlive/2025/texmf-dist/fonts/opentype/public/xcharter"
-)
+# The vendored XCharter (app/assets/fonts/xcharter) the typst templates resolve.
+_XCHARTER_DIR = VENDORED_FONTS_DIR
 # Keyed to the shipped synthetic resume, NOT a personal one: the previous
 # target (base_resumes/data_scientist.json) was deleted in the OSS identity
 # scrub, which silently turned this regression guard into a permanent skip.
@@ -256,10 +253,11 @@ def test_list_templates_seeds_typst_classic(db_session):
     assert "typst-classic" in body and body["typst-classic"]["engine"] == "typst"
 
 
-def test_default_seed_earns_ready_by_rendering(db_session):
+def test_default_seed_earns_ready_by_rendering(db_session, tmp_path, monkeypatch):
     """The default used to be INSERTed `ready` with validated_at=now() and no
     render ever attempted, so every fresh install showed its default template as
     "Not validated" with a 404 thumbnail. Status must be earned."""
+    monkeypatch.setattr(settings, "base_resumes_dir", tmp_path)
     reg.reset_seed_validation_attempts()
     reg.ensure_seed_templates(db_session)
     from app.models.template import Template
@@ -279,11 +277,12 @@ def test_default_seed_earns_ready_by_rendering(db_session):
         assert row.last_error
 
 
-def test_a_ready_row_with_no_preview_is_revalidated(db_session):
+def test_a_ready_row_with_no_preview_is_revalidated(db_session, tmp_path, monkeypatch):
     """The self-heal for installs already carrying the broken default: the flag
     says ready, the artifact is missing, so the next ensure renders it."""
     from app.services import template_validation
 
+    monkeypatch.setattr(settings, "base_resumes_dir", tmp_path)
     reg.reset_seed_validation_attempts()
     reg.ensure_seed_templates(db_session)
     preview = template_validation._preview_path(reg.DEFAULT_ID)
