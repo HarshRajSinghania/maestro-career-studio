@@ -88,23 +88,33 @@ function ConnectClientRow({
     <li className="grid min-w-0 gap-2 py-4 first:pt-0 last:pb-0 @lg/setting:grid-cols-[8rem_minmax(0,1fr)]">
       <h3 className="text-label-large">{label}</h3>
       <div className="grid min-w-0 gap-2">
-        <div className="flex min-w-0 items-start gap-2">
-          <code className="bg-muted min-w-0 flex-1 rounded-corner-xs p-2 font-mono text-body-small break-all">
-            {value}
-          </code>
-          {kind === "command" || kind === "url" || kind === "steps" ? (
+        {kind === "command" || kind === "url" || kind === "steps" ? (
+          <div className="flex min-w-0 items-start gap-2">
+            <code className="bg-muted min-w-0 flex-1 rounded-corner-xs p-2 font-mono text-body-small break-all">
+              {value}
+            </code>
             <CopyButton text={value} label={`Copy for ${label}`} />
-          ) : null}
-        </div>
+          </div>
+        ) : null}
         {kind === "deeplink" ? (
-          <a href={value} className={buttonVariants({ variant: "outline", size: "sm", className: "justify-self-start" })}>
-            Add to {label}
-          </a>
+          <>
+            <a href={value} className={buttonVariants({ variant: "outline", size: "sm", className: "justify-self-start" })}>
+              Add to {label}
+            </a>
+            <p className="text-muted-foreground text-body-small">
+              Opens {label} and asks you to confirm.
+            </p>
+          </>
         ) : kind === "download" ? (
           bundleAvailable ? (
-            <a href={value} className={buttonVariants({ variant: "outline", size: "sm", className: "justify-self-start" })}>
-              Download for Claude Desktop
-            </a>
+            <>
+              <a href={value} className={buttonVariants({ variant: "outline", size: "sm", className: "justify-self-start" })}>
+                Download for Claude Desktop
+              </a>
+              <p className="text-muted-foreground text-body-small">
+                Double-click the file, then choose Install in Claude Desktop.
+              </p>
+            </>
           ) : (
             <>
               <Button disabled variant="outline" size="sm" className="justify-self-start" aria-describedby={bundleHintId}>
