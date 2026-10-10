@@ -31,6 +31,7 @@ def test_readout_without_resource_reports_finite_positive_numbers(memory_without
     assert body["peak_mb"] >= body["rss_mb"]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="a real Windows run has no resource module")
 def test_module_still_has_a_resource_name_after_the_fallback_is_undone():
     from app.services import memory
 

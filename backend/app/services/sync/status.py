@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.setting import Setting
+from app.services.sync.files import _read_flags
 
 MACHINE_ID_KEY = "sync.machine_id"
 STATE_KEY = "sync.state"
@@ -37,12 +38,6 @@ _KEY_READ_WARNING_LOCK = threading.Lock()
 
 def key_path() -> Path:
     return settings.sync_key_file or settings.settings_dir / "secrets" / "sync-key"
-
-
-def _read_flags() -> int:
-    """Read-only, never following a symlink, never blocking on a FIFO. Windows' ``os`` has neither
-    flag (the ``S_ISREG`` check still refuses non-regular files) and wants ``O_BINARY``."""
-    return os.O_RDONLY | sum(getattr(os, f"O_{name}", 0) for name in ("NOFOLLOW", "NONBLOCK", "BINARY"))
 
 
 def read_key() -> str | None:

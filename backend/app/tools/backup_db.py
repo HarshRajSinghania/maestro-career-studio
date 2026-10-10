@@ -172,7 +172,9 @@ def _write_gzip(image: Path, out: Path) -> None:
     O_CREAT's mode applies only to a file it actually creates.
     """
     out.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # O_BINARY: the gzip bytes must reach disk unchanged (Windows would translate LF to CRLF in a text-mode fd).
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0)
+    fd = os.open(out, flags, 0o600)
     # Both handles are closed, innermost first: GzipFile.close() writes the
     # trailer but does NOT close the file it was handed.
     with os.fdopen(fd, "wb") as raw:

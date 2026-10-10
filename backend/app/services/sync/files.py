@@ -254,7 +254,7 @@ def _write_atomic(target: Path, data: bytes) -> None:
             if hasattr(os, "fchmod"):
                 os.fchmod(handle.fileno(), _FILE_MODE)
             os.fsync(handle.fileno())
-        if not hasattr(os, "fchmod"):  # Windows: only the read-only bit exists; the profile ACL protects the file
+        if not hasattr(os, "fchmod"):  # Windows on Python 3.12 (3.13+ has fchmod, which sets only the read-only bit)
             os.chmod(temp, _FILE_MODE)
         os.replace(temp, target)
     except BaseException:
