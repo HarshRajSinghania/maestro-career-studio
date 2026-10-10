@@ -111,7 +111,99 @@ tests ~152k lines (7,747 test functions), frontend ~63k, extension ~22k.
    baselines updated.
 
 Hard rules: never cut a test that `.system_md_enforcement.json` pins; no
-rewrites or new abstractions; anything the user would notice is out of scope.
+rewrites or new abstractions unless the owner picked one below; nothing else
+the user would notice.
+
+### Audit result (2026-10-09) and the owner's picks
+
+Five read-only audits (backend, frontend, extension, tests, dependencies):
+zero orphan modules on every surface, 0.3% duplication in app code and
+0.29% in tests; 11,093 tests, 11,087 passing locally in ~244 s wall
+(CI: 498 s test step, CPU-bound on 4 vCPUs; browser tests are 50% of CPU,
+the extension node harness 15%). The codebase is not bloated in the
+dead-code sense; branch 0 is small. IDs below are the audit's.
+
+**Group A, all approved (no behaviour change):**
+- Weight: D1 exclude `sharp`/`@img` from Next standalone tracing
+  (`outputFileTracingExcludes`; `next/image` unused) 19 MB; F4/D7 vendor only
+  the Monaco files the JSON and LaTeX editors use (`scripts/vendor-monaco.mjs`;
+  browser check of both editors) ~16 MB; D2 exclude `hf_xet` and D3
+  `websockets`/`watchfiles` from the sidecar (recorded for branch B's spec);
+  F1/D6 remove `react-hook-form` + `@hookform/resolvers` (and
+  THIRD_PARTY_NOTICES); D4 bump yanked `mako==1.4.0`; D5 declare `starlette`,
+  add `playwright` to the lock, drop repeated extras entries.
+- Backend dead code: B1 `POST /api/resume-lint/wording/reset` +
+  `health_wording.reset`; B2 `GET /api/kb/extra-section-presets` (keep
+  `PRESETS` and the frontend mirror's parity test); B3 the version `/diff`
+  route (port its e2e assertion to `diff_versions`); B4 `POST
+  /api/kb/consolidate` + `_parse_consolidation_slugs` (port the service-level
+  tests); B6 `ats_score.best_base` (+ docs/entities ats-score.md, others.md);
+  B8 dead constants (`llm_capabilities.CAPABILITIES`/`SURFACE_REQUIREMENTS`,
+  `quick_tailor.DEFAULTS`, `explore_skills.SkillTier`,
+  `markets.work_auth_vocab`, `config.app_root` + the APP_ROOT export); B9
+  test-only helpers (`countries.is_valid`/`name_for`, `markets.eeo_module`,
+  `selectable_base_resume_slugs`, `check_parse_fidelity`); B13 stale config
+  comment.
+- Frontend dead code: F2 `lib/health-zones.ts` (repoint
+  `test_frontend_health_report.py`); F3 unused shadcn primitive exports
+  (~480 LOC; fix `test_frontend_design_tokens.py:561`); F5 dead exports
+  (`RoleBadge`, `proposalStatusLabel`, `createKbPoint` + `KBPointCreate` — the
+  ROUTE stays, it is a pinned provenance writer — `diffFromDefaults`,
+  `ResumeDataInput`, two unused default exports); F8 replace the stock
+  create-next-app README.
+- Extension dead code: E1 drop `shared/guided-run.js` from
+  `content_scripts` (311 lines injected into every frame, read by no page
+  code; update `test_extension_manifest.py:214`); E3 publish the listbox
+  helpers once from autofill.js; E4 `sweepOrphanKeys`/`ORPHAN_KEYS`; E6
+  `eeoAutofillEnabled`; E7 unused export keys; E8 dead local `fold`; E10 dead
+  `storage.session` guards. Pack-time excludes for README, INTERNALS and the
+  slop files are recorded for branch A's `pack_extension.py`.
+- Tests: T1 the two 31 s lock waits (`prompts.get_prompt` opens its own
+  session inside the caller's write; `test_kb_autos_survive_enrichment_failure`
+  passes by accident) — fix from the app side or a fixture, never by editing
+  the pinned `test_write_paths`; T2 revive two always-skipped tests (vendored
+  XCharter path; a `tmp_path` preview dir); T3 drop the duplicate oracle-line
+  browser test (move its Country assertion); T4 narrow three e2e scenario
+  tests to their fixture; T7 split `browser/test_fill_core.py`; T9 drop the
+  13 "X is still deleted" tests named in the audit (pinned files excluded).
+  T6 (macOS job skips browser and node-harness tests) is recorded for branch B.
+- Honesty: log the three real swallows (`seeding.py:84`, `artifacts.py:22`,
+  `:27`); SYSTEM.md stops describing a "legacy import" startup step;
+  §13 `autofill-education-shape` corrected (there is no server-side
+  normalisation); `.slopledger.json` hand-check text refreshed.
+
+**Owner calls, approved:**
+- F6 delete `frontend/app/explore/page.tsx`; cut the §13 `explore-redirect`
+  row and its ledger entry (the owner overrules the recorded keep-decision).
+- B7 drop the pre-rename `CAREER_STUDIO_*` env aliases (config.py, MCP
+  client, profiles, server, `.env.example`); CHANGELOG names it.
+- E9 drop the Companion's `tabs` permission, after a manual check that the
+  panel still unbinds on leaving a posting for a non-web page; if it does not,
+  keep the permission and record why.
+- D9 Langfuse becomes an optional extra, left out of the desktop build; Docker
+  keeps it. CHANGELOG and docs say so.
+- D8 the backend Docker image stops installing `[dev]` (a runtime lock
+  without `--extra dev`, `COPY --chown` instead of a `chown -R` layer) and
+  gains a `backend/.dockerignore` (B12).
+- O1 replace python-docx/lxml in `attachment_extract._docx_text` with stdlib
+  `zipfile` + `xml.etree`; a golden test over real `.docx` fixtures shows the
+  extracted text unchanged (or the differences named and accepted).
+- E2 + E5 the inline sanitizer twin uses `ns.decisions.sanitizeAnswer` (its
+  allowlist entry and twin pin go); the SW's content-sender routing
+  (`sendToFrame`, `fanoutTab`'s content branch, `frameKey`/`parseFrameKey`)
+  and its two test sections go.
+- T8 one shared `client` fixture in `tests/conftest.py`, replacing 33 local
+  copies and the inline `dependency_overrides[get_db]` setups where
+  mechanical; pinned files are left as they are.
+
+**Kept, deliberately** (do not re-flag): B5 `SkillMatcher.semantic_match`
+(score-sensitive; needs its own change), B10 legacy evidence migration (an old
+Queued proposal may hold the layout), B11 `backfill_work_auth.py`, F7 the
+`shadcn` dev dependency, T5, `MaestroLogo`, the `update.sh` pgdata guard,
+D10 `uvicorn[standard]`, hotspot decomposition, parametrization collapse.
+F9 (the Next proxy also reads `BACKEND_URL`, the MCP client's variable with a
+different default) is a branch C note: the shell gives each child process its
+own environment.
 
 ## Branch A: `mcp-http` (step 2b, revised)
 
