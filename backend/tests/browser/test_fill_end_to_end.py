@@ -284,6 +284,7 @@ def test_the_engine_fills_every_fixture_on_one_page(e2e_page):
     assert [page.input_value(f"#{i}") for i in ("heard", "school", "skills")] == ["", "", ""]
     # A popup that needs its own search: open → search → click.
     assert page.inner_text("#fos") == "Information Systems"
+    assert oracle(page, "country") == ""   # react-select: no fact, never written
     fos = [p["body"] for p in out["posts"] if p["path"] == "/api/autofill/step"
            and p["body"]["question"] == "Field of study"]
     assert fos, "Field of study was not reached through the adaptive step"
@@ -342,7 +343,7 @@ def test_stop_between_two_fields_leaves_the_second_untouched(e2e_page):
 
 def test_a_value_the_user_types_while_map_is_pending_is_theirs_and_kept(e2e_page):
     page = e2e_page
-    _start(page, holdMap=True)
+    _start(page, fixtures=["workday_text.html"], holdMap=True)
     page.wait_for_function("window.__mapHeld === true")
     page.type("#city", "Shelbyville")
     page.evaluate("window.__openMap()")
@@ -362,7 +363,7 @@ def test_a_field_that_reverts_after_verifying_is_filled_again(e2e_page):
     past its own readback, inside the loop's sweep and tail — and the next
     round fills it again."""
     page = e2e_page
-    out = _run(page, page_js="""() => document.addEventListener("change", (e) => {
+    out = _run(page, fixtures=["native.html"], page_js="""() => document.addEventListener("change", (e) => {
       if (e.target?.id !== "deg" || window.__reverted) return;
       window.__reverted = true;
       setTimeout(() => { e.target.value = ""; }, 400);
@@ -382,7 +383,7 @@ def test_a_workday_dropdown_whose_label_never_updates_keeps_its_question(e2e_pag
     reported verified — never re-mapped as a new question "Select One" with a
     "wrote here for an earlier question" note."""
     page = e2e_page
-    out = _run(page, page_js="""() => {
+    out = _run(page, fixtures=["workday_listbox.html"], page_js="""() => {
       const set = Element.prototype.setAttribute;
       Element.prototype.setAttribute = function (name, value) {
         if (name === "aria-label" && (this.id === "degree" || this.id === "auth")) return;

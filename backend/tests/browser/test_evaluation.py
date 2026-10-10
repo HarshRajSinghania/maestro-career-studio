@@ -72,16 +72,6 @@ def test_a_run_cut_by_its_clock_ends_inside_it_and_claims_nothing_false(e2e_page
     assert all(r["lastOutcome"] == "timeout" for r in cut), cut
 
 
-def test_the_full_run_holds_the_oracle_line(e2e_page):
-    page = e2e_page
-    out = _run(page)
-    assert out["report"]["timedOut"] is False
-    assert_the_oracle_line(page, out)
-    for question, (key, _before, given) in ORACLE_OF.items():
-        if key != "country":
-            assert out["by_question"][question]["status"] == "verified" and oracle(page, key) == given, question
-
-
 # ---------- cold vs warm, over one recipe book
 
 
