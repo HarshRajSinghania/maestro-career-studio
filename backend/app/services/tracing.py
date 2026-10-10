@@ -50,6 +50,10 @@ def _get_client() -> Any | None:
         )
         _disabled = True
         return None
+    except Exception as exc:
+        logger.warning("Langfuse tracing disabled: %s", exc)
+        _disabled = True
+        return None
     try:
         _client = Langfuse(
             public_key=settings.langfuse_public_key,

@@ -43,6 +43,31 @@ def test_missing_langfuse_package_says_how_to_enable_it(monkeypatch, caplog):
     assert "pip install '.[tracing]'" in caplog.text
 
 
+def test_sdk_import_failure_of_any_kind_never_breaks_generation(monkeypatch, caplog):
+    """An incompatible SDK dependency raises a non-ImportError while importing."""
+    monkeypatch.setattr(tracing, "_client", None)
+    monkeypatch.setattr(tracing, "_disabled", False)
+    monkeypatch.setattr(tracing.settings, "langfuse_public_key", "pk-lf-test")
+    monkeypatch.setattr(tracing.settings, "langfuse_secret_key", "sk-lf-test")
+    monkeypatch.setattr(tracing.settings, "langfuse_host", "http://localhost:3001")
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "langfuse":
+            raise RuntimeError("incompatible opentelemetry")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with caplog.at_level(logging.WARNING, logger=tracing.__name__):
+        with tracing.generation("test", model="gpt-4o", prompt="hi") as record:
+            assert record is tracing._noop_record
+            record("output")
+
+    assert tracing._disabled is True
+    assert "incompatible opentelemetry" in caplog.text
+
+
 def test_generation_survives_broken_client(monkeypatch):
     class ExplodingClient:
         def start_observation(self, **kwargs):
