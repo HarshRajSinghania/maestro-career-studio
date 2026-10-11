@@ -47,6 +47,7 @@ None.
 
 ### Fixed
 
+- PyPI wheels include the project license and notices; untouched Classic templates receive the complete attribution header on upgrade.
 - Bundled resume templates carry complete MIT attribution, including Harshibar;
   third-party notices list all six seeded designs and both cover-letter sources.
 - The glossary and package description use match score; the social preview restores Inter Medium.

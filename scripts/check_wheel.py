@@ -23,8 +23,13 @@ FILENAME = re.compile(r"^maestro_career_studio-(?P<version>[^-]+)-py3-none-any\.
 SCRIPTS = ("maestro", "maestro-career-studio-mcp")
 
 # A trailing "/" means "at least one member below this folder".
+# "*.dist-info/" matches a top-level dist-info directory at any wheel version.
 REQUIRED = (
     "app/main.py",
+    "app/templates/LICENSE-resume-templates.txt",
+    "*.dist-info/licenses/LICENSE",
+    "*.dist-info/licenses/NOTICE",
+    "*.dist-info/licenses/THIRD_PARTY_NOTICES.md",
     "mcp_server/http.py",
     "migrations/env.py",
     "migrations/script.py.mako",
@@ -70,8 +75,12 @@ def name_problems(names: list[str]) -> list[str]:
     members = [n for n in names if not n.endswith("/")]
     problems = []
     for required in REQUIRED:
-        found = any(n.startswith(required) for n in members) if required.endswith("/") \
-            else required in members
+        if required.startswith("*.dist-info/"):
+            suffix = required.removeprefix("*")
+            found = any(re.fullmatch(r"[^/]+" + re.escape(suffix), n) for n in members)
+        else:
+            found = any(n.startswith(required) for n in members) if required.endswith("/") \
+                else required in members
         if not found:
             problems.append(f"missing {required}")
     if not any(re.fullmatch(r"migrations/versions/[^/]+\.py", n) for n in members):

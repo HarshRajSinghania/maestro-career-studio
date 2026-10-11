@@ -195,7 +195,9 @@
   `app/templates/user/` (including Harshibar). `THIRD_PARTY_NOTICES.md` inventories
   their provenance and licenses; derived sources carry attribution headers.
   `scripts/apply_template_sources` is the maintainer update path; seed-time
-  `SUPERSEDED_SEED_DIGESTS` reaches untouched installed rows for either engine.
+  `SUPERSEDED_SEED_DIGESTS` reaches untouched installed rows for either engine,
+  including Classic whether selected as default or not; only seed-origin rows
+  matching a known shipped source digest change. User edits and formatting stay.
   **Pre-change template sources are frozen per migration** at
   `tests/fixtures/templates_pre_section_order/`: reconstructing old bytes from
   the LIVE templates (what the date-resync test did) breaks on the next template
@@ -799,7 +801,12 @@
   - **The wheel** is `backend/` renamed `maestro-career-studio` (version = `backend/pyproject.toml`), `py3-none-any`: `scripts/build_wheel.py`
     stages `git ls-files` (no tests, no host scripts), adds `maestro_cs/web/` (Next standalone + `.next/static` + `public`, with every
     frontend `.env*` dropped) and `maestro_cs/data/example.json`; `scripts/check_wheel.py` refuses a wheel missing a required file or
-    carrying a forbidden one. Node comes from `nodejs-wheel-binaries` (a core dependency, left out of `requirements.lock`).
+    carrying a forbidden one. Staging also copies root `LICENSE`, `NOTICE` when present, and `THIRD_PARTY_NOTICES.md`, and
+    replaces the staged project's empty `license-files` list with these names. Setuptools >=77 uses the `Apache-2.0` SPDX
+    expression and places the files in `*.dist-info/licenses/`; the checker requires all three plus the bundled template
+    MIT license. The checkout keeps `license-files = []` because its legal files are outside `backend/` and Docker installs
+    before copying sources; editable/Docker installs need no missing-file patterns or tracked copies inside `backend/`.
+    Node comes from `nodejs-wheel-binaries` (a core dependency, left out of `requirements.lock`).
   - **The folder** (`home.default_home`; `MAESTRO_HOME` wins) holds `data/`, `applications/`, `settings/`, `base_resumes/`,
     `kb_documents/`, `logs/`, `exports/`, `fastembed_cache/`, `uploads/`, `backups/`, `run/` (process records, `stop.request`), `sync-key`
     when sync is on, and `maestro.env`. A symlinked folder or `maestro.env` is refused. Ports: process environment, then `maestro.env`,

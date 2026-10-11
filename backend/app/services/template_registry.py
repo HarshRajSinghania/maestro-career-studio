@@ -210,12 +210,26 @@ STARTER_SOURCE = r"""\documentclass[11pt]{article}
 
 
 def _bootstrap_default(session: Session, *, validate: bool = True) -> Template:
+    # Classic keeps its source even when the user selects another default.
+    # Resync either way, using the same origin + shipped-digest guard as the
+    # other seeds; validation below must describe the replacement bytes.
+    existing = session.get(Template, DEFAULT_ID)
+    if existing is not None:
+        _resync_superseded_seed(
+            session, existing, pdf_render.TEMPLATE_DIR / pdf_render.RESUME_TEMPLATE
+        )
     # Invariant: at most ONE is_default=True row. Only bootstrap a default when
     # none exists (fail closed). Guarding on the DEFAULT_ID row's absence instead
     # would spawn a SECOND default next to a user's chosen default if the seed
     # 'default' row had been deleted after the user re-pointed the default.
     current = session.scalar(select(Template).where(Template.is_default.is_(True)))
     if current is not None:
+        if (
+            validate and current.id != DEFAULT_ID
+            and existing is not None and existing.origin == "seed"
+            and _needs_seed_validation(existing)
+        ):
+            _seed_validate(session, existing)
         # The seed default gets the same "another go on the next ensure" as
         # every other seed (`_bootstrap_seeded`): a first boot without TeX
         # leaves it a draft with "requires TeX", and returning here unconditionally
@@ -224,7 +238,6 @@ def _bootstrap_default(session: Session, *, validate: bool = True) -> Template:
         if validate and current.id == DEFAULT_ID and _needs_seed_validation(current):
             _seed_validate(session, current)
         return current
-    existing = session.get(Template, DEFAULT_ID)
     if existing is not None:
         # The seed row exists but nothing is marked default: promote it rather
         # than insert a duplicate id.
@@ -363,6 +376,14 @@ def _needs_seed_validation(tmpl: Template) -> bool:
 # become a version that shipped: freeze them as the next fixture and pin here
 # (CURRENT_SEED_DIGESTS below fails a test until that is done).
 SUPERSEDED_SEED_DIGESTS: dict[str, frozenset[str]] = {
+    "default": frozenset({
+        # e81696be, ba30bf9b, c4b40be0 and c27b05d4: all Classic sources
+        # before the complete template attribution header.
+        "abba04679c464b623c5c31e27f1d8518f3cce94476739def18c16b12451764de",
+        "0657e3937030a7ff6b2f9d5cdb9f80ad12578defeaff2c67f83fc8d7af6dc3d6",
+        "1a7350623f5d5a005eb66f91986c54819da18885444a09b357a2695ded647aaf",
+        "f2b36dc16a62b61267dbab0d59da9155e368b92707372c0edc73dbdf9e9d5997",
+    }),
     "carlito_dense": frozenset({
         # e81696be, c4b40be0, c27b05d4 (last change on main; identical at
         # main's tip). All three pass \href targets through latex_escape,
@@ -411,6 +432,7 @@ SUPERSEDED_SEED_DIGESTS: dict[str, frozenset[str]] = {
 # release will carry, and the resync can only recognise what was pinned.
 # Update it LAST, after the fixture and the SUPERSEDED_SEED_DIGESTS entry.
 CURRENT_SEED_DIGESTS: dict[str, str] = {
+    "default": "50d3c956907885899dad3ffd13e45754222230aeaf96ca7f65634beabcbea5c2",
     "carlito_dense": "6585a38def5fd891416d27014c40c0ef9e88a0c722620ae4904438d5433a1667",
     "harshibar": "122996d28e6937e74a0f3571bbba22a8a680bd5f12f95f3b83ced5f397e0cb4c",
     "xcharter_serif": "1dd50d7a9253d090f48e5ad4241e456e1da6f024b24fdd6d616023a4c38798e7",

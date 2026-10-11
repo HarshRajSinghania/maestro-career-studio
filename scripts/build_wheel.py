@@ -10,6 +10,8 @@ Stdlib only, so it runs unchanged on macOS, Linux and Windows CI. The wheel is t
 
 The backend is staged in a temp folder from `git ls-files`, so the working tree is never
 edited and an untracked file (a stray `.env`, local data) cannot reach the wheel from there.
+The root LICENSE, optional NOTICE and THIRD_PARTY_NOTICES.md are copied into staging
+and declared there as PEP 639 license-files; checkout/editable installs need no copies.
 The web bundle is not tracked: Next copies `frontend/.env*` into it, so the staged copy drops
 every `.env` / `.env.<name>` file (not `.env.example`), and check_wheel.py refuses any left.
 """
@@ -37,6 +39,7 @@ WEB_PREFIX = "maestro_cs/web/"
 EXCLUDED_PREFIXES = ("backend/tests/", "backend/mcp_server/tests/", "backend/scripts/")
 
 _VERSION_LINE = re.compile(r'^(version\s*=\s*)"[^"]*"', re.MULTILINE)
+_LICENSE_FILES_LINE = re.compile(r'^license-files\s*=\s*\[\]', re.MULTILINE)
 
 
 def staged_paths(tracked: list[str]) -> list[str]:
@@ -141,10 +144,23 @@ def stage_backend(stage: Path, version: str | None) -> Path:
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
     pyproject = stage / "pyproject.toml"
+    license_files = []
+    for name in ("LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"):
+        src = ROOT / name
+        if name == "NOTICE" and not src.is_file():
+            continue
+        shutil.copy2(src, stage / name)
+        license_files.append(f'"{name}"')
+    text = pyproject.read_text(encoding="utf-8")
+    text, count = _LICENSE_FILES_LINE.subn(
+        lambda _: "license-files = [" + ", ".join(license_files) + "]", text, 1
+    )
+    if count != 1:
+        raise ValueError("pyproject.toml has no empty license-files list to rewrite.")
     if version is not None:
-        text = pyproject.read_text(encoding="utf-8")
         if project_version(text) != version:
-            pyproject.write_text(rewrite_version(text, version), encoding="utf-8")
+            text = rewrite_version(text, version)
+    pyproject.write_text(text, encoding="utf-8")
     return stage
 
 

@@ -19,6 +19,10 @@ def _digest(text: str) -> str:
 
 
 def _current_source(seed_id: str) -> str:
+    if seed_id == reg.DEFAULT_ID:
+        return (reg.pdf_render.TEMPLATE_DIR / reg.pdf_render.RESUME_TEMPLATE).read_text(
+            encoding="utf-8"
+        )
     for tid, _name, _engine, filename, _fmt in reg.BUNDLED_TEMPLATES:
         if tid == seed_id:
             return (reg._USER_TEMPLATE_DIR / filename).read_text(encoding="utf-8")
@@ -176,3 +180,76 @@ def test_resync_is_idempotent(db_session):
     first = db_session.get(Template, seed_id).updated_at
     reg.ensure_seed_templates(db_session, validate=False)
     assert db_session.get(Template, seed_id).updated_at == first
+
+
+@pytest.mark.parametrize("selected", ["classic", "other", "none"])
+@pytest.mark.parametrize("source_kind", ["shipped", "edited", "user_owned"])
+def test_classic_resync_preserves_user_source_and_default_choice(db_session, selected, source_kind):
+    old = (FIXTURES / "default/1.tex.j2").read_text(encoding="utf-8")
+    source = old + "% my tweak\n" if source_kind == "edited" else old
+    row = Template(
+        id=reg.DEFAULT_ID, display_name="My Classic", source=source, engine="latex",
+        status="ready", is_default=selected == "classic",
+        origin="frontend" if source_kind == "user_owned" else "seed",
+        default_formatting={"font_size": 10},
+    )
+    db_session.add(row)
+    if selected == "other":
+        db_session.add(Template(
+            id="my_default", display_name="Mine", source="my source", engine="latex",
+            status="ready", is_default=True, origin="frontend",
+        ))
+    db_session.commit()
+
+    reg.ensure_seed_templates(db_session, validate=False)
+
+    expected = _current_source(reg.DEFAULT_ID) if source_kind == "shipped" else source
+    assert row.source == expected
+    assert row.status == ("draft" if source_kind == "shipped" else "ready")
+    assert row.display_name == "My Classic"
+    assert row.default_formatting == {"font_size": 10}
+    defaults = [t.id for t in reg.list_all(db_session) if t.is_default]
+    assert defaults == (["my_default"] if selected == "other" else [reg.DEFAULT_ID])
+    updated_at = row.updated_at
+    reg.ensure_seed_templates(db_session, validate=False)
+    assert row.updated_at == updated_at
+
+
+def test_unselected_classic_revalidates_after_resync_and_retries_next_boot(db_session, monkeypatch):
+    old = (FIXTURES / "default/1.tex.j2").read_text(encoding="utf-8")
+    row = Template(
+        id=reg.DEFAULT_ID, display_name="Classic", source=old, engine="latex",
+        status="ready", origin="seed",
+    )
+    chosen = Template(
+        id="my_default", display_name="Mine", source="my source", engine="latex",
+        status="ready", is_default=True, origin="frontend",
+    )
+    db_session.add_all([row, chosen])
+    db_session.commit()
+    from app.services import template_validation
+    monkeypatch.setattr(reg.engines, "pdflatex_available", lambda: True)
+
+    def failed_validation(template_id, session):
+        raise RuntimeError("no renderer")
+
+    monkeypatch.setattr(template_validation, "validate_template", failed_validation)
+    assert reg._bootstrap_default(db_session) is chosen
+    assert row.source == _current_source(reg.DEFAULT_ID)
+    assert row.last_error == "seed validation error: no renderer"
+    assert row.status == "draft"
+
+    reg.reset_seed_validation_attempts()
+
+    def successful_validation(template_id, session):
+        template = session.get(Template, template_id)
+        template.status = "ready"
+        template.validated_at = datetime.now(UTC)
+        template.last_error = None
+        session.commit()
+
+    monkeypatch.setattr(template_validation, "validate_template", successful_validation)
+    assert reg._bootstrap_default(db_session) is chosen
+    assert row.status == "ready"
+    assert row.validated_at is not None
+    assert row.last_error is None

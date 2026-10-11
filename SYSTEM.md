@@ -683,7 +683,8 @@ with the failure mode that bought it. Code citing "§8" lands here.
   The upload host root is `${PWD}` (compose cwd; `update.sh` pins it to the repo) unless `MAESTRO_CS_UPLOAD_HOST_ROOT` overrides it; Windows joins with `\`.
 - **uv install (B′, `maestro`)** — `uv tool install --python 3.12 maestro-career-studio`: a `py3-none-any` PyPI wheel of `backend/`
   (version = `backend/pyproject.toml`) plus the Next standalone bundle (`maestro_cs/web/`; `scripts/build_wheel.py`, gated by
-  `check_wheel.py`) and Node from `nodejs-wheel-binaries`. `maestro start` detaches `maestro run`, a foreground supervisor owning
+  `check_wheel.py`, including root legal files in PEP 639 `dist-info/licenses/`) and Node from `nodejs-wheel-binaries`.
+  `maestro start` detaches `maestro run`, a foreground supervisor owning
   uvicorn (127.0.0.1:8001) and `node server.js` (:3000); stop = `run/stop.request` + a signal; process identity = pid + psutil
   create_time. `maestro update` = verified snapshot → stop → `uv tool install --force …==NEW` (Windows: a detached `cmd` script) → start. The web
   process gets no API keys (`home._WEB_STRIPPED`). CI: `maestro-cli`, `uv-wheel`, `uv-smoke`, `uv-upgrade`; `pypi.yml` publishes on
@@ -882,7 +883,7 @@ citation. Priority lives in the item text, not in the ordinal.
 - **A GUI-launched process has no shell `PATH`** (2026-09-20): a bare `pdflatex` misses MacTeX's `/Library/TeX/texbin`
   in desktop apps → `engines.find_pdflatex` searches TeX homes after PATH; every run spawns its absolute path.
 - **A seeded template copies source only on INSERT** (2026-09-20): import landed rows after migrations, restoring
-  old bytes → `template_registry.SUPERSEDED_SEED_DIGESTS` resyncs at seed time.
+  old bytes → `template_registry.SUPERSEDED_SEED_DIGESTS` resyncs at seed time, including Classic when another template is default.
 - **`foreign_keys` is per connection, and defaults OFF** (2026-09-19): `journal_mode` persists in the file; `foreign_keys`,
   `synchronous` and `busy_timeout` reset every connect, so 21 `ondelete=` cascades silently stopped → every SQLite
   engine goes through `app.db.make_engine`.

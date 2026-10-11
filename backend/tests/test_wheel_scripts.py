@@ -8,6 +8,7 @@ import importlib.util
 import json
 import socket
 import sys
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -36,6 +37,10 @@ GOOD = [
     "maestro_cs/web/server.js", "maestro_cs/web/.next/BUILD_ID",
     "maestro_cs/web/.next/static/chunks/main.js", "maestro_cs/web/public/favicon.ico",
     "maestro_career_studio-1.0.0.dist-info/METADATA",
+    "app/templates/LICENSE-resume-templates.txt",
+    "maestro_career_studio-1.0.0.dist-info/licenses/LICENSE",
+    "maestro_career_studio-1.0.0.dist-info/licenses/NOTICE",
+    "maestro_career_studio-1.0.0.dist-info/licenses/THIRD_PARTY_NOTICES.md",
 ]
 
 
@@ -80,6 +85,45 @@ def test_the_real_pyproject_is_rewritable():
     assert build_wheel.project_version(build_wheel.rewrite_version(text, "9.9.9")) == "9.9.9"
 
 
+@pytest.mark.parametrize("with_notice", [True, False])
+def test_staging_copies_root_licenses_and_declares_only_staged_files(tmp_path, monkeypatch, with_notice):
+    root = tmp_path / "repo"
+    (root / "backend").mkdir(parents=True)
+    checkout = (SCRIPTS.parent / "backend/pyproject.toml").read_text(encoding="utf-8")
+    (root / "backend/pyproject.toml").write_text(checkout, encoding="utf-8")
+    licenses = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+    if with_notice:
+        licenses.insert(1, "NOTICE")
+    for name in licenses:
+        (root / name).write_text(f"legal text for {name}\n", encoding="utf-8")
+    monkeypatch.setattr(build_wheel, "ROOT", root)
+    monkeypatch.setattr(build_wheel, "git_tracked", lambda: ["backend/pyproject.toml"])
+
+    stage = build_wheel.stage_backend(tmp_path / "stage", "9.9.9")
+
+    config = tomllib.loads((stage / "pyproject.toml").read_text(encoding="utf-8"))
+    assert config["project"]["license-files"] == licenses
+    assert config["project"]["license"] == "Apache-2.0"
+    assert config["project"]["version"] == "9.9.9"
+    for name in licenses:
+        assert (stage / name).read_bytes() == (root / name).read_bytes()
+        assert not (root / "backend" / name).exists()
+    assert (root / "backend/pyproject.toml").read_text(encoding="utf-8") == checkout
+
+
+@pytest.mark.parametrize("missing", ["LICENSE", "THIRD_PARTY_NOTICES.md"])
+def test_staging_refuses_a_missing_required_root_license(tmp_path, monkeypatch, missing):
+    (tmp_path / "backend").mkdir()
+    (tmp_path / "backend/pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
+    for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
+        if name != missing:
+            (tmp_path / name).write_text("legal text", encoding="utf-8")
+    monkeypatch.setattr(build_wheel, "ROOT", tmp_path)
+    monkeypatch.setattr(build_wheel, "git_tracked", lambda: ["backend/pyproject.toml"])
+    with pytest.raises(FileNotFoundError, match=missing):
+        build_wheel.stage_backend(tmp_path / "stage", None)
+
+
 # --- check_wheel -------------------------------------------------------------------------
 
 def test_a_complete_member_list_has_no_problems():
@@ -92,6 +136,29 @@ def test_a_complete_member_list_has_no_problems():
 ])
 def test_each_required_file_is_required(missing):
     assert any(missing in p for p in check_wheel.name_problems([n for n in GOOD if n != missing]))
+
+
+@pytest.mark.parametrize("filename", [
+    "LICENSE-resume-templates.txt", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md",
+])
+def test_each_license_file_is_required(filename):
+    rest = [n for n in GOOD if Path(n).name != filename]
+    assert any(filename in p for p in check_wheel.name_problems(rest))
+
+
+@pytest.mark.parametrize("wrong_path", [
+    "LICENSE", "app/LICENSE", "other/licenses/LICENSE",
+    "maestro_career_studio-1.0.0.dist-info/LICENSE",
+    "nested/maestro_career_studio-1.0.0.dist-info/licenses/LICENSE",
+])
+def test_a_license_outside_dist_info_licenses_does_not_count(wrong_path):
+    rest = [n for n in GOOD if Path(n).name != "LICENSE"]
+    assert any("LICENSE" in p for p in check_wheel.name_problems([*rest, wrong_path]))
+
+
+def test_license_paths_accept_another_wheel_version():
+    names = [n.replace("-1.0.0.dist-info/", "-9.9.9.dist-info/") for n in GOOD]
+    assert check_wheel.name_problems(names) == []
 
 
 @pytest.mark.parametrize("folder", [
@@ -154,7 +221,7 @@ def _wheel(path: Path, members: list[str], *, version="1.0.0", name="maestro-car
     return path
 
 
-MEMBERS = [n for n in GOOD if "dist-info" not in n]
+MEMBERS = [n for n in GOOD if not n.endswith("/METADATA")]
 
 
 def test_a_good_wheel_passes(tmp_path):

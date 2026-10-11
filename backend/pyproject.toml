@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,9 +7,12 @@ name = "maestro-career-studio"
 version = "0.9.0"
 description = "A local job-application copilot: match scoring, resume tailoring, an MCP server and a Chrome Companion, run with one command."
 readme = "PYPI.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+# Root legal files sit outside this project in a checkout (and Docker installs
+# before copying the sources). build_wheel.py copies them into staging and sets
+# this list there; missing paths here would break editable/Docker installs.
+license-files = []
 classifiers = [
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.12",
     "Operating System :: OS Independent",
     "Environment :: Console",
