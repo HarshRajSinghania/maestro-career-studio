@@ -1,6 +1,8 @@
 import io
+import re
 import struct
 import zipfile
+import zlib
 
 import pytest
 
@@ -329,3 +331,37 @@ def test_alternate_content_inside_text_reads_only_the_first_choice(table):
     assert ax.extract_text('deck.pptx', None, _zip({
         'ppt/slides/slide1.xml': _slide(content),
     })) == 'Slide 1\nChosen'
+
+
+def _minimal_zip() -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr("ppt/presentation.xml", "<p/>")
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        zlib.error("Error -3 while decompressing data"),
+        RuntimeError("File is encrypted, password required for extraction"),
+        NotImplementedError("That compression method is not supported"),
+        EOFError(),
+    ],
+)
+@pytest.mark.parametrize(
+    ("reader", "suffix", "sentence"),
+    [
+        ("_pptx_collect", ".pptx", "This file isn't a readable PowerPoint deck."),
+        ("_docx_document_text", ".docx", "This file isn't a readable Word document."),
+    ],
+)
+def test_damaged_archive_errors_read_as_unreadable(monkeypatch, error, reader, suffix, sentence):
+    # Corrupt deflate data, an encryption flag or an unknown compression method
+    # surface from zipfile/zlib as non-ValueErrors; routes catch only ValueError.
+    def boom(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(ax, reader, boom)
+    with pytest.raises(ax.UnreadableFile, match=re.escape(sentence)):
+        ax.extract_text(f"deck{suffix}", None, _minimal_zip())

@@ -156,11 +156,15 @@ def _grid_value(node, default: str) -> int:
 
 def _docx_text(data: bytes) -> str:
     import zipfile
+    import zlib
     from xml.etree import ElementTree
 
     try:
         return _docx_document_text(data)
-    except (zipfile.BadZipFile, ElementTree.ParseError, KeyError, RecursionError) as exc:
+    except (zipfile.BadZipFile, ElementTree.ParseError, KeyError, RecursionError,
+            zlib.error, EOFError, NotImplementedError, RuntimeError) as exc:
+        # A damaged or hand-made archive: corrupt deflate data, an encryption flag,
+        # an unknown compression method. All are a file we can't read, never a 500.
         raise UnreadableFile("This file isn't a readable Word document.") from exc
 
 
@@ -368,6 +372,7 @@ def _pptx_collect(archive) -> str:
 
 def _pptx_text(data: bytes) -> str:
     import zipfile
+    import zlib
     from xml.etree import ElementTree
 
     try:
@@ -380,7 +385,10 @@ def _pptx_text(data: bytes) -> str:
             if xml_size > _OFFICE_XML_MAX_BYTES:
                 raise UnreadableFile("This PowerPoint file is too large to read.")
             return _pptx_collect(archive)
-    except (zipfile.BadZipFile, ElementTree.ParseError, KeyError, RecursionError) as exc:
+    except (zipfile.BadZipFile, ElementTree.ParseError, KeyError, RecursionError,
+            zlib.error, EOFError, NotImplementedError, RuntimeError) as exc:
+        # A damaged or hand-made archive: corrupt deflate data, an encryption flag,
+        # an unknown compression method. All are a file we can't read, never a 500.
         raise UnreadableFile("This file isn't a readable PowerPoint deck.") from exc
 
 
