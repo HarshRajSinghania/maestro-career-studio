@@ -836,7 +836,18 @@ print(json.dumps({"code": code, "out": buf.getvalue(), "err": err.getvalue(), "s
 
 
 def run_real_import(tmp_path, template_db):
-    """The real command in a fresh interpreter: explicit environment, a stray `.env` in its cwd, a relative path."""
+    """The real command in a fresh interpreter: explicit environment, a stray `.env` in its cwd, a relative path.
+
+    Free ports are picked, then probed by the import; on a busy parallel CI runner another test can take one in
+    between, which the import rightly refuses. That one refusal is retried with fresh ports, nothing else is."""
+    result = _run_real_import_once(tmp_path / "try1", template_db)
+    if result[0]["code"] != 0 and "is in use by another program" in result[0]["out"] + result[0]["err"]:
+        result = _run_real_import_once(tmp_path / "try2", template_db)
+    return result
+
+
+def _run_real_import_once(tmp_path, template_db):
+    tmp_path.mkdir()
     ports = [free_port() for _ in range(4)]
     checkout = make_checkout(tmp_path, template_db, env=f"FAST_MODEL=gpt-test\nBACKEND_HOST_PORT={ports[2]}\n"
                                                         f"FRONTEND_HOST_PORT={ports[3]}\n")
@@ -864,7 +875,7 @@ def test_the_real_command_applies_the_install_env_before_importing_app(tmp_path,
 def test_the_real_command_writes_into_the_home_and_only_reads_the_checkout(tmp_path, template_db):
     result, home, checkout, before = run_real_import(tmp_path, template_db)
     db = home / "data" / control.DB_FILENAME
-    assert result["code"] == 0
+    assert result["code"] == 0, result
     assert sql(db, "SELECT version_num FROM alembic_version") == [(code_head(),)]
     assert sql(db, "SELECT artifact_dir FROM applications WHERE id='a1'") == [(str(home / "applications" / "a1") + os.sep,)]
     assert tree_hash(checkout) == before
