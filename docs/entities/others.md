@@ -832,7 +832,12 @@
     symlinks never followed, owner-only modes; `settings/secrets/sync-key` goes to `<home>/sync-key` only). The staged DB replaces the
     old one last (old `db`, `-wal`, `-shm` move aside first and come back on ANY later failure). `.env` keys that are `app.config.Settings`
     fields (plus proxy names) and not path/host/port/journal entries are appended to `maestro.env`; keys already set there are kept;
-    values are never printed. Verification: revision == head, equal row counts, sample of rewritten paths exist.
+    values are never printed (a carried value naming `host.docker.internal` gets a note). Verification: revision == head, equal row counts,
+    sample of rewritten paths exist. JSON columns and longer text are only COUNTED and reported when they mention `/app/`. Undo: `_Undo` copies every
+    uv file about to be replaced (sync-key, the five folders, `maestro.env`) to `data/.before-import/` and remembers files/dirs it adds; a failure
+    restores all of it plus the DB; success moves the copies to `backups/import-replaced-files-<time>/`. Leftover `data/*.before-import`,
+    `.importing/` or `.before-import/` make the next import refuse; `control.stale_database_problem` makes `start`/`run` refuse when the DB
+    file is missing but `.before-import` or `-wal` exists.
   - **Autostart**: launchd agent (macOS), systemd user unit (Linux), Task Scheduler logon task from XML for the current user (Windows).
   - **CI**: `maestro-cli` (`tests/maestro_cs` on the three OSes, plus `systemd-analyze --user verify` of the rendered unit on Linux and a
     schtasks create/query/delete of the rendered XML on Windows, admin runner), `uv-wheel`, `uv-smoke` (`scripts/smoke_uv_install.py`: install, start, score over

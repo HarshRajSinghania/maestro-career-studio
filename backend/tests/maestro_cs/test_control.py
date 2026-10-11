@@ -907,3 +907,29 @@ def test_port_free_sees_an_ipv6_only_listener():
     with holder:
         holder.listen()
         assert control.port_free(holder.getsockname()[1]) is False
+
+
+# --- a database that is missing beside leftovers of another one ----------------------------
+
+@pytest.mark.parametrize("leftover", ["maestro_cs.sqlite3.before-import", "maestro_cs.sqlite3-wal"])
+def test_start_refuses_when_the_database_is_missing_but_a_leftover_is_not(rig, monkeypatch, leftover):
+    # A fresh database beside a stale -wal would replay the old database's rows into it.
+    monkeypatch.setattr(runtime, "web_dir_ok", lambda environ=None: True)
+    (rig.ctx.home / "data" / leftover).write_bytes(b"x")
+    with pytest.raises(ControlError, match=leftover) as info:
+        rig.ctl.start(no_browser=True, skip_model=True)
+    assert "\n" not in str(info.value) and rig.spawned == []
+
+
+def test_start_with_a_database_and_its_wal_is_normal(rig, monkeypatch):
+    monkeypatch.setattr(runtime, "web_dir_ok", lambda environ=None: True)
+    for name in ("maestro_cs.sqlite3", "maestro_cs.sqlite3-wal"):
+        (rig.ctx.home / "data" / name).write_bytes(b"x")
+    assert rig.ctl.start(no_browser=True, skip_model=True) == 0
+
+
+def test_run_says_it_and_exits_zero_so_autostart_does_not_loop(rig, monkeypatch, capsys):
+    monkeypatch.setattr(runtime, "web_dir_ok", lambda environ=None: True)
+    (rig.ctx.home / "data" / "maestro_cs.sqlite3.before-import").write_bytes(b"x")
+    assert control.run(rig.ctx) == 0
+    assert "maestro_cs.sqlite3.before-import" in capsys.readouterr().out

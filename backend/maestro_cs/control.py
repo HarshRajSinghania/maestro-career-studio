@@ -221,6 +221,24 @@ def preflight(
         )
 
 
+def stale_database_problem(home: Path) -> str | None:
+    """A sentence when `data/` lacks the database but holds a leftover that a new one would pick up.
+
+    A fresh database next to a stale `-wal` would replay the old database's rows into it, and a
+    `.before-import` file is the database an interrupted `maestro import-docker` moved aside.
+    """
+    data = home / "data"
+    if (data / DB_FILENAME).exists():
+        return None
+    for suffix in (".before-import", "-wal"):
+        if (data / f"{DB_FILENAME}{suffix}").exists():
+            return (f"{DB_FILENAME}{suffix} is in {data} but {DB_FILENAME} is not, so Maestro won't start: a new "
+                    "database beside it could pick up old rows. If an import was interrupted, put the "
+                    f".before-import files back under their names; otherwise delete {DB_FILENAME}{suffix}, or "
+                    "restore a snapshot from backups/. Then run `maestro start` again.")
+    return None
+
+
 def run(ctx: Context) -> int:
     """`maestro run`: the foreground supervisor (autostart units run this)."""
     if running_supervisor(ctx):
@@ -234,6 +252,8 @@ def run(ctx: Context) -> int:
         out = sys.stdout
     try:
         try:
+            if problem := stale_database_problem(ctx.home):
+                raise ControlError(problem)
             preflight(ctx, port_free, http_get_json)
         except ControlError as exc:
             # Exit 0 on purpose: launchd (KeepAlive SuccessfulExit=false) and systemd
@@ -309,6 +329,8 @@ class Controller:
         if running_supervisor(ctx):
             self.say(f"Maestro is already running at {ctx.web_url}.")
             return 0
+        if problem := stale_database_problem(ctx.home):
+            raise ControlError(problem)
         self._reap_recorded()  # a hard-killed supervisor can leave its servers behind
         self._clear_records()
         if web_bundle_missing(ctx.environ):

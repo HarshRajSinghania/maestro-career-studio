@@ -634,7 +634,7 @@ def test_a_failure_after_the_swap_puts_the_uv_database_back(world, template_db, 
         imp.run(str(checkout), replace=True, dry_run=False)
     text = str(info.value)
     assert "\n" not in text and "No space left on device" in text
-    assert "your earlier data is back" in text and "files copied from the Docker install stay" in text
+    assert "put back" in text and "stay" not in text
     assert uv_db(ctx).read_bytes() == before
     assert [p.name for p in (ctx.home / "data").iterdir()] == [control.DB_FILENAME]
 
@@ -674,6 +674,44 @@ def test_a_failed_first_import_leaves_no_database_behind(world, monkeypatch):
     with pytest.raises(ControlError, match="boom"):
         imp.run(str(checkout), replace=False, dry_run=False)
     assert not uv_db(ctx).exists()
+
+
+# --- JSON columns: mentions are reported, never rewritten ---------------------------------------
+
+def put_json_mention(checkout):
+    sql(checkout / "data" / control.DB_FILENAME,
+        "UPDATE applications SET customized_json = ? WHERE id = 'a1'",
+        ('{"pdf": "/app/applications/a1/resume.pdf"}',))
+
+
+def test_import_reports_app_paths_inside_json_columns_and_leaves_them_alone(world):
+    ctx, checkout = world
+    put_json_mention(checkout)
+    imp, said = importer_for(ctx)
+    assert imp.run(str(checkout), replace=False, dry_run=False) == 0
+    assert "1 values in applications.customized_json mention /app/ and are left as written." in "\n".join(said)
+    assert sql(uv_db(ctx), "SELECT customized_json FROM applications WHERE id='a1'") == [
+        ('{"pdf": "/app/applications/a1/resume.pdf"}',)]
+
+
+def test_dry_run_reports_the_json_mentions_too(world):
+    ctx, checkout = world
+    put_json_mention(checkout)
+    imp, said = importer_for(ctx)
+    imp.run(str(checkout), replace=False, dry_run=True)
+    assert "1 values in applications.customized_json mention /app/ and are left as written." in "\n".join(said)
+
+
+def test_plan_counts_json_and_text_mentions_but_rewrites_only_text_paths(tmp_path):
+    db = rewrite_db(tmp_path, {"a": ["/app/applications/x", "see /app/data/y"]})
+    sql(db, "UPDATE a SET j = ? WHERE id = 1", ('{"p": "/app/exports/z"}',))
+    sql(db, "UPDATE a SET j = ? WHERE id = 2", ("[1, 2]",))
+    conn = sqlite3.connect(db)
+    report = importer.rewrite_paths(conn, PREFIXES, "/")
+    conn.close()
+    assert report.counts == {("a", "p"): 1}
+    assert report.mentions == {("a", "p"): 1, ("a", "j"): 1}
+    assert sql(db, "SELECT j FROM a WHERE id = 1") == [('{"p": "/app/exports/z"}',)]
 
 
 # --- the path rewrite --------------------------------------------------------------------------
@@ -830,3 +868,165 @@ def test_the_real_command_writes_into_the_home_and_only_reads_the_checkout(tmp_p
     assert sql(db, "SELECT version_num FROM alembic_version") == [(code_head(),)]
     assert sql(db, "SELECT artifact_dir FROM applications WHERE id='a1'") == [(f"{home}/applications/a1/",)]
     assert tree_hash(checkout) == before
+
+
+# --- a failed or undone --replace: the key, settings and env go back with the database ----------
+
+def uv_files(ctx):
+    write(ctx.home / "sync-key", "uv-own-key\n", 0o600)
+    write(ctx.home / "settings" / "persona.md", "uv persona")
+    write(ctx.home / "base_resumes" / "main.json", "uv main resume")
+    write(ctx.home / "base_resumes" / "mine.json", "uv only")
+
+
+def read_env_bytes(ctx):
+    return (ctx.home / "maestro.env").read_bytes()
+
+
+@pytest.fixture
+def failed_replace(world, template_db, monkeypatch):
+    """A --replace over a uv home with its own key, settings, resumes, env and database; `_verify` fails."""
+    ctx, checkout = world
+    seed_uv_db(ctx, template_db, job=True)
+    uv_files(ctx)
+    before = SimpleNamespace(env=read_env_bytes(ctx), db=uv_db(ctx).read_bytes())
+    monkeypatch.setattr(importer.Importer, "_verify", lambda *a, **k: (_ for _ in ()).throw(
+        importer.ImportFailure("boom")))
+    imp, _ = importer_for(ctx)
+    with pytest.raises(ControlError, match="boom") as info:
+        imp.run(str(checkout), replace=True, dry_run=False)
+    return SimpleNamespace(ctx=ctx, before=before, error=str(info.value))
+
+
+def test_a_failed_replace_puts_back_the_key_settings_and_resumes(failed_replace):
+    home = failed_replace.ctx.home
+    assert (home / "sync-key").read_text() == "uv-own-key\n"
+    assert (home / "settings" / "persona.md").read_text() == "uv persona"
+    assert (home / "base_resumes" / "main.json").read_text() == "uv main resume"
+    assert (home / "base_resumes" / "mine.json").read_text() == "uv only"
+
+
+def test_a_failed_replace_puts_back_env_and_database_and_removes_what_it_added(failed_replace):
+    home = failed_replace.ctx.home
+    assert read_env_bytes(failed_replace.ctx) == failed_replace.before.env
+    assert uv_db(failed_replace.ctx).read_bytes() == failed_replace.before.db
+    assert not (home / "settings" / "secrets").exists() and not (home / "applications" / "a1").exists()
+    assert [p.name for p in (home / "data").iterdir()] == [control.DB_FILENAME]
+
+
+def test_a_failed_replace_says_so_in_one_sentence(failed_replace):
+    assert "put back" in failed_replace.error and "\n" not in failed_replace.error
+
+
+def test_a_successful_replace_keeps_the_replaced_files_next_to_the_snapshot_and_says_where(world, template_db):
+    ctx, checkout = world
+    seed_uv_db(ctx, template_db, job=True)
+    uv_files(ctx)
+    imp, said = importer_for(ctx)
+    assert imp.run(str(checkout), replace=True, dry_run=False) == 0
+    [saved] = [p for p in (ctx.home / "backups").iterdir() if p.is_dir()]
+    assert (saved / "sync-key").read_text() == "uv-own-key\n"
+    assert (saved / "settings" / "persona.md").read_text() == "uv persona"
+    assert (saved / "base_resumes" / "main.json").read_text() == "uv main resume"
+    assert str(saved) in "\n".join(said)
+    assert [p.name for p in (ctx.home / "data").iterdir()] == [control.DB_FILENAME]
+
+
+def test_a_first_import_saves_only_the_settings_file_it_appended_to(imported):
+    [saved] = [p for p in (imported.home / "backups").iterdir() if p.is_dir()]
+    assert [p.name for p in saved.rglob("*") if p.is_file()] == ["maestro.env"]
+
+
+# --- an interrupted run leaves files that block the next one --------------------------------------
+
+@pytest.mark.parametrize("leftover", ["maestro_cs.sqlite3.before-import", "maestro_cs.sqlite3-wal.before-import",
+                                      ".importing", ".before-import"])
+def test_leftovers_of_an_interrupted_import_are_refused_naming_them_and_the_snapshot(world, leftover):
+    ctx, checkout = world
+    target = ctx.home / "data" / leftover
+    target.mkdir() if leftover.startswith(".") else target.write_bytes(b"x")
+    snapshot = write(ctx.home / "backups" / "db-20261010T000000Z.sqlite3.gz", "gz")
+    before = tree_hash(ctx.home)
+    imp, said = importer_for(ctx)
+    with pytest.raises(ControlError, match="interrupted") as info:
+        imp.run(str(checkout), replace=True, dry_run=False)
+    assert leftover in str(info.value) and snapshot.name in str(info.value) and "\n" not in str(info.value)
+    assert tree_hash(ctx.home) == before and said == []
+
+
+def test_leftovers_are_refused_by_a_dry_run_too(world):
+    ctx, checkout = world
+    write(ctx.home / "data" / "maestro_cs.sqlite3.before-import", "x")
+    imp, _ = importer_for(ctx)
+    with pytest.raises(ControlError, match="interrupted"):
+        imp.run(str(checkout), replace=False, dry_run=True)
+
+
+# --- the old database's uncheckpointed -wal goes aside with it ------------------------------------
+
+def test_an_uncheckpointed_wal_in_the_uv_home_never_replays_into_the_imported_database(world, template_db):
+    ctx, checkout = world
+    seed_uv_db(ctx, template_db, job=True)
+    sql(uv_db(ctx), "PRAGMA journal_mode=WAL")
+    live = sqlite3.connect(uv_db(ctx))  # keeps its -wal/-shm; the row below exists only there
+    live.execute("PRAGMA wal_autocheckpoint=0")
+    live.execute("INSERT INTO jobs (id, raw_text, raw_text_hash) VALUES ('only-in-wal', 'x', 'hw')")
+    live.commit()
+    try:
+        assert Path(f"{uv_db(ctx)}-wal").stat().st_size > 0
+        imp, _ = importer_for(ctx)
+        assert imp.run(str(checkout), replace=True, dry_run=False) == 0
+    finally:
+        live.close()
+    assert sql(uv_db(ctx), "SELECT id FROM jobs ORDER BY id") == [("j1",), ("j2",)]
+
+
+# --- modes, keys, notes ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(not POSIX, reason="POSIX modes")
+def test_a_world_readable_source_file_ends_up_owner_only(tmp_path, template_db):
+    ctx = make_ctx(tmp_path)
+    checkout = make_checkout(tmp_path, template_db)
+    write(checkout / "applications" / "a1" / "open.pdf", "x", 0o644)
+    write(checkout / "applications" / "a1" / "run.sh", "x", 0o755)
+    imp, _ = importer_for(ctx)
+    imp.run(str(checkout), replace=False, dry_run=False)
+    modes = [stat.S_IMODE((ctx.home / "applications" / "a1" / n).stat().st_mode) for n in ("open.pdf", "run.sh")]
+    assert modes == [0o600, 0o700]
+
+
+def test_a_sync_key_that_is_not_utf8_is_copied_as_bytes_without_a_traceback(world):
+    ctx, checkout = world
+    (checkout / "settings" / "secrets" / "sync-key").write_bytes(b"\xff\xfekey\n")
+    imp, said = importer_for(ctx)
+    assert imp.run(str(checkout), replace=False, dry_run=False) == 0
+    assert (ctx.home / "sync-key").read_bytes() == b"\xff\xfekey\n"
+
+
+def test_a_carried_host_docker_internal_value_gets_a_note_naming_only_the_key(tmp_path, template_db):
+    ctx = make_ctx(tmp_path)
+    checkout = make_checkout(tmp_path, template_db, env="OPENAI_BASE_URL=http://host.docker.internal:11434/v1\nFAST_MODEL=m\n")
+    imp, said = importer_for(ctx)
+    imp.run(str(checkout), replace=False, dry_run=False)
+    note = "OPENAI_BASE_URL points at host.docker.internal, which only works inside Docker; change it to localhost in maestro.env."
+    assert note in said and "11434" not in "\n".join(said)
+
+
+def test_the_dry_run_gives_the_same_note(tmp_path, template_db):
+    ctx = make_ctx(tmp_path)
+    checkout = make_checkout(tmp_path, template_db, env="LANGFUSE_HOST=http://host.docker.internal:3000\n")
+    imp, said = importer_for(ctx)
+    imp.run(str(checkout), replace=False, dry_run=True)
+    assert any(line.startswith("LANGFUSE_HOST points at host.docker.internal") for line in said)
+
+
+def test_a_restore_that_itself_fails_names_where_the_earlier_files_are(world, template_db, monkeypatch):
+    ctx, checkout = world
+    seed_uv_db(ctx, template_db, job=True)
+    monkeypatch.setattr(importer.Importer, "_verify", lambda *a, **k: (_ for _ in ()).throw(
+        importer.ImportFailure("boom")))
+    monkeypatch.setattr(importer._Undo, "restore", lambda self: (_ for _ in ()).throw(OSError(13, "Permission denied")))
+    imp, _ = importer_for(ctx)
+    with pytest.raises(ControlError, match=r"could not put everything back.*\.before-import") as info:
+        imp.run(str(checkout), replace=True, dry_run=False)
+    assert "boom" in str(info.value) and "\n" not in str(info.value)

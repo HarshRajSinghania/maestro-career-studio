@@ -114,14 +114,39 @@ What it does, in order:
 - Builds the new database from a copy of the Docker one using SQLite's online
   backup, rewrites the stored file locations (`/app/applications/...` becomes
   your Maestro folder) in one transaction, and checks every table has the same
-  row count. If anything fails after this point your earlier database is put back.
+  row count. Values that merely mention `/app/` inside longer text or JSON
+  (for example a saved tailoring result) are counted, listed by column and left
+  as written.
 - Copies `applications/`, `base_resumes/`, `kb_documents/`, `exports/` and
   `settings/` (the Docker files win when a name exists in both), never following
   a symlink. Old snapshots (`data/backups/`) and `data/handoff/` stay behind.
 - Places the sync key where the uv install reads it.
 - Adds the settings Maestro understands from the Docker `.env` (API keys, models,
   proxy, sync host) to `maestro.env`, keeping any you already set there. Ports,
-  paths and other Docker-only entries are left out. Only names are printed.
+  paths and other Docker-only entries are left out. Only names are printed. A
+  value that points at `host.docker.internal` gets a note: it only works inside
+  Docker, so change it to `localhost` in `maestro.env`.
+- Keeps a copy of every file of the uv install that it replaces (your old
+  `sync-key`, settings, resumes, `maestro.env`) while it runs. If anything fails,
+  those files, the database and `maestro.env` are all put back and the files it
+  added are removed, so the earlier install is exactly as it was. If it succeeds,
+  the copies stay in `backups/import-replaced-files-<time>/`, next to the snapshot.
+
+**Undoing a finished import** (only needed if you want your earlier uv data
+back): `maestro stop`, delete the three files `data/maestro_cs.sqlite3*`, unpack
+the snapshot it printed over `data/maestro_cs.sqlite3` (macOS and Linux:
+`gunzip -c backups/db-<time>.sqlite3.gz > data/maestro_cs.sqlite3`), copy the
+contents of `backups/import-replaced-files-<time>/` back over the same names in
+your Maestro folder, and `maestro start`. Files the import added that did not
+exist before are harmless and can stay.
+
+**If the import is interrupted** (power loss, the terminal killed mid-run), the
+next `maestro import-docker` refuses, and so does `maestro start` when the
+database file is missing, naming the leftovers in `data/`
+(`maestro_cs.sqlite3.before-import`, `maestro_cs.sqlite3-wal.before-import`, `.importing/`,
+`.before-import/`). Put each `*.before-import` file back under its name without
+the suffix (or restore the snapshot), copy anything in `data/.before-import/` back
+over the same names in your Maestro folder, delete the leftovers, and run it again.
 
 Afterwards, **don't start the Docker install again alongside this one**: both
 would share one sync identity. The Docker folder is still yours; delete it when

@@ -38,8 +38,8 @@ None.
   install, once: the database (with stored file locations rewritten), resumes,
   applications, knowledge-base files, settings, the sync key and the settings in
   its `.env` that Maestro understands. It reads the Docker folder and changes
-  nothing in it, saves a snapshot of the uv database first, and puts it back if
-  anything fails. `--dry-run` shows the plan. See `docs/UPDATING.md`.
+  nothing in it, saves a snapshot of the uv database first, and puts back the
+  database, sync key, settings and `maestro.env` if anything fails. `--dry-run` shows the plan. See `docs/UPDATING.md`.
 
 ## [0.9.0] — 2026-10-10
 
