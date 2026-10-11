@@ -27,7 +27,17 @@ def get(name: str) -> Provider:
 
 def _load_builtins() -> None:
     """Import adapters lazily: they import `app.services.llm`, which imports this module."""
-    # Filled in by Tasks 2, 3, 5, 6.
+    from app.services import llm
+    from app.services.llm_providers.openai_compat import OpenAICompatProvider
+
+    if "openai" not in _adapters:
+        register(OpenAICompatProvider(
+            "openai",
+            client=lambda: llm._get_client(),
+            json_mode=lambda: llm._json_mode_supported(),
+            label=lambda: llm._openai_provider(),
+        ))
+    # Tasks 3, 5, 6 add their adapters here.
 
 
 def resolve(model: str) -> ModelRef:

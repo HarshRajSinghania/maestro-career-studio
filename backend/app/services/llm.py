@@ -14,19 +14,19 @@ from uuid import uuid4
 import openai
 from openai import OpenAI
 
+from app.config import settings
+from app.services import tracing
 from app.services.llm_providers.errors import (  # noqa: F401 — re-exported; callers use llm.*
+    _KEY_REFUSED,
+    _TIMED_OUT,
     NO_GEMINI_KEY_MESSAGE,
     NO_KEY_MESSAGE,
     LLMProviderError,
-    _KEY_REFUSED,
-    _TIMED_OUT,
     _gemini_reason,
     _no_answer,
     _openai_reason,
     _status_reason,
 )
-from app.config import settings
-from app.services import tracing
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,6 @@ ResponseFormat = Literal["json", "text"]
 def _openai_provider() -> str:
     """Who the OpenAI SDK is talking to, as the refused-key sentence names it."""
     return "Your AI server" if get_base_url() else "OpenAI"
-
 
 
 # Langfuse usage_details shape: {"input": prompt tokens, "output": completion
@@ -136,22 +135,10 @@ def get_chat_client(model: str) -> OpenAI:
     return _get_client()
 
 
-def _message_content(response: Any) -> str:
-    return response.choices[0].message.content or ""
-
-
 def _usage_details(input_tokens: Any, output_tokens: Any) -> Usage:
     if isinstance(input_tokens, int) and isinstance(output_tokens, int):
         return {"input": input_tokens, "output": output_tokens}
     return None
-
-
-def _openai_usage(response: Any) -> Usage:
-    usage = getattr(response, "usage", None)
-    return _usage_details(
-        getattr(usage, "prompt_tokens", None),
-        getattr(usage, "completion_tokens", None),
-    )
 
 
 def _gemini_usage(response: dict[str, Any]) -> Usage:
@@ -300,35 +287,16 @@ def _call_model(
         return _call_gemini(prompt, model, response_format, images,
                             **({"timeout": timeout} if timeout is not None else {}))
 
-    content: Any = prompt
-    if images:
-        content = [{"type": "text", "text": prompt}]
-        for image in images:
-            b64 = base64.b64encode(image).decode("ascii")
-            content.append(
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
-            )
-    kwargs: dict[str, Any] = {
-        "model": model,
-        "messages": [{"role": "user", "content": content}],
-    }
-    if response_format == "json" and _json_mode_supported():
-        kwargs["response_format"] = {"type": "json_object"}
+    from app.services.llm_providers import registry
+    from app.services.llm_providers.types import ImagePart, Message, TextPart
+    from app.services.llm_providers.types import Request as ProviderRequest
 
-    client = _get_client()
-    if timeout is not None:
-        client = client.with_options(timeout=timeout, max_retries=0)
-    try:
-        response = client.chat.completions.create(**kwargs)
-    except openai.OpenAIError as exc:
-        # Normalize to LLMProviderError so provider outages mean ONE exception
-        # type for every caller (app.main maps it to 502). The Gemini path raises
-        # the same type; without this, OpenAI SDK errors escaped as unhandled
-        # 500s — an exhausted credit balance reached the UI as the detail-free
-        # "Request failed: 500", with the real 429 visible only in a traceback.
-        raise _no_answer(_openai_reason(exc), f"OpenAI API request failed: {exc}",
-                         provider=_openai_provider()) from exc
-    return _message_content(response), _openai_usage(response)
+    ref = registry.resolve(model)
+    parts = [TextPart(prompt), *(ImagePart(img) for img in images or [])]
+    response = registry.get(ref.provider).generate(ProviderRequest(
+        model=ref, messages=[Message("user", parts)], output=response_format, timeout=timeout,
+    ))
+    return response.text, response.usage.as_langfuse() if response.usage else None
 
 
 def _log_call(prompt: str, model: str, response_text: str, attempt: int) -> None:
