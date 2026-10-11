@@ -104,6 +104,18 @@ def test_a_template_missing_only_tex_says_needs_setup_only():
     assert "res.error === REQUIRES_TEX_REASON" in editor
 
 
+def test_an_overprint_refusal_tells_the_user_to_update_tex_and_wraps():
+    """The refusal is the host TeX's bug: the editor must not say "Fix the code", and the
+    message (which carries the remedy) must wrap instead of being cut at the pane edge."""
+    status = _read("lib/template-status.ts")
+    prefix = template_validation.OVERPRINT.split(":")[0] + ":"
+    assert f'export const OVERPRINT_REASON_PREFIX = "{prefix}";' in status
+    assert 'export const TEX_UPDATE_HEADING = "Your TeX installation needs an update";' in status
+    editor = _read("app/templates/[id]/page.tsx")
+    assert "compileErrorView(error)" in editor
+    assert "whitespace-pre-wrap" in editor and "break-words" in editor
+
+
 def test_the_needs_setup_tooltip_names_the_real_fallback():
     # pdf_render.resolve_render_template: the first ready Typst template, else no PDF.
     badge = _flat(_read("components/templates/requires-tex-badge.tsx"))
