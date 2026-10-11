@@ -79,7 +79,8 @@ WORKDIR /app
 # platform after changing a dependency:
 #   docker run --rm -v "$PWD/backend:/w" -w /w python:3.12-slim \
 #     sh -c "pip install pip-tools && pip-compile --extra mcp --extra tracing \
-#            --upgrade-package mako --generate-hashes --no-emit-index-url \
+#            --upgrade-package mako --unsafe-package nodejs-wheel-binaries \
+#            --generate-hashes --no-emit-index-url \
 #            --output-file requirements.lock pyproject.toml"
 # Numeric, not `app:app`: when APP_GID matched an existing system group above,
 # the user's primary group is THAT group and no group named `app` exists.
