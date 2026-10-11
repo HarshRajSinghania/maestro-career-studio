@@ -413,12 +413,15 @@ def _copy_back(produced: Path, out_dir: Path) -> None:
     if not produced.is_file():
         return
     out_dir.mkdir(parents=True, exist_ok=True)
-    partial = out_dir / f".{produced.name}.tmp"
+    # A unique temp name per copy: two renders of the same file (a double-click,
+    # the app and an agent together) must not share one and unlink each other's.
+    fd, partial = tempfile.mkstemp(dir=out_dir, prefix=f".{produced.name}.", suffix=".tmp")
+    os.close(fd)
     try:
         shutil.copyfile(produced, partial)
         os.replace(partial, out_dir / produced.name)
     finally:
-        partial.unlink(missing_ok=True)
+        Path(partial).unlink(missing_ok=True)
 
 
 def compile_pdf(

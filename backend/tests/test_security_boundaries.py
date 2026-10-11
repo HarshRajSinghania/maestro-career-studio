@@ -224,6 +224,44 @@ def test_copy_back_replaces_atomically_and_leaves_no_partial_file(tmp_path):
     assert [p.name for p in out_dir.iterdir()] == ["mine.pdf"]
 
 
+def _copy_back_together(sources, out_dir, errors):
+    import threading
+
+    barrier = threading.Barrier(len(sources))
+
+    def copy(produced):
+        barrier.wait()
+        try:
+            pdf_render._copy_back(produced, out_dir)
+        except Exception as exc:  # noqa: BLE001 -- collected and asserted by the caller
+            errors.append(exc)
+
+    threads = [threading.Thread(target=copy, args=(p,)) for p in sources]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+
+def test_concurrent_copy_backs_of_the_same_file_never_fail_or_tear(tmp_path):
+    # A fixed temp name let one copy unlink another's mid-flight
+    # (FileNotFoundError, a 500) and truncate a file still being written.
+    out_dir = tmp_path / "out"
+    bodies = {}
+    for i in range(4):
+        produced = tmp_path / f"work{i}" / "mine.pdf"
+        produced.parent.mkdir()
+        bodies[produced] = bytes([65 + i]) * (2 * 1024 * 1024)
+        produced.write_bytes(bodies[produced])
+    errors = []
+    finals = set()
+    for _ in range(10):
+        _copy_back_together(list(bodies), out_dir, errors)
+        finals.add((out_dir / "mine.pdf").read_bytes())
+    assert errors == []
+    assert finals <= set(bodies.values())
+    assert [p.name for p in out_dir.iterdir()] == ["mine.pdf"]
+
 def test_every_pdflatex_call_site_passes_the_hardened_environment():
     """There is more than one, and the second one was missed.
 

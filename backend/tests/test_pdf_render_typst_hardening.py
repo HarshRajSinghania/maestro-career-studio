@@ -91,11 +91,16 @@ def test_the_regex_gate_misses_a_computed_package_import():
     assert not typst_compiler.source_imports_package(_COMPUTED_PACKAGE_IMPORT)
 
 
-def test_a_computed_package_import_cannot_download(tmp_path):
+def test_a_computed_package_import_cannot_download(tmp_path, monkeypatch):
     """The regex gate misses this source, so the compile reaches the package
     resolver; with the proxy variables pointed at a dead port the download
     fails and nothing lands in the package cache. Offline-deterministic: the
     request never leaves loopback, whatever the machine's network is doing."""
+    # Hermetic: no inherited proxy can make the request fail for another reason.
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NO_PROXY", "*")
+    monkeypatch.setenv("no_proxy", "*")
     src = tmp_path / "bad.typ"
     src.write_text(_COMPUTED_PACKAGE_IMPORT, encoding="utf-8")
     cache = tmp_path / "pkgcache"
@@ -110,10 +115,16 @@ def test_a_computed_package_import_cannot_download(tmp_path):
             package_dir=str(cache),
             timeout=30,
         )
-    # "Connection Failed" proves the request went to the dead proxy and was
-    # refused; an offline machine with no proxy would say "Dns Failed" instead.
-    assert "failed to download package" in str(ei.value).lower()
-    assert "connection failed" in str(ei.value).lower()
+    # The connect to loopback port 0 itself failing proves the request went to
+    # the dead proxy: without the cut (NO_PROXY=* above) it would go direct and
+    # say "Dns Failed", "unreachable", or download. macOS: os error 49; Linux:
+    # connection refused (os error 111); Windows: 10049.
+    message = str(ei.value).lower()
+    assert "failed to download package" in message
+    assert any(
+        sign in message
+        for sign in ("os error 49", "assign requested address", "os error 111", "10049")
+    ), message
     assert list(cache.rglob("*")) == [], "a package was fetched into the cache"
     assert not (tmp_path / "bad.pdf").exists()
 
