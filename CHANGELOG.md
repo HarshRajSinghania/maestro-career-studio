@@ -43,6 +43,11 @@ None.
 
 ## [0.9.0] — 2026-10-10
 
+This release is about getting Maestro out of its box. AI agents now reach it by
+URL instead of reaching into a container, and the whole app installs with two
+commands and no Docker at all. If you already run the Docker version,
+`maestro import-docker` brings your data across in one go.
+
 ### Breaking changes
 
 - **Claude Code and Codex plugins now connect to `http://localhost:8001/mcp`**

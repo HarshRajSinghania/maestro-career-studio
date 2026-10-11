@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/seinun-ai/maestro-career-studio/actions/workflows/ci.yml"><img src="https://github.com/seinun-ai/maestro-career-studio/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/seinun-ai/maestro-career-studio/actions/workflows/codeql.yml"><img src="https://github.com/seinun-ai/maestro-career-studio/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
-  <a href="https://github.com/seinun-ai/maestro-career-studio/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/tests-11%2C045%20passing-brightgreen" alt="Tests"></a>
+  <a href="https://github.com/seinun-ai/maestro-career-studio/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/tests-11%2C900%20passing-brightgreen" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a>
   <a href="https://maestrocareerstudio.com"><img src="https://img.shields.io/badge/site-maestrocareerstudio.com-1a3a5c" alt="Project site"></a>
   <a href="https://github.com/seinun-ai/maestro-career-studio/pkgs/container/maestro-career-studio-backend"><img src="https://img.shields.io/badge/ghcr.io-multi--arch-blue" alt="Container images"></a>
@@ -139,10 +139,11 @@ gone stale):
 
 ## Install without Docker (uv)
 
-The shortest route if you are comfortable in a terminal: no Docker, no Git, no
-clone. [uv](https://docs.astral.sh/uv/) installs Maestro as a command and fetches
-the Python it needs; the package carries the web app and its own Node. It runs on
-macOS, Linux and Windows (x64).
+If you are comfortable in a terminal, this is the shortest way in. No Docker, no
+Git, no clone, just two commands. [uv](https://docs.astral.sh/uv/) installs
+Maestro as a single `maestro` command and fetches the Python it needs, and the
+package brings its own web app and its own Node. It runs on macOS, Linux and
+Windows (x64).
 
 ```bash
 # 1. Install uv once, then open a new terminal.

@@ -91,9 +91,10 @@ running; `maestro backup` is safe on a running copy.
 
 ## Move from Docker to the uv install
 
-A new uv install starts empty. `maestro import-docker` copies your Docker install's
-data into it, once. The Docker folder is only read: nothing in it is changed,
-moved or deleted, so you can go back to it.
+A new uv install starts empty, while your real history still sits in the Docker
+folder. `maestro import-docker` copies it across, once. Think of it as a
+photocopy: the Docker folder is only read, and nothing in it is changed, moved
+or deleted, so the original is still there if you ever want to go back.
 
 1. Update the Docker install to the same version as the uv one (`./scripts/update.sh`,
    then `maestro --version` to compare). A database from an older or newer

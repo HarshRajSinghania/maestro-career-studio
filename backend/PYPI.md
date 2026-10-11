@@ -1,9 +1,15 @@
 # Maestro Career Studio
 
-A local job-application copilot: capture job descriptions, score resumes with a deterministic
-ATS engine, tailor and render a PDF, track every application. It runs on your machine and the
-data stays in one folder you own. A Chrome Companion and an MCP server connect your browser
-and your AI agent to the same app.
+If your resume folder has a `v2finalcopy(3)` in it, this is for you.
+
+Maestro keeps one record of what you have actually done and builds each tailored resume from it.
+Paste a job description, see how well a resume matches (fixed rules, so the same resume and job
+always get the same score), tailor it, and render a real PDF. Every application stays tracked
+in one place. A Chrome Companion and an MCP server let your browser and your AI agent work from
+that same record.
+
+It all runs on your machine, and your data lives in one folder you own. Here, control is the
+whole point.
 
 ## Install
 
