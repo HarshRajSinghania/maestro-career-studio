@@ -579,7 +579,7 @@ def test_a_key_and_a_model_in_one_put_both_land(db_session, client):
 
 
 def test_a_rejected_put_saves_no_key(db_session, client):
-    """A PUT that answers 400 stores nothing, keys included (models are checked first)."""
+    """A PUT that answers 400 saves no key (models are validated before keys)."""
     response = client.put(
         "/api/settings/openai",
         json={"anthropic_api_key": "sk-ant-lost", "openai_api_key": "sk-lost",

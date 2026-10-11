@@ -435,7 +435,7 @@ def add_extra_model(
     if not cleaned_id:
         raise ValueError("Model id must not be empty")
     if cleaned_provider not in API_KEY_SETTINGS:
-        raise ValueError("provider must be openai or gemini")
+        raise ValueError(f"provider must be one of {', '.join(API_KEY_SETTINGS)}")
     if cleaned_id in VALID_MODEL_IDS:
         raise ValueError(f"Model {cleaned_id} is already a built-in seed")
     extras = get_extra_models(session)

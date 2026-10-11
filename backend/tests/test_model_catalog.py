@@ -114,3 +114,10 @@ def test_seed_catalog_is_exactly_the_six_listed():
         "claude-opus-5-5",
     }
     assert not hasattr(model_settings, "OPENAI_MODEL_IDS")
+
+
+def test_add_extra_model_rejects_an_unknown_provider(db_session):
+    with pytest.raises(
+        ValueError, match="provider must be one of openai, gemini, anthropic, openrouter"
+    ):
+        model_settings.add_extra_model(db_session, "x-model", "mistral")
