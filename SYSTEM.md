@@ -941,8 +941,8 @@ citation. Priority lives in the item text, not in the ordinal.
   set those properties, so `transition-[…transform]` jumps → register a class that takes a variant; name those properties.
 - **Agent sandboxes kill what a tool call starts** (2026-10-10): a server vanished between calls, even with `setsid` → run
   start, checks and stop in ONE call (`scripts/smoke_uv_install.py`), or use `maestro autostart`.
-- **HTTPServer binds through reverse DNS** (2026-10-10): a fake child prints boot before `getfqdn` finishes → loopback
-  fixtures bypass that lookup and report their bound port; HTTP health still earns readiness.
+- **Child-server startup signals have separate meanings** (2026-10-10): reverse DNS can stall listening, while
+  “Started” precedes child output → fixtures bypass DNS, report bound ports, and wait for asserted output before stopping.
 
 ## 13. Active migrations & deprecation ledger
 

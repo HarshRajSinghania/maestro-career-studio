@@ -473,7 +473,12 @@ def _applying_maestro_env(monkeypatch):
 
 
 @pytest.mark.parametrize("client, binary", [("claude-code", "claude"), ("codex", "codex")])
-def test_the_agent_cli_never_inherits_the_secrets_from_maestro_env(tmp_path, monkeypatch, client, binary):
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_the_agent_cli_never_inherits_the_secrets_from_maestro_env(tmp_path, monkeypatch, client, binary, platform):
+    monkeypatch.setattr(sys, "platform", platform)
+    for name, value in {"SYSTEMROOT": "C:/Windows", "WINDIR": "C:/Windows",
+                        "COMSPEC": "C:/Windows/System32/cmd.exe", "PATHEXT": ".COM;.EXE;.BAT;.CMD"}.items():
+        monkeypatch.setenv(name, value)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     rec = Recorder(which={binary: f"/usr/bin/{binary}"})
     conn, _ = make_connector(tmp_path, rec, environ={"MARKER": "parent"})
@@ -482,7 +487,10 @@ def test_the_agent_cli_never_inherits_the_secrets_from_maestro_env(tmp_path, mon
     assert os.environ["OPENAI_API_KEY"] == "sk-from-maestro-env"  # apply really ran
     env = rec.ran[0][1]["env"]
     assert "OPENAI_API_KEY" not in env and env["MARKER"] == "parent"
-    assert env == dict(conn.ctx.environ)
+    parent = dict(conn.ctx.environ)
+    assert parent.items() <= env.items()
+    allowed_additions = {"SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT"} if platform == "win32" else set()
+    assert env.keys() - parent.keys() <= allowed_additions
 
 
 def test_the_browser_opener_never_inherits_the_secrets_and_the_environment_comes_back(tmp_path, monkeypatch):

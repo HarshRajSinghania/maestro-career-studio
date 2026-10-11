@@ -314,18 +314,51 @@ def test_a_child_that_ignores_sigterm_is_killed_after_the_grace_period(fleet):
     assert not [pid for pid in fleet.pids() if pid_alive(pid)]
 
 
+@pytest.mark.parametrize("windows", [False, True])
+def test_spawning_a_replacement_appends_without_rotating_the_previous_run(tmp_path, monkeypatch, windows):
+    """Exercise the real log handles without starting a process that the sandbox cannot stop."""
+    from types import SimpleNamespace
+
+    log = tmp_path / "backend.log"
+    log.write_text("old run\n", encoding="utf-8")
+    spec = ChildSpec("backend", ["fake"], {}, tmp_path, log, "unused")
+    sup = Supervisor(tmp_path / "run", [spec], out=io.StringIO())
+    monkeypatch.setattr(supervisor, "WINDOWS", windows)
+    monkeypatch.setattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 512, raising=False)
+    monkeypatch.setattr(procs, "write_record", lambda *args: None)
+
+    def child(argv, **kwargs):
+        kwargs["stdout"].write(b"boot\n")
+        return SimpleNamespace(pid=12345)
+
+    monkeypatch.setattr(subprocess, "Popen", child)
+    sup._rotate_logs()
+    assert sup._spawn(spec) is not None
+    assert sup._spawn(spec) is not None
+    assert log.with_name("backend.log.1").read_text(encoding="utf-8") == "old run\n"
+    assert log.read_text(encoding="utf-8") == "boot\nboot\n"
+
+
 def test_a_previous_runs_log_is_kept_and_a_restart_appends(fleet, tmp_path):
-    fleet.logs.joinpath("backend.log").write_text("old run\n", encoding="utf-8")
+    log = fleet.logs / "backend.log"
+    log.write_text("old run\n", encoding="utf-8")
     fleet.logs.joinpath("backend.log.1").write_text("older run\n", encoding="utf-8")
     flag = tmp_path / "died.flag"
     sup = fleet.supervisor([fleet.spec("backend", f"die_once={flag}")])
-    request_stop_when(fleet.run_dir, lambda: sup.out.getvalue().count("Started backend") >= 2
-                      and procs.read_json(fleet.run_dir / "ready.json") is not None)
+    # "Started" records Popen, before the replacement has necessarily written its output.
+    snap = request_stop_when(
+        fleet.run_dir, lambda: sup.out.getvalue().count("Started backend") >= 2
+        and log.read_text(encoding="utf-8").count("boot") >= 2
+        and procs.read_json(fleet.run_dir / "ready.json") is not None, timeout=60.0)
 
     assert sup.run() == 0
+    snap["thread"].join(5)
+    assert snap["condition_met"], f"{sup.out.getvalue()}\n{log.read_text(encoding='utf-8')}"
+    assert "backend exited with code 3; restarting." in sup.out.getvalue()
+    assert sup.out.getvalue().count("Started backend") == 2
     assert fleet.logs.joinpath("backend.log.1").read_text(encoding="utf-8") == "old run\n"
     # Both the first process and its replacement logged into the one current file.
-    assert fleet.logs.joinpath("backend.log").read_text(encoding="utf-8").count("boot") == 2
+    assert log.read_text(encoding="utf-8").count("boot") == 2
 
 
 def test_a_log_that_cannot_be_rotated_is_appended_to(fleet, monkeypatch):
