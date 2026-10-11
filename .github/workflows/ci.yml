@@ -133,7 +133,6 @@ jobs:
           MAESTRO_CS_MCP_PROFILE: "full"
           ALLOWED_HOSTS: "127.0.0.1,localhost"
           NO_PROXY: "127.0.0.1,localhost"
-          no_proxy: "127.0.0.1,localhost"
           SYNC_KEY_FILE: ""
           SYNC_REMOTE_URL: ""
           SYNC_PUBLIC_HOST: ""
@@ -146,6 +145,8 @@ jobs:
           LANGFUSE_HOST: ""
         run: |
           set -euo pipefail
+          # GitHub env keys are case-insensitive, so the lower-case twin is set here.
+          export no_proxy="$NO_PROXY"
           cd backend
           export DATA_DIR="$RUNNER_TEMP/mcp-http/data"
           export DATABASE_URL="sqlite:///$DATA_DIR/maestro_cs.sqlite3"
