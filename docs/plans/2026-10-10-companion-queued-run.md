@@ -16,8 +16,10 @@ that replaces the low-stakes switch.
 **Tech Stack:** FastAPI + SQLAlchemy + Alembic (SQLite), pytest (+ xdist, Playwright Chromium, node
 harness), Chrome MV3 extension (plain JS IIFEs on `window.careerStudioCompanion`), Next.js 16 / React 19.
 
-**Design:** `docs/plans/2026-10-10-companion-queued-run-design.md` (approved 2026-10-10). Read it
-first. Where this plan and the design differ, this plan says so under "Adjustments" and why.
+**Design:** `docs/plans/2026-10-10-companion-queued-run-design.md` (approved 2026-10-10; Job step
+buttons, park less and Part 8 added 2026-10-11). Read it first.
+
+**Task order:** 1 → 2–10 → 10a → 11 → 12–16 → 17 → 18 → 18a → 19 → 20 → 20a → 20b → (21) → 22 → 23. Where this plan and the design differ, this plan says so under "Adjustments" and why.
 
 ---
 
@@ -775,6 +777,42 @@ Expected: PASS.
 
 ---
 
+### Task 10a: The known-gaps list (backend)
+
+Design Part 8.3. A durable, value-free table of widgets the engine could not operate or that the
+user fixed by hand, so the engine's to-do list survives the 50-run trace limit.
+
+**Files:**
+- Create: `backend/app/models/autofill_widget_gap.py` (+ export from `models/__init__.py`)
+- Create: `backend/migrations/versions/<12-hex>_autofill_widget_gaps.py` (down_revision = Task 6's
+  revision; table-creation style: `7d3c1a9e5b20_agent_runs.py`)
+- Modify: `backend/app/routers/autofill.py` (`POST /api/autofill/gaps`, `GET /api/autofill/gaps/summary`;
+  `DELETE /api/autofill/telemetry` also clears gaps)
+- Modify: `backend/scripts/fill_trace.py` (a `gaps` section in `report`)
+- Modify: `frontend/components/settings/autofill-section.tsx` (one diagnostics line under Form filling:
+  "Fields the Companion couldn't operate: N kinds on M sites, N fixed by you." with no list of hosts
+  in the UI)
+- Test: `backend/tests/test_autofill_gaps.py` (new)
+
+**Row:** `family` (`^[0-9a-z]{1,24}$`, the recipe-book family hash from `content/recipes.js`), `host`
+(≤253), `shape` (the inventory shape enum), `outcome` (`cannot_operate | unconfirmed | user_fixed |
+missing_technique`), `count`, `first_seen_at`, `last_seen_at`; unique on (family, host, shape, outcome).
+No label, no value, no option text.
+
+**Step 1: Failing tests:**
+- POST `{gaps: [{family, host, shape, outcome}]}` upserts and increments `count`, with
+  `extra="forbid"` (a `label` or `value` key → 422);
+- at most 40 gaps per post;
+- the summary ranks by `count` desc and returns `{kinds, sites, user_fixed, top: [{family, shape,
+  outcome, count, sites}]}` (no hosts in `top`);
+- `DELETE /api/autofill/telemetry` clears the table (it holds hosts, like telemetry rows);
+- `fill_trace.py report` prints the gaps section from a DB copy (reuse its existing DB-copy loader).
+
+**Step 2: Run.** Expected: FAIL. **Step 3: Implement.** **Step 4: Run**
+`pytest tests/test_autofill_gaps.py tests/test_autofill_telemetry*.py -q`. Expected: PASS.
+
+**Step 5: Commit** `feat(autofill): a durable, value-free known-gaps list`.
+
 ## Phase 2 — Page operations (content world)
 
 ### Task 12: Pure page-kind classifier and button sort
@@ -1127,7 +1165,9 @@ fill-loop):
      makes it `review`). Then `waitForChange`, continue. Set `record.filled = true` after any
      `fill(record)`.
    - `form_step` or `review` → `filling`: `report = await fill(record)`. Open questions =
-     `report.fields.filter(f => f.required && ["needs_answer","cannot_operate","unconfirmed"].includes(f.status))`.
+     `report.fields.filter(f => f.required && ["needs_answer","cannot_operate"].includes(f.status))`.
+     `unconfirmed` does NOT park (owner, 2026-10-11, "park less"): the advance below and the page's
+     own validation decide, and the no-change path refills once before parking.
      If any → `parked`, `why: "open_questions"`, `open = [...]`. Return (Resume re-enters `drive`).
    - After a clean fill: `review` → `ready`, `readyAt = now()`. Return. `form_step` → `advancing`:
      record the fingerprint (url + step heading + sorted button texts + fillable count, joined); if
@@ -1152,6 +1192,8 @@ of summaries, `fill` a queue of reports):
 - a captcha → `parked/captcha`; a create-account page → `parked/create_account`;
 - sign_in → signIn called once → still sign_in → `parked/sign_in_failed` (signIn not called twice);
 - an open required field → `parked/open_questions` with `open` listing it;
+- a required field reported `unconfirmed` does NOT park: the driver advances; if the page then does
+  not change, it refills once and parks with `why: "no_change"`;
 - the same fingerprint twice → `parked/loop`; no change after advance + refill → `parked/no_change`;
 - 15 steps → `parked/step_limit`;
 - `cancelled()` true mid-run → `stopped/user`, and no deps are called after it;
@@ -1203,6 +1245,31 @@ Expected: PASS.
 Expected: PASS.
 
 **Step 5: Commit** `feat(companion): remember each tab's job while the tab is open`.
+
+### Task 18a: Per-run fill limits ("try harder in runs")
+
+Design Part 8.1. Today `ns.fillLoop.limits` is one shared mutable object (tests reassign it).
+Parallel runs and the user's own Autofill must not share a changed budget.
+
+**Files:**
+- Modify: `extension/shared/fill-loop.js` (`runFill(deps, options)`: `options.limits` merged over the
+  module defaults for THIS run only; every read of `limits.X` inside the run reads the merged copy)
+- Test: `backend/tests/browser/test_fill_loop.py`
+
+**Step 1: Failing tests:**
+- a run with `options.limits = {FIELD_MS: 60000, MAX_STEPS: 12}` lets a scripted field take 10
+  adaptive steps where the default run gives up at 8;
+- a second run started without `options.limits` in the same page still stops at 8 (the module
+  object is unchanged after the first run).
+
+**Step 2: Run** `pytest tests/browser/test_fill_loop.py -k limits -v`. Expected: FAIL.
+
+**Step 3: Implement.** Add `const RUN_LIMITS = {FIELD_MS: 60000, MAX_STEPS: 12}` to
+`shared/queue-run.js` (Task 17); Task 19's `fill` dep passes it.
+
+**Step 4: Run** the whole `tests/browser/test_fill_loop.py`. Expected: PASS.
+
+**Step 5: Commit** `feat(fill-loop): per-run limits; queued runs try harder`.
 
 ### Task 19: Panel host: start a run, the "Before we start" sheet, tabs, sign-in, stop
 
@@ -1363,6 +1430,90 @@ Expected: PASS.
 
 **Step 5: Commit** `feat(companion): run list, Needs you with Resume, auto-mark after your Submit`.
 
+### Task 20a: Job step: Apply and Queue
+
+Design "Job step buttons". With full automation on, the Job step's footer primary becomes **Apply**,
+with **Queue** beside it; with it off, **Save job** exactly as today.
+
+**Files:**
+- Modify: `extension/panel/actions/job.js` (`addJob` stays; new `queueJob`, `applyJob`)
+- Modify: `extension/panel/actions.js` (roster bindings), `extension/panel/panel.js` (`renderFoot`'s
+  Job-stage primary; `card.settings` must carry `full_automation`: read
+  `GET /api/settings/auto-apply` in `loadContext` once per bind, or reuse Task 19's read)
+- Modify: `extension/panel/actions/run.js` (`startRun` accepts a one-record run in the CURRENT tab)
+- Test: `backend/tests/test_extension_panel_job.py`, `backend/tests/test_extension_panel_run.py`
+
+**Behaviour:**
+- **Queue:** `addJob` (save, extract and score as today), then `POST /api/proposals` with `{job_id,
+  fit}` built like `frontend/lib/api.ts` `promoteJobToAgentQueue` (chosen base = the Job step's pick;
+  scores from the panel's `card.scores`), then `PATCH /api/proposals/{id}` with
+  `{status: "accepted", consent: {channel: "companion"}}` (Task 9 adds the channel). The note says
+  "Queued. Apply to queued will pick it up."
+- **Apply:** Queue, then resume readiness by the same rules as the "Before we start" sheet (Task 19)
+  for this one job: a PDF is ready → go; a draft without a PDF → Create PDF; nothing tailored and no
+  open custom session → Quick tailor with the picked base; an open custom session → stop with "You're
+  tailoring this job in Maestro. Finish it, then press Apply." (never quick-tailor over it). Then a
+  one-record run whose `openTab` reuses the current tab: when the page is a posting on a job board
+  and the job has an `apply_url`, navigate this tab to it (`chrome.tabs.update(tabId, {url})`); when
+  the page is already the employer's form, start at classify.
+- Hidden when the job is already applied, or its proposal is already queued (then the footer shows
+  **Apply** only, which skips the queue step).
+
+**Step 1: Failing panel-harness tests:**
+- full automation off → only Save job;
+- on → Apply primary and Queue secondary;
+- Queue posts the proposal then the accepted PATCH with channel `companion`;
+- Apply with an open custom session never calls quick-tailor and shows the finish-first note;
+- Apply on a board posting with `apply_url` navigates the current tab and drives one record;
+- no new tab or window opens for Apply.
+
+**Step 2: Run.** Expected: FAIL. **Step 3: Implement.** **Step 4: Run**
+`pytest tests/test_extension_panel*.py -q`. Expected: PASS.
+
+**Step 5: Commit** `feat(companion): Apply and Queue on the Job step`.
+
+### Task 20b: Learn from the user's fix
+
+Design Part 8.2. When a parked field is fixed by hand and the user presses Resume, teach the recipe
+book the move the user used, and note techniques the engine lacks.
+
+**Files:**
+- Modify: `extension/content/recipes.js` (a gesture watcher per field: `watch(fid)` / `report(fid)`)
+- Modify: `extension/content/agent.js` (`fill_watch {fids}` starts watching parked fields;
+  `fill_watch_report {fids}` returns `{fid: {family, site, gestures: [...]}}`), `extension/sw.js`
+  (`BROADCASTABLE` += both, pin updated)
+- Modify: `extension/shared/recipe-book.js` (`recordDemonstration(lesson)`: a known move enters at
+  `probation` for that site only; never `trusted` from one demonstration; a family lesson needs the
+  usual two sites)
+- Modify: `extension/panel/actions/run.js` (on park: `fill_watch`; on Resume: `fill_watch_report`,
+  then for each field now holding a value (from the receipt's `fromEdits`): a known move →
+  `recipes.recordDemonstration`; no known move → POST `/api/autofill/gaps` with
+  `outcome: "missing_technique"`; every fixed field → a `user_fixed` gap; every run's leftover
+  `cannot_operate`/`unconfirmed` fields → their gap rows. All gap posts go through the
+  `telemetry`-gated path and are skipped when `telemetryEnabled` is false.)
+- Test: `backend/tests/browser/test_recipes.py`, `backend/tests/test_extension_panel_run.py`
+
+**Gesture vocabulary** (value-free; the engine's own axes from `recipe-book.js` `AXES`):
+`open:press` (a pointer press opened it), `open:keys` (ArrowDown, Enter or Space opened it),
+`search:enter` (typing followed by Enter committed it), `search:debounce` (typing, then a pause,
+then a pointer pick). Record event TYPES and key NAMES from a fixed allowlist (`ArrowDown`, `ArrowUp`,
+`Enter`, `Space`, `Tab`, `Escape`) only, never `key` for printable characters and never `value`.
+
+**Step 1: Failing tests:**
+- browser: on `workday_listbox.html` and `react_select.html`, simulate the user opening with the
+  keyboard and picking → `report` says `open:keys`; typing "Spr" then Enter → `search:enter`; the
+  report contains no typed character (assert "S", "p" and "r" never appear in the JSON);
+- recipe-book (node): one demonstration → `probation` at `s:<site>`, not trusted; a second
+  demonstration on another site → the family is `trusted` (same lifecycle as engine wins);
+- panel: Resume after a hand fix posts a `user_fixed` gap and records the demonstration; with
+  telemetry off, no gap post and no demonstration is recorded.
+
+**Step 2: Run.** Expected: FAIL. **Step 3: Implement.** **Step 4: Run**
+`pytest tests/browser/test_recipes.py tests/test_extension_panel_run.py tests/test_extension_sw_router.py -q`.
+Expected: PASS.
+
+**Step 5: Commit** `feat(companion): a hand fix teaches the recipe book; misses join the known-gaps list`.
+
 ### Task 21 (conditional): `/api/autofill/page` for unclear buttons
 
 Build only if the owner's live check (Task 23) shows "Ready to submit" landing on pages that are
@@ -1389,6 +1540,8 @@ Ask the planner before starting.
     user's" becomes "Submit stays the user's at every setting; Next is clicked only by
     `page_advance` during a queued run with full automation on";
   - `inv-job-site-password-local`: the Companion route, top-frame typing, never a model;
+  - `inv-autofill-telemetry-no-values`: the known-gaps table (value-free, telemetry-gated, cleared
+    by `DELETE /telemetry`) and the gesture report (event types and allowlisted key names only);
   - `inv-auto-consent-gated`: the `companion` channel and `companion-submitted`;
   - §7 Chrome extension + Guided fill: the queued run, per-tab memory, the Screening answers dial;
   - update pins in `.system_md_enforcement.json` for any new symbols named in §6.

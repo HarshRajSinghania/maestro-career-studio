@@ -53,6 +53,16 @@ of the gates. Lowering that friction is part of the goal, not a side effect.
   the job applied, with an undo on its row.
 - **Job memory:** the 30-minute, one-key-per-browser `widget.session` memory becomes per-tab memory,
   for queued runs AND for ordinary single-page use.
+- **Job step buttons (decided 2026-10-11):** with full automation on, the Companion's Job step offers
+  **Apply** (primary: save, pick the resume, queue as the user's yes, then run this one job in this
+  tab through to review) and **Queue** (save and queue for a later Apply to queued). Plain **Save job**
+  shows only when full automation is off, exactly as today.
+- **Park less (2026-10-11):** a run parks only on required fields it could not answer or could not
+  operate. A field that shows a value the engine could not prove does not park: the run clicks Next
+  and lets the page's own validation decide (refill once, then park with the page's error text).
+- **Try harder, remember, report (2026-10-11), Part 8:** run tabs get a bigger per-field budget; a
+  field the user fixes by hand teaches the recipe book; failures accumulate in a durable,
+  value-free known-gaps list that ranks what the engine should learn next.
 
 Rejected: answering in the web app's Agent inbox (more to build; you visit each tab for Submit
 anyway); the service worker or an offscreen document as the first host (survives closing the panel,
@@ -215,6 +225,27 @@ treatment for run tabs.
   tailor, Use base resume, or Skip. Default Quick tailor, except a job with an open custom tailoring
   session defaults to Skip ("finish tailoring first"). Quick tailor and renders run one at a time
   while earlier tabs fill. Nothing in a run overwrites a custom tailoring session or draft.
+
+## Part 8: Try harder, remember, report
+
+The fill loop already gives each field a small state machine (read, map, explore, pick, commit,
+verify, plus an AI-chosen adaptive step from moves code lists, never repeating a failed move), and
+the recipe book already remembers which known move worked per widget family. This part extends both.
+
+1. **Try harder in runs.** A queued-run tab passes per-run limits to the fill loop: about 60 s per
+   field (FIELD_MS, today 25 s) and 12 adaptive steps (MAX_STEPS, today 8). Single-page Autofill keeps
+   today's limits. Limits become a per-run option, never a change to the shared module defaults, so
+   parallel runs and the user's own fill don't affect each other.
+2. **Learn from the user's fix.** When a parked field is fixed by hand and the user presses Resume,
+   the page reports which gestures the user used on that widget (pointer or keyboard open; typed then
+   Enter, or typed then waited), never what was typed. A gesture sequence that matches a move the
+   engine knows becomes a recipe lesson at `probation` for that site (one demonstration never makes
+   it trusted). One that matches nothing is noted as a missing technique in the known-gaps list.
+3. **Known-gaps list.** A durable, value-free table: widget family hash, host, field shape, outcome
+   (`cannot_operate`, `unconfirmed`, `user_fixed`), counts and last seen. It survives the 50-run trace
+   limit, follows `telemetryEnabled`, is cleared by `DELETE /api/autofill/telemetry` (it holds hosts),
+   and is ranked in `scripts/fill_trace.py report` and a one-line diagnostics summary in Settings ›
+   Form filling. Each engine fix it drives ships with a recorded test form.
 
 ## Rules and docs changed on purpose
 
