@@ -39,8 +39,8 @@ export function keyFormatProblem(
 }
 
 /** The toast after Save: what changed, and that a new key is checked on first use. */
-export function keysSavedText(patch: Partial<Record<`${Provider}_api_key`, string | null>>): string {
-  const sent = Object.values(patch).filter((k) => k !== undefined);
+export function keysSavedText(patch: Partial<Record<`${Provider}_api_key`, string | null>> & Record<string, unknown>): string {
+  const sent = (Object.keys(SHAPE) as KeyProvider[]).map((p) => patch[`${p}_api_key`]).filter((k) => k !== undefined);
   const added = sent.filter((k) => k).length;
   if (added === 0) return sent.length > 1 ? "API keys removed." : "API key removed.";
   return added > 1

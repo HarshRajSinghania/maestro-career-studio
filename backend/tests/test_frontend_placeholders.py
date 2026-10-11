@@ -522,7 +522,7 @@ def test_saved_key_is_a_hint_not_a_placeholder():
     _order(
         src,
         '{configured ? "Type a new key to replace the saved one." : hintUnset}',
-        "aria-describedby={hintId}",
+        "aria-describedby={describedBy ?? hintId}",
     )
 
 

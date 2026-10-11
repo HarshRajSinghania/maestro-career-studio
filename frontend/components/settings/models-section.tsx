@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { useFieldMessage } from "@/components/resume-editor/field";
 import { NewTabLink } from "@/components/new-tab-link";
 import { SettingCard } from "@/components/settings/setting-card";
 import { ACTION_ROW } from "@/components/settings/setting-layout";
@@ -26,6 +27,7 @@ import { keyFormatProblem, keysSavedText } from "@/lib/api-key-format";
 import { apiFetch } from "@/lib/api";
 import { couldnt, errorDetail } from "@/lib/error-text";
 import {
+  CONFIGURED,
   PROVIDERS,
   keyWarning,
   modelName,
@@ -240,13 +242,16 @@ function RoleModel({
 }) {
   const hintId = useId();
   const model = info[role.key];
-  const warning = keyWarning(role.label, model, info);
+  // The missing-key warning is the field-warning pattern: icon, text-warning, and in the picker's description.
+  const { control, message } = useFieldMessage({ warning: keyWarning(role.label, model, info), hintId });
   return (
     <div className="grid content-start gap-1.5">
       <ModelField
         label={role.label}
         hint={role.hint}
         hintId={hintId}
+        describedBy={control["aria-describedby"]}
+        message={message}
         value={model}
         options={info.model_options}
         custom={info.custom_endpoint}
@@ -260,11 +265,6 @@ function RoleModel({
         busy={probing !== null}
         onProbe={() => onProbe(model)}
       />
-      {warning ? (
-        <p className="text-warning text-body-small" role="note">
-          {warning}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -387,14 +387,14 @@ function ModelProfileNote() {
   );
 }
 
-/** One row per provider: its label, where to get a key, and which payload fields say it is set. */
+/** One row per provider: its label, where to get a key, and which payload field names its source (CONFIGURED has the set flag). */
 const KEY_FIELDS: Record<
   Provider,
   {
     label: string;
     hint: ReactNode;
-    configured: "api_key_configured" | "anthropic_api_key_configured" | "gemini_api_key_configured" | "openrouter_api_key_configured";
     source: "openai_key_source" | "anthropic_key_source" | "gemini_key_source" | "openrouter_key_source";
+    note?: string;
   }
 > = {
   openai: {
@@ -404,7 +404,6 @@ const KEY_FIELDS: Record<
         Get one at <NewTabLink href="https://platform.openai.com/api-keys">platform.openai.com</NewTabLink>. It starts with sk-.
       </>
     ),
-    configured: "api_key_configured",
     source: "openai_key_source",
   },
   anthropic: {
@@ -414,7 +413,6 @@ const KEY_FIELDS: Record<
         Get one at <NewTabLink href="https://console.anthropic.com/settings/keys">console.anthropic.com</NewTabLink>. It starts with sk-ant-.
       </>
     ),
-    configured: "anthropic_api_key_configured",
     source: "anthropic_key_source",
   },
   gemini: {
@@ -424,7 +422,6 @@ const KEY_FIELDS: Record<
         Get one at <NewTabLink href="https://aistudio.google.com/apikey">aistudio.google.com</NewTabLink>. It starts with AIza.
       </>
     ),
-    configured: "gemini_api_key_configured",
     source: "gemini_key_source",
   },
   openrouter: {
@@ -432,11 +429,11 @@ const KEY_FIELDS: Record<
     hint: (
       <>
         Get one at <NewTabLink href="https://openrouter.ai/keys">openrouter.ai</NewTabLink>. It starts with sk-or-.
-        OpenRouter sends requests only to model providers that keep no data. OpenRouter itself may keep what you send.
       </>
     ),
-    configured: "openrouter_api_key_configured",
     source: "openrouter_key_source",
+    // Stays on screen once a key is saved: where requests go is a privacy fact, not setup help.
+    note: "OpenRouter sends requests only to model providers that keep no data. OpenRouter itself may keep what you send.",
   },
 };
 
@@ -484,11 +481,10 @@ export function ApiKeysSection() {
     }
     // Send only the key the user actually edited. An untouched field stays absent (preserved); a
     // field cleared to empty sends null (removes it). Spaces from a copy are not part of a key.
-    saveKeysOnce(
-      Object.fromEntries(
-        PROVIDERS.filter((p) => keys[p] !== null).map((p) => [`${p}_api_key`, keys[p]?.trim() || null]),
-      ),
+    const patch: ModelSettingsPatch = Object.fromEntries(
+      PROVIDERS.filter((p) => keys[p] !== null).map((p) => [`${p}_api_key`, keys[p]?.trim() || null]),
     );
+    saveKeysOnce(patch);
   };
 
   return (
@@ -513,7 +509,8 @@ export function ApiKeysSection() {
                 key={p}
                 label={KEY_FIELDS[p].label}
                 hintUnset={KEY_FIELDS[p].hint}
-                configured={data[KEY_FIELDS[p].configured]}
+                note={KEY_FIELDS[p].note}
+                configured={data[CONFIGURED[p]]}
                 source={data[KEY_FIELDS[p].source]}
                 value={keys[p]}
                 saving={saveKeys.isPending}
@@ -546,6 +543,7 @@ export function ApiKeysSection() {
 export function KeyField({
   label,
   hintUnset,
+  note,
   configured,
   source,
   value,
@@ -555,6 +553,8 @@ export function KeyField({
   onChange,
 }: {
   label: string;
+  /** Always shown, saved or not (a privacy fact about this provider). */
+  note?: string;
   /** Where to get a key and what it looks like, while none is saved. */
   hintUnset: ReactNode;
   configured: boolean;
@@ -588,6 +588,7 @@ export function KeyField({
           it is: a hint, never an example in the blank field. */}
       <p id={hintId} className="text-muted-foreground text-body-small">
         {configured ? "Type a new key to replace the saved one." : hintUnset}
+        {note ? <> {note}</> : null}
       </p>
       <Input
         type="password"
@@ -621,6 +622,8 @@ function ModelField({
   label,
   hint,
   hintId,
+  describedBy,
+  message,
   value,
   options,
   custom,
@@ -630,6 +633,9 @@ function ModelField({
   label: string;
   hint: string;
   hintId: string;
+  /** hintId plus the warning's id while one shows (useFieldMessage). */
+  describedBy?: string;
+  message?: ReactNode;
   value: string;
   options: OpenAIInfo["model_options"];
   custom: boolean;
@@ -642,6 +648,8 @@ function ModelField({
         label={label}
         hint={hint}
         hintId={hintId}
+        describedBy={describedBy}
+        message={message}
         value={value}
         saving={saving}
         onChange={onChange}
@@ -653,6 +661,8 @@ function ModelField({
       label={label}
       hint={hint}
       hintId={hintId}
+      describedBy={describedBy}
+      message={message}
       value={value}
       options={options}
       saving={saving}
@@ -665,6 +675,8 @@ function FreeTextModel({
   label,
   hint,
   hintId,
+  describedBy,
+  message,
   value,
   saving,
   onChange,
@@ -672,6 +684,8 @@ function FreeTextModel({
   label: string;
   hint: string;
   hintId: string;
+  describedBy?: string;
+  message?: ReactNode;
   value: string;
   saving: boolean;
   onChange: (value: string | null) => void;
@@ -686,7 +700,7 @@ function FreeTextModel({
       </p>
       <Input
         id={id}
-        aria-describedby={hintId}
+        aria-describedby={describedBy ?? hintId}
         value={draft ?? value}
         readOnly={saving}
         onChange={(e) => setDraft(e.target.value)}
@@ -696,6 +710,7 @@ function FreeTextModel({
           setDraft(null);
         }}
       />
+      {message}
     </div>
   );
 }
@@ -704,6 +719,8 @@ function ModelSelect({
   label,
   hint,
   hintId,
+  describedBy,
+  message,
   value,
   options,
   saving,
@@ -712,6 +729,8 @@ function ModelSelect({
   label: string;
   hint: string;
   hintId: string;
+  describedBy?: string;
+  message?: ReactNode;
   value: string;
   options: OpenAIInfo["model_options"];
   saving: boolean;
@@ -733,7 +752,7 @@ function ModelSelect({
       {/* readOnly, not disabled, while a pick saves: the list closes onto its trigger, and a
           disabled trigger dropped focus to <body> after every pick (RolePicker's rule). */}
       <Select value={value} onValueChange={onChange} readOnly={saving}>
-        <SelectTrigger id={id} aria-describedby={hintId} className="w-full">
+        <SelectTrigger id={id} aria-describedby={describedBy ?? hintId} className="w-full">
           <SelectValue>{stale ? value : selected?.label}</SelectValue>
         </SelectTrigger>
         <SelectContent>
@@ -763,6 +782,7 @@ function ModelSelect({
           ))}
         </SelectContent>
       </Select>
+      {message}
     </div>
   );
 }

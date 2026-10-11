@@ -111,7 +111,7 @@ def test_a_role_hint_sits_between_its_label_and_its_picker():
     for fn in ("function FreeTextModel(", "function ModelSelect("):
         body = _slice(_MODELS, fn, "\nfunction ")
         hint = body.index('<p id={hintId} className="text-muted-foreground text-body-small">')
-        assert body.index("<Label htmlFor={id}>") < hint < body.index("aria-describedby={hintId}"), fn
+        assert body.index("<Label htmlFor={id}>") < hint < body.index("aria-describedby={describedBy ?? hintId}"), fn
 
 
 def test_the_catalog_reads_words_not_keys():

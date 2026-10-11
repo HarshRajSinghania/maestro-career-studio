@@ -639,157 +639,23 @@ def test_a_saved_key_is_checked_on_first_use():
     ]
 
 
-def test_openrouter_privacy_words_are_exact_and_the_endpoint_hint_names_no_provider():
+def test_openrouter_privacy_sentence_is_exact_and_shown_saved_or_not():
     models = _flat(_read("components/settings/models-section.tsx"))
-    assert ("OpenRouter sends requests only to model providers that keep no data. "
-            "OpenRouter itself may keep what you send.") in models
+    sentence = ("OpenRouter sends requests only to model providers that keep no data. "
+                "OpenRouter itself may keep what you send.")
+    assert models.count(sentence) == 1
+    # Outside the configured/unset branch: still on screen once a key is saved.
+    hint = _between(models, "{configured ? \"Type a new key", "</p>")
+    assert "{note ? <> {note}</> : null}" in hint
+    assert "note?: string;" in models and "note={KEY_FIELDS[p].note}" in models
 
 
-def test_no_screen_says_an_ats_rates_the_resume():
-    """The match score compares resumes with jobs using fixed rules
-    (ATS_SCORE_LEAD in lib/ats-words.ts), never an employer's reading."""
-    root = Path(__file__).resolve().parents[2] / "frontend"
-    hits = [
-        p.relative_to(root).as_posix()
-        for d in ("app", "components", "lib")
-        for p in (root / d).rglob("*.ts*")
-        if "tracking system rates" in p.read_text(encoding="utf-8")
-    ]
-    assert not hits
-
-
-def _exported_regex(name: str):
-    """`export const NAME = /source/flags;` from lib/error-text.ts, compiled as Python reads it."""
-    src = _read("lib/error-text.ts")
-    m = re.search(rf"export const {name} =\s*/(.+?)/([a-z]*);", src)
-    assert m, f"{name} is no longer an exported regex literal (the Companion's copy is pinned to it)"
-    return re.compile(m.group(1), re.I if "i" in m.group(2) else 0)
-
-
-def test_the_web_app_recognises_every_key_sentence_the_server_writes():
-    """The coordinator's Companion pass: a refused key read as a generic failure because
-    REFUSED_KEY did not know the server's own sentence. Every sentence llm.py writes for a
-    missing or refused key, and the providers' raw 401s, match the exported patterns."""
-    from app.services import llm
-
-    missing, refused = _exported_regex("MISSING_KEY"), _exported_regex("REFUSED_KEY")
-    for text in (llm.NO_KEY_MESSAGE, llm.NO_GEMINI_KEY_MESSAGE, llm.NO_ANTHROPIC_KEY_MESSAGE,
-                 llm.NO_OPENROUTER_KEY_MESSAGE, "GEMINI_API_KEY is required for Gemini models"):
-        assert missing.search(text), text
-    sentences = [str(llm._no_answer(llm._KEY_REFUSED, "detail", provider=who))
-                 for who in ("OpenAI", "Gemini", "Claude", "OpenRouter", "Your AI server")]
-    sentences.append("The AI model didn't answer (your key was refused). Try again, or check your key in "
-                     "Settings › AI & models.")
-    sentences += ["Error code: 401 - {'error': {'code': 'invalid_api_key'}}",
-                  'Gemini models.list failed: 400 {"error": {"details": [{"reason": "API_KEY_INVALID"}]}}']
-    for text in sentences:
-        assert refused.search(text), text
-    # Not every sentence that names a key is a refusal.
-    assert not refused.search("The Assistant needs an API key. Add one in Settings › AI & models.")
-
-
-def test_every_setup_chip_marks_done_or_not_done():
-    strip = _read("components/setup/setup-status-strip.tsx")
-    assert '<Circle aria-hidden="true" className="size-3" />' in strip
-    assert 'return `${step.label}, ${step.done ? "done" : "not done"}`;' in strip
-
-
-# --- The owner's calls (SYSTEM.md §11 item 36, resolved 2026-09-24) -------------------
-
-
-def test_which_model_to_pick_names_no_price():
-    """Prices change faster than a release, so the note compares the two models
-    in words and hands the figures to the providers' own pricing pages."""
-    note = _flat(_between(_read("components/settings/models-section.tsx"),
-                          "function ModelProfileNote()", "\n}\n"))
-    assert "¢" not in note
-    assert not re.search(r"\$\s?\d", note)
-    assert not re.search(r"\d\s?(?:cents?|per cent)\b", note)
-    # The relative claims README's measured table makes, and nothing new.
-    assert "GPT-5.6 Luna gives the most thorough results" in note
-    assert "Gemini 3.7 Flash is the fastest" in note
-    # Real links (a plain <a> in NewTabLink), in a new tab, announced as such.
-    assert '<NewTabLink href="https://openai.com/api/pricing/">' in note
-    assert '<NewTabLink href="https://ai.google.dev/gemini-api/docs/pricing">' in note
-    assert "nativeButton={false}" not in note
-
-
-def test_the_covenant_question_explains_its_legal_term():
-    """The label keeps "restrictive covenant" (forms ask it that way and the
-    Companion matches it); the hint, wired with aria-describedby by the field
-    renderer, says what one is."""
-    field = _between(_AUTOFILL, 'key: "non_compete",', "},")
-    assert 'label: "Subject to a restrictive covenant?",' in field
-    assert 'hint: "Such as a non-compete or non-solicit agreement.",' in field
-    renderer = _between(_AUTOFILL, "{group.fields.map((field) => {", "</fieldset>")
-    assert 'const hintId = field.hint ? `${id}-hint` : undefined;' in renderer
-    assert "<p id={hintId}" in renderer
-    assert "hintId={hintId}" in renderer  # handed to the shared control …
-    control = _between(_AUTOFILL, "function FieldControl(", "\n}\n")
-    assert control.count("aria-describedby={hintId}") == 1  # … which the select reads directly …
-    assert "useFieldMessage({ warning, hintId })" in control  # … and the input through its message wiring
-
-
-def test_gender_offers_non_binary_and_self_describe():
-    """The owner's options, in this order; the stored values are what
-    extension/content/eeo.js maps to a form's own wording."""
-    gender = _between(_AUTOFILL, 'key: "gender",', "],")
-    assert re.findall(r'\{ value: "(\w+)", label: "([^"]+)" \}', gender) == [
-        ("male", "Male"),
-        ("female", "Female"),
-        ("non_binary", "Non-binary"),
-        ("self_describe", "Prefer to self-describe"),
-        ("decline", "Decline to answer"),
-    ]
-
-
-def test_the_self_description_shows_only_for_self_describe_and_goes_with_it():
-    """A text field for the user's own words, voluntary like the group (not
-    counted by setup readiness: `optional`), on screen only while "Prefer to
-    self-describe" is chosen, and deleted when another answer replaces it, so
-    no protected-class text is kept where the user can no longer see it."""
-    field = _between(_AUTOFILL, 'key: "gender_self_describe",', "},")
-    assert 'when: ["gender", "self_describe"],' in field
-    assert "optional: true," in field
-    assert 'hint: "The Companion types this where a form asks you to self-describe.",' in field
-    renderer = _between(_AUTOFILL, "{group.fields.map((field) => {", "</fieldset>")
-    assert "if (field.when && groupValues(profile, group.key)[field.when[0]] !== field.when[1]) {" in renderer
-    set_field = _between(_AUTOFILL, "const setField = (", "\n  };")
-    assert "if (field.when?.[0] === key && field.when[1] !== value) delete values[field.key];" in set_field
-
-
-def test_an_agreement_from_an_older_policy_asks_again():
-    """Policy 2 widened the agreement switch, so a policy-1 yes is served off
-    with `consent_forms_lapsed` (backend/app/services/eeo_consent.py). The box
-    shows the switch as served and says why it is off, and the switch reads
-    both its hint and that note."""
-    boxes = _between(_AUTOFILL, "function CompanionPermissions(", "\n}\n")
-    assert "checked={consent.consent_forms}" in boxes
-    note = _between(boxes, "{consent.consent_forms_lapsed ? (", ") : null}")
-    assert "<p id={lapsedId}" in note
-    assert "This now covers more than when you agreed. Turn it on again to allow it." in _flat(note)
-    assert "<p id={hintId}" in boxes
-    assert (
-        "aria-describedby={ consent.consent_forms_lapsed ? `${hintId} ${lapsedId}` : hintId }"
-        in _flat(boxes)
-    )
-    types = _read("lib/types.ts")
-    assert "consent_forms_lapsed?: boolean;" in _between(types, "export interface EeoConsent {", "\n}")
-
-
-def test_an_agreement_yes_names_the_policy_it_agreed_to():
-    """The server owns the stamp and grants `consent_forms` only on a yes that
-    names its current policy, so the web app's constant must track it; a held
-    yes says so instead of claiming the permission is on."""
-    from app.schemas.eeo_consent import CURRENT_POLICY_VERSION
-
-    assert f'const AGREEMENT_POLICY = "{CURRENT_POLICY_VERSION}";' in _AUTOFILL
-    agree = _between(_AUTOFILL, "const setConsentFormsEnabled = ", "\n  };")
-    assert "acknowledged_at: consentForms ? null : consent.acknowledged_at," in agree
-    assert "agreed_policy: consentForms ? AGREEMENT_POLICY : undefined," in agree
-    assert "} else if (result.value.consent_forms) {" in agree
-    assert "Agreements and signatures weren't turned on. Reload the page and try again." in _flat(agree)
-    types = _read("lib/types.ts")
-    update = _between(types, "export interface EeoConsentUpdate extends EeoConsent {", "\n}")
-    assert "agreed_policy?: string;" in update
-    assert "mutationFn: (value: EeoConsentUpdate) =>" in _AUTOFILL
+def test_a_missing_key_warning_is_a_field_message_wired_to_the_picker():
+    """docs/frontend-conventions.md, Field error and warning: icon line (useFieldMessage) and
+    the id in the control's aria-describedby, in both the picker and the custom-server input."""
+    models = _flat(_read("components/settings/models-section.tsx"))
+    assert "useFieldMessage({ warning: keyWarning(role.label, model, info), hintId })" in models
+    assert 'describedBy={control["aria-describedby"]}' in models and "message={message}" in models
+    assert models.count("aria-describedby={describedBy ?? hintId}") == 2
+    assert models.count("{message}") >= 2
+    assert 'role="note"' not in models

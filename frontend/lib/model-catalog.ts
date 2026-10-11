@@ -88,7 +88,10 @@ export interface KeyState {
   model_options: { id: string; provider: string }[];
 }
 
-const CONFIGURED: Record<Provider, keyof KeyState> = {
+export const CONFIGURED: Record<
+  Provider,
+  "api_key_configured" | "anthropic_api_key_configured" | "gemini_api_key_configured" | "openrouter_api_key_configured"
+> = {
   openai: "api_key_configured",
   anthropic: "anthropic_api_key_configured",
   gemini: "gemini_api_key_configured",

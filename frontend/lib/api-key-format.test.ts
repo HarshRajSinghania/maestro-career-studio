@@ -66,3 +66,11 @@ test("saved text counts every provider's key", () => {
   assert.equal(keysSavedText({ openrouter_api_key: null }), "API key removed.");
   assert.equal(keysSavedText({ anthropic_api_key: null, gemini_api_key: null }), "API keys removed.");
 });
+
+test("saved text counts key fields only, not the model fields beside them", () => {
+  assert.equal(
+    keysSavedText({ openai_api_key: "sk-a", fast_model: "m", smart_model: "n" }),
+    "API key saved. We'll check it on first use.",
+  );
+  assert.equal(keysSavedText({ gemini_api_key: null, chat_model: "m" }), "API key removed.");
+});
