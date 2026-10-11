@@ -28,9 +28,9 @@ These have real coverage and are unlikely to move under you.
   recorded, so nothing is one-way.
 - **The MCP server.** 88 tools across six profiles, cold-install tested in CI
   against the exact command the README gives you.
-- **Data stays local.** No telemetry leaves your machine — see the extension
-  section of the README for what the one telemetry endpoint stores and how to
-  clear it.
+- **Data stays local.** No telemetry leaves your machine — see the Companion
+  section of [Using Maestro CS](docs/USING_MAESTRO.md#the-companion-browser-extension)
+  for what the one telemetry endpoint stores and how to clear it.
 
 ## What is rough
 

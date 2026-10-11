@@ -54,11 +54,11 @@ assistant** ([§5](#5-connect-your-ai-assistant-optional)).
   ([below](#on-windows-use-wsl)). On Linux, use your
   package manager.
 - **Disk space.** About a 1 GB download, which takes roughly 3–4 GB once
-  unpacked ([details](../README.md#prerequisites)).
+  unpacked ([details](SETUP_REFERENCE.md#prerequisites)).
 - **An AI key — optional for now.** OpenAI or Gemini (or a local
   OpenAI-compatible server). You add it inside the app after it starts.
   Without one, scoring, PDFs and tracking still work
-  ([No-Key Mode](../README.md#do-you-need-an-api-key)).
+  ([No-Key Mode](SETUP_REFERENCE.md#do-you-need-an-api-key)).
 
 You do **not** need Python or Node.
 
@@ -124,7 +124,7 @@ Want to build the app from source instead? See [CONTRIBUTING.md](../CONTRIBUTING
 | You see | It means | Do |
 | --- | --- | --- |
 | `Cannot connect to the Docker daemon` | Docker isn't running | Start Docker Desktop, wait until it says running, run the command again |
-| `port is already allocated` | Another program uses a port the app needs | Change the `*_HOST_PORT` values in `.env` ([details](../README.md#troubleshooting--common-questions)) |
+| `port is already allocated` | Another program uses a port the app needs | Change the `*_HOST_PORT` values in `.env` ([details](SETUP_REFERENCE.md#troubleshooting--common-questions)) |
 | The page loads but everything shows errors | The app is still starting | Wait a minute. It is ready when <http://localhost:8001/health> shows `{"status":"ok"}` |
 | You added a key to `.env` after starting | Keys are read at start | Run `docker compose restart backend` |
 | AI features fail although Settings says "Configured" | An old key is being used | Enter the key again in Settings › AI & models and press **Test** |
@@ -271,7 +271,7 @@ Five steps from nothing to a PDF:
 - **Track your applications** — mark them applied and record outcomes. After
   about 10 saved jobs, **Analytics** shows what employers keep asking for.
 - **Choose your models** — see
-  [choosing models](../README.md#5-choose-your-models-deliberately).
+  [choosing models](USING_MAESTRO.md#5-choose-your-models-deliberately).
 
 ## 4. The Companion browser extension (optional)
 
@@ -307,7 +307,7 @@ computer. There is no on/off switch in the panel: to turn it off, set
 `telemetryEnabled` to `false` in the extension's stored settings
 (`chrome.storage.sync`). **Analytics → Autofill coverage → Clear data** deletes
 what was collected. Full detail: [`extension/README.md`](../extension/README.md)
-and the [README's Companion section](../README.md#the-companion-browser-extension).
+and the [Companion section of Using Maestro CS](USING_MAESTRO.md#the-companion-browser-extension).
 
 ## 5. Connect your AI assistant (optional)
 
@@ -494,6 +494,6 @@ there is anything new, run `./scripts/update.sh --check` — it changes nothing.
   Claude Desktop bundle once if yours is the older Docker-based one. The script
   reminds you of these steps.
 
-Updating from an older version? Read [UPDATING.md](UPDATING.md) first. The
-[README's Updating section](../README.md#updating) covers the manual steps,
-choosing a specific version, and rolling back.
+Updating from an older version? Read [UPDATING.md](UPDATING.md) first. It covers
+the manual steps, choosing a specific version, and rolling back. The README's
+[Updating section](../README.md#updating) has the short version.

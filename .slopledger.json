@@ -4,7 +4,7 @@
     {
       "id": "mcp-stdio-venv",
       "status": "new-is-default",
-      "hand_check": "The release after /mcp ships (v0.10.0): delete scripts/setup-mcp.sh, the host-venv paragraphs in README.md, GETTING_STARTED.md and backend/mcp_server/README.md, and every docker exec mcp_server.server example. Keep maestro-career-studio-mcp as the maestro mcp fallback until B\u2032. Machine predicates require the script absent and zero source matches; the release and prose removals are verified by hand.",
+      "hand_check": "The release after /mcp ships (v0.10.0): delete scripts/setup-mcp.sh, the host-venv paragraphs in docs/USING_MAESTRO.md, GETTING_STARTED.md and backend/mcp_server/README.md, and every docker exec mcp_server.server example. Keep maestro-career-studio-mcp as the maestro mcp fallback until B\u2032. Machine predicates require the script absent and zero source matches; the release and prose removals are verified by hand.",
       "triggers": [
         {
           "kind": "command",

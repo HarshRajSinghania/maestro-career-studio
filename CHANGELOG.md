@@ -45,6 +45,7 @@ None.
 ### Changed
 
 - The app calls its score the match score (it was labelled ATS score).
+- README rewritten: shorter top screen, the uv install leads the Quickstart; the manual moved to `docs/USING_MAESTRO.md` and `docs/SETUP_REFERENCE.md`.
 
 ### Security
 

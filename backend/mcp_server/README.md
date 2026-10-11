@@ -13,7 +13,7 @@ the backend at `http://localhost:8001` by default (`BACKEND_HOST_PORT` in `.env`
 A direct `uvicorn app.main:app --port 8000` run uses port 8000; the
 [native scripts](../../docs/native-install.md) use `http://127.0.0.1:8001`.
 The assistant needs no Docker or Python to connect over HTTP. A
-[uv install](../../README.md#install-without-docker-uv) (`maestro start`) serves the
+[uv install](../../README.md#quickstart) (`maestro start`) serves the
 same URL, and its `maestro connect` command does the setup below from the terminal.
 
 ## Install
