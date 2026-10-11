@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any
+from typing import Any, Iterable, Iterator
+from uuid import uuid4
 from urllib.error import HTTPError, URLError
 from urllib.request import Request as HttpRequest
 from urllib.request import urlopen
@@ -19,11 +20,18 @@ from app.services.llm_providers.errors import (
     _no_answer,
 )
 from app.services.llm_providers.types import (
+    Finish,
     ImagePart,
     Message,
+    ModelRef,
+    ProviderMeta,
     Request,
     Response,
+    StreamEvent,
+    TextDelta,
     TextPart,
+    ToolCallPart,
+    ToolResultPart,
     Usage,
 )
 
@@ -89,6 +97,153 @@ def _key() -> str:
     return key
 
 
+# --- native chat ----------------------------------------------------------------------------
+
+# Google's documented placeholder for a functionCall that has no real thought signature.
+DUMMY_SIGNATURE = "skip_thought_signature_validator"
+
+
+def _parse_result(content: str) -> dict[str, Any]:
+    try:
+        parsed: Any = json.loads(content)
+    except (TypeError, ValueError):
+        parsed = content
+    return parsed if isinstance(parsed, dict) else {"result": parsed}
+
+
+def _is_minted(call: ToolCallPart) -> bool:
+    return bool(call.meta and call.meta.provider == "gemini" and call.meta.data.get("id_minted"))
+
+
+def _current_turn_start(messages: list[Message]) -> int:
+    """Index of the last user message that carries text; its model steps are the current turn."""
+    for i in range(len(messages) - 1, -1, -1):
+        m = messages[i]
+        if m.role == "user" and any(isinstance(p, TextPart) and p.text for p in m.parts):
+            return i
+    return -1
+
+
+def build_chat_payload(req: Request) -> dict[str, Any]:
+    """Whole-transcript streaming call. Thought signatures replay only from the same Gemini model;
+    the current turn's first functionCall per model step otherwise gets Google's dummy (earlier turns
+    are not validated). Ids this adapter minted are never sent back: Gemini matches by order and name."""
+    model = model_name(req.model.model)
+    turn_start = _current_turn_start(req.messages)
+    calls_by_id: dict[str, ToolCallPart] = {}
+    contents: list[dict[str, Any]] = []
+    for index, msg in enumerate(req.messages):
+        if msg.role == "user":
+            parts: list[dict[str, Any]] = [{"text": p.text} for p in msg.parts if isinstance(p, TextPart)]
+            parts += [{"inlineData": {"mimeType": p.media_type, "data": base64.b64encode(p.data).decode("ascii")}}
+                      for p in msg.parts if isinstance(p, ImagePart)]
+            if parts:
+                contents.append({"role": "user", "parts": parts})
+        elif msg.role == "assistant":
+            parts = []
+            first_call = True
+            for p in msg.parts:
+                if isinstance(p, TextPart):
+                    if p.text:
+                        parts.append({"text": p.text})
+                elif isinstance(p, ToolCallPart):
+                    calls_by_id[p.id] = p
+                    call: dict[str, Any] = {"name": p.name, "args": p.arguments or {}}
+                    if not _is_minted(p):
+                        call["id"] = p.id
+                    entry: dict[str, Any] = {"functionCall": call}
+                    sig = None
+                    if (p.meta and p.meta.provider == "gemini" and model_name(p.meta.model) == model
+                            and p.meta.data.get("thoughtSignature")):
+                        sig = p.meta.data["thoughtSignature"]
+                    elif first_call and index > turn_start >= 0:
+                        sig = DUMMY_SIGNATURE
+                    if sig:
+                        entry["thoughtSignature"] = sig
+                    first_call = False
+                    parts.append(entry)
+            if parts:
+                contents.append({"role": "model", "parts": parts})
+        else:
+            responses: list[dict[str, Any]] = []
+            for p in msg.parts:
+                if isinstance(p, ToolResultPart):
+                    src = calls_by_id.get(p.tool_call_id)
+                    fr: dict[str, Any] = {"name": src.name if src else p.tool_call_id,
+                                          "response": _parse_result(p.content)}
+                    if not (src and _is_minted(src)):
+                        fr["id"] = p.tool_call_id
+                    responses.append({"functionResponse": fr})
+            if not responses:
+                continue
+            if contents and contents[-1]["role"] == "user" and all(
+                    "functionResponse" in x for x in contents[-1]["parts"]):
+                contents[-1]["parts"].extend(responses)  # consecutive tool messages share one turn
+            else:
+                contents.append({"role": "user", "parts": responses})
+    payload: dict[str, Any] = {"contents": contents}
+    if req.system:
+        payload["systemInstruction"] = {"parts": [{"text": req.system}]}
+    if req.tools:
+        payload["tools"] = [{"functionDeclarations": [
+            {"name": t.name, "description": t.description, "parametersJsonSchema": t.parameters}
+            for t in req.tools]}]
+    config = _generation_config(req.model.model, req.output)
+    if config:
+        payload["generationConfig"] = config
+    return payload
+
+
+def parse_sse(lines: Iterable[bytes | str], ref: ModelRef) -> Iterator[StreamEvent]:
+    """SSE `data:` lines -> TextDeltas, then one Finish with parts in arrival order. Thought parts
+    are skipped; a functionCall without an id gets a minted one (unique across the whole session)."""
+    parts: list[Any] = []
+    text: list[str] = []
+    usage, stop_reason = None, "stop"
+
+    def flush_text() -> None:
+        if text:
+            parts.append(TextPart("".join(text)))
+            text.clear()
+
+    for raw in lines:
+        line = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        try:
+            data = json.loads(line[5:].strip())
+        except ValueError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        usage = _usage(data) or usage
+        candidate = (data.get("candidates") or [{}])[0]
+        if isinstance(candidate.get("finishReason"), str):
+            stop_reason = candidate["finishReason"].lower()
+        for part in (candidate.get("content") or {}).get("parts") or []:
+            fc = part.get("functionCall")
+            if isinstance(fc, dict):
+                flush_text()
+                minted = not fc.get("id")
+                meta_data: dict[str, Any] = {}
+                if part.get("thoughtSignature"):
+                    meta_data["thoughtSignature"] = part["thoughtSignature"]
+                if minted:
+                    meta_data["id_minted"] = True
+                args = fc.get("args")
+                parts.append(ToolCallPart(
+                    fc.get("id") or f"call_{uuid4().hex[:12]}", fc.get("name", ""),
+                    args if isinstance(args, dict) else ({} if args is None else None),
+                    ProviderMeta("gemini", ref.model, meta_data) if meta_data else None))
+            elif isinstance(part.get("text"), str) and not part.get("thought"):
+                if part["text"]:
+                    text.append(part["text"])
+                    yield TextDelta(part["text"])
+    flush_text()
+    yield Finish(Message("assistant", parts), usage, stop_reason, ref.model)
+
+
 class GeminiProvider:
     name = "gemini"
 
@@ -120,8 +275,33 @@ class GeminiProvider:
         return Response(Message("assistant", [TextPart(_text(data))]), _usage(data), "stop",
                         req.model.model)
 
-    def stream(self, req: Request):  # Task 8
-        raise NotImplementedError
+    def stream(self, req: Request) -> Iterator[StreamEvent]:
+        """Native streaming chat. Errors at open and mid-stream become LLMProviderError, mapped as in
+        `generate`; the response is closed on error and on early stop."""
+        key = _key()
+        timeout = req.timeout if req.timeout is not None else _DEFAULT_TIMEOUT
+        request = HttpRequest(
+            f"{_BASE_URL}models/{model_name(req.model.model)}:streamGenerateContent?alt=sse",
+            data=json.dumps(build_chat_payload(req)).encode("utf-8"),
+            headers={"Content-Type": "application/json", "x-goog-api-key": key},
+            method="POST",
+        )
+        response = None
+        try:
+            response = urlopen(request, timeout=timeout)
+            yield from parse_sse(response, req.model)
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise _no_answer(_gemini_reason(exc.code, body),
+                             f"Gemini API request failed: {exc.code} {body}", provider="Gemini") from exc
+        except (TimeoutError, URLError, OSError) as exc:
+            timed_out = isinstance(exc, TimeoutError) or (
+                isinstance(exc, URLError) and isinstance(exc.reason, TimeoutError))
+            raise _no_answer(_TIMED_OUT if timed_out else "no connection",
+                             f"Gemini API request failed: {exc}", provider="Gemini") from exc
+        finally:
+            if response is not None:
+                response.close()
 
     def list_models(self) -> list[dict[str, str]]:
         """Gemini models that support generateContent for the configured Gemini key."""
