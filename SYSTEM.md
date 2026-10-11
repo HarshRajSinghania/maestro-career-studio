@@ -159,7 +159,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
 2. **Track** — **Jobs** (`/applications`; the URL, `?status=`/`?source=` and `cs-tracker-*` keep their
    names): the tracker. Two queries (summary list with server-joined job fields + saved jobs of the
    toggle's source), a grouped status `Select` with counts, inline `StatusChip` per row (PATCHes
-   directly), a read-only ATS column (`ats_score` / `best_ats_score`), search, sort, and a Tracked/Yours/Agents provenance `SourceToggle` (counts follow the
+   directly), a read-only Match score column (`ats_score` / `best_ats_score`), search, sort, and a Tracked/Yours/Agents provenance `SourceToggle` (counts follow the
    toggle; `?source=` deep-linkable; Analytics' copy reads All, as it counts every application).
    "Saved" = job with no application — agent-captured jobs stay out unless the toggle is `Agents`,
    which is why the default reads Tracked, not All (agent inventory lives in the Agent inbox,
@@ -627,7 +627,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
 Reference tier, like §4: consulted while working in `frontend/`, not read for orientation. Lives in
 [`docs/frontend-conventions.md`](docs/frontend-conventions.md): layout and sidebar rules, Tailwind v4 tokens and
 M3 colour roles, the studios' save and preview model, a11y and focus behaviour, naming, the copy rules and the one
-glossary (*Canonical terms*; ratchets `test_frontend_vocabulary.py`, `test_frontend_sentence_length.py`), each
+glossary (the app calls its fixed-rules score **Match score**; *Canonical terms*; ratchets `test_frontend_vocabulary.py`, `test_frontend_sentence_length.py`), each
 with the failure mode that bought it. Code citing "§8" lands here.
 
 ## 9. Dev & test environment

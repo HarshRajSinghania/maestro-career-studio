@@ -535,7 +535,7 @@ def test_a_saved_job_is_sent_as_edited_and_the_stage_advances_on_the_reload(tmp_
         "GET /api/ats-scores"]
     settled = out["settled"]
     [note] = _by_class(settled["foot"], "note")
-    assert note["text"] == "Saved. Found 3 skills. Best match: Data Scientist (ATS score 72)."
+    assert note["text"] == "Saved. Found 3 skills. Best match: Data Scientist (match score 72)."
     assert note["class"] == "note"
     rows = _rows(_rail_rows({"regions": settled}))
     assert rows["job"]["state"] == "done"
@@ -562,7 +562,7 @@ def test_saving_a_job_scores_its_bases_in_the_same_press(tmp_path):
     assert json.loads(_posts(out)[1]["init"]["body"]) == {"job_id": "job-just-saved"}
     settled = out["settled"]
     [note] = _by_class(settled["foot"], "note")
-    assert note["text"] == "Saved. Found 3 skills. Best match: Data Scientist (ATS score 72)."
+    assert note["text"] == "Saved. Found 3 skills. Best match: Data Scientist (match score 72)."
     rows = _rows(_rail_rows({"regions": settled}))
     assert rows["job"]["state"] == "done"
     assert rows["job"]["summary"] == "Data Scientist · 72"
@@ -599,7 +599,7 @@ def test_a_posting_already_in_the_library_says_so_rather_than_claiming_a_save(tm
     })
     [note] = _by_class(out["settled"]["foot"], "note")
     assert note["text"] == (
-        "Already saved in Maestro CS. Best match: Data Scientist (ATS score 72).")
+        "Already saved in Maestro CS. Best match: Data Scientist (match score 72).")
 
 
 # ---------- the application picker: no match, and the user's drafts ----------

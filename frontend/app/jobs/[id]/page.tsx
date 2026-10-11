@@ -614,7 +614,7 @@ export default function JobDetailPage({
                 const ok = await confirm({
                   title: "Delete this job?",
                   description:
-                    "This also deletes its application, ATS scores, gap analyses, answers and any Agent inbox proposals for it.",
+                    "This also deletes its application, match scores, gap analyses, answers and any Agent inbox proposals for it.",
                   confirmLabel: "Delete",
                   destructive: true,
                 });

@@ -1739,13 +1739,13 @@
       // What an ATS score IS is said once, in the Job step's base list
       // (`stages/job.js`).
       attach(ats, ringColumn(before, "var(--cs-primary)",
-                             before === null ? "ATS score" : "Base resume score"),
+                             before === null ? "Match score" : "Base resume score"),
              node("span", "hint",
                   before === null ? "Not scored yet." : "Tailoring can raise it."));
       return ats;
     }
     attach(ats, ringColumn(before, "var(--cs-primary)",
-                           before === null ? "ATS score" : "Base"));
+                           before === null ? "Match score" : "Base"));
     const arrow = node("span", "arrow");
     attach(arrow, icon("arrow-right", { size: 16 }));
     attach(ats, arrow, ringColumn(after, "var(--cs-good)", "Tailored"));

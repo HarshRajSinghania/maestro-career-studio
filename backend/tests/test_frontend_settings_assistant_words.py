@@ -429,7 +429,7 @@ def test_profile_and_agent_limits_speak_plainly():
         ("components/settings/auto-apply-section.tsx",
          "hint: `${ATS_SCORE_LEAD_ALL_JOBS} Below this, connected agents ask you which base resume to use.`,"),
         ("components/settings/auto-apply-section.tsx",
-         "Connected agents pick a base resume on their own only when its ATS score leads the next one by this many points."),
+         "Connected agents pick a base resume on their own only when its match score leads the next one by this many points."),
     ):
         assert words in _flat(_read(rel)), (rel, words)
     assert "Proposals per hunt" not in _read("components/settings/auto-apply-section.tsx")
@@ -635,8 +635,8 @@ def test_a_saved_key_is_checked_on_first_use():
 
 
 def test_no_screen_says_an_ats_rates_the_resume():
-    """Task 24 found two: an ATS score is our estimate of how a system WOULD rate it
-    (ATS_SCORE_LEAD in lib/ats-words.ts), never a reading from an employer's system."""
+    """The match score compares resumes with jobs using fixed rules
+    (ATS_SCORE_LEAD in lib/ats-words.ts), never an employer's reading."""
     root = Path(__file__).resolve().parents[2] / "frontend"
     hits = [
         p.relative_to(root).as_posix()

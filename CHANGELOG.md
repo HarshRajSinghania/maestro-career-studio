@@ -41,6 +41,10 @@ None.
   nothing in it, saves a snapshot of the uv database first, and puts back the
   database, sync key, settings and `maestro.env` if anything fails. `--dry-run` shows the plan. See `docs/UPDATING.md`.
 
+### Changed
+
+- The app calls its score the match score (it was labelled ATS score).
+
 ## [0.9.0] — 2026-10-10
 
 This release is about getting Maestro out of its box. AI agents now reach it by

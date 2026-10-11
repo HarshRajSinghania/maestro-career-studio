@@ -21,7 +21,7 @@ Three steps: [install it](#1-what-you-need) → [add your resumes](#3-your-first
 - **Career history** — one organized record of your work, built from your resumes. Each job, project or school in it is an **item**; each line is a **bullet**.
 - **Base resume** — your main resume for one kind of role, such as Data Scientist.
 - **Tailoring** — adjusting a base resume to one job, using only things you actually did.
-- **Match score** — Maestro's comparison of your resume with a saved job description. It is not an employer's score or a prediction of an interview. The app labels it **ATS score**.
+- **Match score** — Maestro's comparison of your resume with a saved job description. It is not an employer's score or a prediction of an interview.
 - **AI service** — OpenAI or Gemini, whichever you choose; you add its key in Settings › AI & models.
 - **Companion** — the Maestro CS browser extension, a side panel in Chrome.
 - **Assistant** — the chat inside the app. **Connected agents** are AI assistants outside it (Claude, Codex, ChatGPT desktop) that use the app over MCP.

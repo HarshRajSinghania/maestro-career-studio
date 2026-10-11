@@ -849,6 +849,7 @@ def test_inbox_rows_use_actor_score_and_readiness_visuals():
     assert "ActorChip" in src and "ScoreBar" in src
     assert "DotMeter" in _MARKS
     assert "ATS score ${score}" not in src and "· ATS score" not in src
+    assert "Match score ${score}" not in src and "· Match score" not in src
     # D5: the status chip is hidden where every row of the lane shares one status.
     assert 'lane === "history" || lane === "needs_you"' in src
 

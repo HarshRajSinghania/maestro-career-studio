@@ -301,7 +301,7 @@ def compare(application_id: UUID, session: Session | None = None) -> dict[str, A
             tailored_row.engine_version, tailored_row.config_version
         ):
             raise ValueError(
-                "These ATS scores came from different versions of the scorer. Score both "
+                "These match scores came from different versions of the scorer. Score both "
                 "again to compare them."
             )
 

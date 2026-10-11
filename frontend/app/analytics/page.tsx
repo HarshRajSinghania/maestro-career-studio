@@ -234,9 +234,9 @@ function AnalyticsContent() {
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>ATS score over time</CardTitle>
+                <CardTitle>Match score over time</CardTitle>
                 <p className="text-muted-foreground text-body-medium">
-                  Weekly average ATS score.
+                  Weekly average match score.
                 </p>
               </CardHeader>
               <CardContent>
@@ -247,7 +247,7 @@ function AnalyticsContent() {
               <CardHeader>
                 <CardTitle>Score gain from tailoring</CardTitle>
                 <p className="text-muted-foreground text-body-medium">
-                  Average ATS score before and after tailoring, by role.
+                  Average match score before and after tailoring, by role.
                 </p>
               </CardHeader>
               <CardContent>
@@ -256,7 +256,7 @@ function AnalyticsContent() {
             </Card>
             <Card className="lg:col-span-2">
               <CardHeader>
-                <CardTitle>ATS scores by resume</CardTitle>
+                <CardTitle>Match scores by resume</CardTitle>
               </CardHeader>
               <CardContent>
                 <FitDistributionChart />

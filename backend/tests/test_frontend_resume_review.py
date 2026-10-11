@@ -363,7 +363,7 @@ def test_studio_copy_first_read():
     assert "This tailored resume was changed somewhere else." in studio
     assert "This draft changed outside the editor." not in studio
     # The glossary's one ATS explanation ("our estimate…"), never an ATS that "rates" it.
-    assert "`Update the ATS score. ${ATS_SCORE_LEAD_ALL_JOBS}`" in studio
+    assert "`Update the match score. ${ATS_SCORE_LEAD_ALL_JOBS}`" in studio
     assert "aria-description={ATS_SCORE_LEAD_ALL_JOBS}" in studio
     assert "rates this resume" not in studio
     body = _read("components/resume-editor/editor-body.tsx")

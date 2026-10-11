@@ -203,13 +203,13 @@
       if (!facts.baseSelected && !facts.baseFromApplication) {
         store.write({ baseSlug: best.slug });
       }
-      say(`${lead}Best match: ${best.display_name || best.slug} (ATS score ${
+      say(`${lead}Best match: ${best.display_name || best.slug} (match score ${
         Math.round(best.score)}).`);
     } else {
       // Scored, and still nothing to rank: an empty library, or rows the
       // ranking could not put a number on. Saying "best match: undefined"
       // would be the panel claiming a judgement it does not have.
-      say(`${lead}Scored, but no base resume got an ATS score.`);
+      say(`${lead}Scored, but no base resume got a match score.`);
     }
     store.render();
   }

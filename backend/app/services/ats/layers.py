@@ -699,7 +699,7 @@ def l4_gate(profile: JdProfile, index: ResumeIndex) -> list[str]:
         warnings.append(
             f"The job asks for {_a(degrees.LEVEL_NAMES[asked])} degree and your resume "
             f"shows {_a(degrees.LEVEL_NAMES[shown])}. Employers usually ask this on the "
-            "application form. Answer honestly. It doesn't change your ATS score."
+            "application form. Answer honestly. It doesn't change your match score."
         )
     return warnings
 

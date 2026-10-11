@@ -76,7 +76,7 @@ _QUERY_SURFACES: list[tuple[str, str]] = [
     ("app/templates/page.tsx", "No templates yet."),
     ("components/chat/chat-page.tsx", "What are we working on?"),
     ("components/career/first-run-import-card.tsx", "Start with the resumes you already have"),
-    ("components/ats-score-panel.tsx", "No ATS scores yet."),
+    ("components/ats-score-panel.tsx", "No match scores yet."),
     ("components/resume-health/health-badges.tsx", 'title="Check this resume\'s health"'),
     ("components/resume-health/health-report-page.tsx", "No health report yet."),
     ("components/setup/getting-started-card.tsx", "Getting started"),

@@ -115,7 +115,7 @@ def test_auto_filled_banner_names_the_job_s_own_words():
 
 def test_the_gap_page_names_the_ats_score_and_every_action():
     page = _read(_GAP_PAGE)
-    assert "· ATS score before tailoring:" in page
+    assert "· Match score before tailoring:" in page
     # Each action is explained once, on its own control (the tooltip and aria-describedby), not in a page paragraph.
     assert "These gaps need your input." not in page
     controls = _read("components/gap-analysis/resolution-controls.tsx")
@@ -127,7 +127,7 @@ def test_the_gap_page_names_the_ats_score_and_every_action():
     for word in ("Add keyword", "Answer", "Attach project", "Skip", "I can't confirm this"):
         assert f'"{word}"' in labels, word
     assert "→" not in page  # the score toast says "to"
-    assert "`ATS score: ${base.composite.toFixed(1)} to ${tailored.composite.toFixed(1)}" in page
+    assert "`Match score: ${base.composite.toFixed(1)} to ${tailored.composite.toFixed(1)}" in page
 
 
 def test_gap_rows_read_whole():
@@ -187,13 +187,13 @@ def test_ats_words_say_what_the_engine_measures():
     assert '"Add it"' not in words
 
 
-# --- ATS score, spelled out as our estimate ---------------------------------------
+# --- Match score, spelled out as our estimate ---------------------------------------
 
 
 def test_the_ats_score_is_our_estimate_everywhere_it_is_explained():
     words = _read("lib/ats-words.ts")
     assert (
-        '"An ATS score (0 to 100) is our estimate of how an applicant tracking system would rate each resume for this job."'
+        '"A match score (0 to 100) uses fixed rules to compare each resume with this job\'s description."'
         in words
     )
     assert "{ATS_SCORE_LEAD}" in _read("components/ats-score-panel.tsx")
@@ -201,7 +201,7 @@ def test_the_ats_score_is_our_estimate_everywhere_it_is_explained():
     assert "{ATS_SCORE_LEAD_ALL_JOBS}" in fit
     assert fit.index("{ATS_SCORE_LEAD_ALL_JOBS}") < fit.index("<BaseSummaryCards />")
     conventions = " ".join((_FRONTEND.parent / "docs/frontend-conventions.md").read_text(encoding="utf-8").split())
-    assert "our estimate of how an applicant tracking system would rate each resume for this job" in conventions
+    assert "uses fixed rules to compare each resume with this job's description" in conventions
 
 
 # --- One request per click, focus never on <body> ---------------------------------
@@ -303,7 +303,7 @@ def test_delete_job_names_the_proposals_it_deletes():
     # application_proposals.job_id is ON DELETE CASCADE.
     model = (Path(knockout.__file__).parents[1] / "models/application_proposal.py").read_text(encoding="utf-8")
     assert 'ForeignKey("jobs.id", ondelete="CASCADE")' in model
-    assert '"This also deletes its application, ATS scores, gap analyses, answers and any Agent inbox proposals for it.",' in _read(_JOB_PAGE)
+    assert '"This also deletes its application, match scores, gap analyses, answers and any Agent inbox proposals for it.",' in _read(_JOB_PAGE)
 
 
 def test_mark_applied_hides_once_the_job_is_applied():
@@ -418,7 +418,7 @@ def test_the_score_tab_name_is_sentence_case():
 
 def test_the_score_tab_says_why_undated_jobs_score_low():
     """First-read pass: "Recent experience 11" with dates like 2021-03 and no word of why.
-    The engine reads "Mon YYYY" only (accepting more is §11: it moves ATS scores)."""
+    The engine reads "Mon YYYY" only (accepting more is §11: it moves match scores)."""
     from app.services.ats import layers
     from tests.node_ts import ts_map
 
@@ -448,3 +448,8 @@ def test_a_skill_with_no_example_never_contradicts_mentioned_in():
     card = _read("components/gap-analysis/gap-card.tsx")
     assert "const undated = undatedEvidence(diagnostic.placement, entries);" in card
     assert "{undated ? <p className=\"text-muted-foreground basis-full text-body-small\">{UNDATED_EVIDENCE_NOTE}</p> : null}" in card
+
+
+def test_the_tracker_names_its_match_score_column():
+    page = _read("app/applications/page.tsx")
+    assert 'header("ats", "Match score",' in page

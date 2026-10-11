@@ -383,7 +383,7 @@ export default function TailorSessionPage({
         const { base, tailored, delta } = result.compare;
         const sign = delta.composite >= 0 ? "+" : "";
         toast.success(
-          `ATS score: ${base.composite.toFixed(1)} to ${tailored.composite.toFixed(1)} (${sign}${delta.composite.toFixed(1)})`,
+          `Match score: ${base.composite.toFixed(1)} to ${tailored.composite.toFixed(1)} (${sign}${delta.composite.toFixed(1)})`,
         );
       } else if (result.compare_error) {
         // compare_error with null compare still means tailoring SUCCEEDED.
@@ -765,7 +765,7 @@ export default function TailorSessionPage({
         <div className="min-w-0 flex-1">
           <h1 className="text-title-large font-medium tracking-tight">Gap analysis</h1>
           <p className="text-muted-foreground text-body-medium">
-            {baseResume.data?.display_name?.trim() || baseResumeLabel(session.data.base_resume)} · ATS score before tailoring:{" "}
+            {baseResume.data?.display_name?.trim() || baseResumeLabel(session.data.base_resume)} · Match score before tailoring:{" "}
             <span className="text-foreground font-medium tabular-nums">
               {gapsJson.base_composite.toFixed(1)}
             </span>

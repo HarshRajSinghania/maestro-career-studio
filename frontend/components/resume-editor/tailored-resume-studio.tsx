@@ -196,9 +196,9 @@ export function TailoredResumeStudio({
       qc.invalidateQueries({ queryKey: ["ats-scores", jobId] });
       // Only the manual Update score confirms. The Save chain reports through the
       // header's status line, not a third toast.
-      if (opts?.announce) toast.success("ATS score updated");
+      if (opts?.announce) toast.success("Match score updated");
     },
-    onError: (err: Error) => toast.error(couldnt("update the ATS score", err)),
+    onError: (err: Error) => toast.error(couldnt("update the match score", err)),
   });
   // One re-score per gesture, shared with the Save chain's: a double click on
   // Update score sent two scoring requests (two "tailored" score rows).
@@ -883,8 +883,8 @@ function StudioEditor({
                         // ATS is spelled out once, here, where it first appears.
                         title={
                           unsaved
-                            ? "Save first to update the ATS score."
-                            : `Update the ATS score. ${ATS_SCORE_LEAD_ALL_JOBS}`
+                            ? "Save first to update the match score."
+                            : `Update the match score. ${ATS_SCORE_LEAD_ALL_JOBS}`
                         }
                         aria-description={ATS_SCORE_LEAD_ALL_JOBS}
                       >

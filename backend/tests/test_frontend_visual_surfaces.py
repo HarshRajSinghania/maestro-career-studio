@@ -203,7 +203,7 @@ def test_tracker_shows_scores_dots_and_a_needs_strip():
     assert 'filter: "needs_you"' in src and 'filter: "interviewing"' in src and 'filter: "draft"' in src
     assert "aria-pressed={on}" in src and "<Check " in src
     # An unscored row is a dash with words, never 0; it sorts last whichever way.
-    assert "No score yet" in src and 'header("ats", "ATS"' in src
+    assert "No score yet" in src and 'header("ats", "Match score"' in src
     assert "valueText={score.toFixed(1)}" in src
     types = _read("lib/types.ts")
     assert "ats_score?: number | null" in types and "best_ats_score?: number | null" in types

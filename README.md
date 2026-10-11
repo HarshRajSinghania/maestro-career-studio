@@ -380,7 +380,7 @@ that read as machine-written — so the leverage is in depth per application.
 - **Tailoring** — adjusting a base resume to one job, using only things you
   actually did.
 - **Match score** — Maestro's comparison of your resume with a saved job
-  description (the app labels it **ATS score**). It is not an employer's score
+  description. It is not an employer's score
   or a prediction of an interview.
 - **AI service** — OpenAI or Gemini, whichever you choose.
 
@@ -704,7 +704,7 @@ as-is, or run **`customize-job-skills`** to make them yours or build new ones
 
 <!-- TODO(P4) proposals.png — the /proposals view: the Captured/Proposed/
      Accepted/Approved/Submitted counters, the daily cap chip, and the queued
-     proposals with their ATS scores. It shows this section's core claim -- the
+     proposals with their match scores. It shows this section's core claim -- the
      lane stops before submitting -- in the app's own words ("What the hunt
      found. Submitting still needs your approval."). Captured but not yet saved
      to a file; drop it at docs/assets/proposals.png and uncomment: -->

@@ -93,7 +93,7 @@ export function BaseSummaryCards() {
           <CardContent>
             <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
               <InlineStat
-                label="Average ATS score"
+                label="Average match score"
                 value={
                   row.avg_base_ats != null
                     ? `${row.avg_base_ats} · ${row.n_scored} ${row.n_scored === 1 ? "job" : "jobs"}`
