@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  PROVIDERS,
   isRemoteEndpoint,
+  keyWarning,
   modelName,
   providerLabel,
   showsModelId,
@@ -59,4 +61,47 @@ test("a model is named by its label, else its id", () => {
   const options = [{ id: "gemini-3.7-flash", label: "Gemini 3.7 Flash" }];
   assert.equal(modelName(options, "gemini-3.7-flash"), "Gemini 3.7 Flash");
   assert.equal(modelName(options, "llama3.2:3b"), "llama3.2:3b");
+});
+
+test("four providers, in the order the screen lists them", () => {
+  assert.deepEqual([...PROVIDERS], ["openai", "anthropic", "gemini", "openrouter"]);
+  assert.equal(providerLabel("anthropic"), "Claude");
+  assert.equal(providerLabel("openrouter"), "OpenRouter");
+});
+
+test("an id is hidden when the name is only the provider plus the id", () => {
+  assert.equal(showsModelId({ id: "sonnet-9", label: "Claude Sonnet-9" }), false);
+  assert.equal(showsModelId({ id: "x-1", label: "Anthropic X-1" }), false);
+  assert.equal(showsModelId({ id: "x-1", label: "OpenRouter X-1" }), false);
+  assert.equal(showsModelId({ id: "x-1", label: "Fancy X-1" }), true);
+});
+
+const KEYS = {
+  api_key_configured: true,
+  gemini_api_key_configured: false,
+  anthropic_api_key_configured: false,
+  openrouter_api_key_configured: true,
+  custom_endpoint: false,
+  model_options: [
+    { id: "gpt-a", provider: "openai" },
+    { id: "gem-a", provider: "gemini" },
+    { id: "cl-a", provider: "anthropic" },
+  ],
+};
+
+test("a role warns when its model's provider has no key saved", () => {
+  assert.equal(keyWarning("Fast model", "gem-a", KEYS), "Fast model uses Gemini, but no Gemini key is saved.");
+  assert.equal(keyWarning("Smart model", "cl-a", KEYS), "Smart model uses Claude, but no Claude key is saved.");
+  assert.equal(keyWarning("Assistant model", "gpt-a", KEYS), undefined);
+  assert.equal(keyWarning("Fast model", "unknown", KEYS), undefined);
+});
+
+test("a custom AI server stands in for the OpenAI key only", () => {
+  const custom = { ...KEYS, api_key_configured: false, custom_endpoint: true };
+  assert.equal(keyWarning("Fast model", "gpt-a", custom), undefined);
+  assert.equal(keyWarning("Fast model", "gem-a", custom), "Fast model uses Gemini, but no Gemini key is saved.");
+  assert.equal(
+    keyWarning("Fast model", "gpt-a", { ...KEYS, api_key_configured: false }),
+    "Fast model uses OpenAI, but no OpenAI key is saved.",
+  );
 });

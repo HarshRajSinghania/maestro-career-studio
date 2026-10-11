@@ -1,4 +1,5 @@
 import { humanizeSlug } from "./humanize-slug";
+import type { Provider } from "./model-catalog";
 
 export type UUID = string;
 
@@ -372,7 +373,7 @@ export interface CapabilityReport {
 export interface DiscoveredModel {
   id: string;
   label: string;
-  provider: "openai" | "gemini";
+  provider: Provider;
   in_catalog: boolean;
 }
 
@@ -395,10 +396,14 @@ export interface OpenAIInfo {
   api_key_configured: boolean;
   // The API never returns key material — only whether a key is configured.
   gemini_api_key_configured: boolean;
+  anthropic_api_key_configured: boolean;
+  openrouter_api_key_configured: boolean;
   /** Where the effective key comes from — one saved in the app ("settings")
    *  beats one from .env ("env"). */
   openai_key_source: "settings" | "env" | "none";
   gemini_key_source: "settings" | "env" | "none";
+  anthropic_key_source: "settings" | "env" | "none";
+  openrouter_key_source: "settings" | "env" | "none";
   model_options: ModelOption[];
   /** The OpenAI-compatible endpoint. A location, not a secret, so it is echoed. */
   base_url: string | null;

@@ -14,7 +14,7 @@ import { focusIfDropped } from "@/hooks/use-focus-return";
 import { useSingleFlight } from "@/hooks/use-single-flight";
 import { apiFetch } from "@/lib/api";
 import { couldnt } from "@/lib/error-text";
-import { providerLabel, showsModelId, sourceLabel } from "@/lib/model-catalog";
+import { PROVIDERS, providerLabel, showsModelId, sourceLabel, type Provider } from "@/lib/model-catalog";
 import type {
   DiscoveredModel,
   ModelOption,
@@ -22,7 +22,7 @@ import type {
   OpenAIInfo,
 } from "@/lib/types";
 
-type SyncProvider = "openai" | "gemini";
+type SyncProvider = Provider;
 
 /**
  * The models the role pickers offer, as its own card. It used to be the fourth block of the Models
@@ -159,7 +159,7 @@ function ModelCatalogPanel({ info }: { info: OpenAIInfo }) {
   return (
     <div className="grid gap-4">
       <SettingCardAction>
-        {(["openai", "gemini"] as const).map((provider) => (
+        {PROVIDERS.map((provider) => (
           <Button
             key={provider}
             size="sm"

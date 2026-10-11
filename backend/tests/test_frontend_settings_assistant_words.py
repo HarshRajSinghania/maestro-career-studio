@@ -380,8 +380,8 @@ def test_a_stream_error_never_shows_raw_server_text():
 def test_the_endpoint_hints_say_which_choice_fixes_what():
     endpoint = _flat(_read("components/settings/llm-endpoint.tsx"))
     # M19: with no address, Gemini models run on Gemini too.
-    assert "Leave empty to use OpenAI and Gemini." in endpoint
-    assert '"Not set. Models run on OpenAI and Gemini."' in endpoint
+    assert "Leave empty to use the providers above." in endpoint
+    assert '"Not set. Models run on the providers whose keys you saved."' in endpoint
     assert "Structured replies" not in endpoint
     assert "<Label htmlFor={jsonModeId}>Strict reply format</Label>" in endpoint
     assert "Leave on Auto. If your server shows errors, choose Off." in endpoint
@@ -398,13 +398,14 @@ def test_a_model_test_names_the_model_and_the_real_cause():
     assert "`Couldn't reach ${provider}, so ${name} wasn't tested. Check your ${provider} API key, then try again.`" in unreachable
     assert "`Couldn't reach your AI server, so ${name} wasn't tested. Check the server address, then try again.`" in unreachable
     # A custom local server needs no key.
-    assert 'description="Lets the app use OpenAI or Gemini. You need one unless you use a custom AI server."' in models
+    assert 'description="Lets the app use OpenAI, Claude, Gemini or OpenRouter. You need one unless you use a custom AI server."' in models
     assert "You need at least one." not in models
 
 
 def test_the_key_fields_say_where_a_key_comes_from():
     models = _flat(_read("components/settings/models-section.tsx"))
-    for host, prefix in (("platform.openai.com", "sk-"), ("aistudio.google.com", "AIza")):
+    for host, prefix in (("platform.openai.com", "sk-"), ("console.anthropic.com", "sk-ant-"),
+                         ("aistudio.google.com", "AIza"), ("openrouter.ai", "sk-or-")):
         assert f">{host}</NewTabLink>. It starts with {prefix}." in models, host
 
 
@@ -502,7 +503,8 @@ def test_a_missing_or_refused_key_says_what_to_do():
     # frontend's MISSING_KEY pattern, so both sides move together.
     missing = re.search(r"const MISSING_KEY = /(.+)/i;", text)
     assert missing, "MISSING_KEY moved"
-    for message in (llm.NO_KEY_MESSAGE, llm.NO_GEMINI_KEY_MESSAGE):
+    for message in (llm.NO_KEY_MESSAGE, llm.NO_GEMINI_KEY_MESSAGE, llm.NO_ANTHROPIC_KEY_MESSAGE,
+                    llm.NO_OPENROUTER_KEY_MESSAGE):
         assert re.search(missing.group(1), message, re.I), message
 
 
@@ -615,8 +617,8 @@ def test_a_key_in_the_wrong_shape_is_refused_at_save():
 def test_a_wrong_key_is_never_sent_and_its_field_says_why():
     models = _read("components/settings/models-section.tsx")
     save = _between(models, "  const onSave = (customServer: boolean) => {", "\n  };")
-    assert save.index("if (openaiWrong || geminiWrong) {") < save.index("saveKeysOnce(")
-    assert "return;" in save[save.index("if (openaiWrong || geminiWrong) {"):save.index("saveKeysOnce(")]
+    assert save.index("if (first) {") < save.index("saveKeysOnce(")
+    assert "return;" in save[save.index("if (first) {"):save.index("saveKeysOnce(")]
     assert "toast.success(keysSavedText(patch));" in models
     assert '"API keys saved"' not in models
     # The refusal is the field's description, so focus on the field reads it.
@@ -629,10 +631,18 @@ def test_a_saved_key_is_checked_on_first_use():
     assert ts_map("./lib/api-key-format.ts", "keysSavedText", [
         {"openai_api_key": "sk-a"}, {"gemini_api_key": None},
         {"openai_api_key": "sk-a", "gemini_api_key": "AIza"},
+        {"anthropic_api_key": "sk-ant-a"}, {"openrouter_api_key": "sk-or-a", "anthropic_api_key": None},
     ]) == [
         "API key saved. We'll check it on first use.", "API key removed.",
         "API keys saved. We'll check them on first use.",
+        "API key saved. We'll check it on first use.", "API key saved. We'll check it on first use.",
     ]
+
+
+def test_openrouter_privacy_words_are_exact_and_the_endpoint_hint_names_no_provider():
+    models = _flat(_read("components/settings/models-section.tsx"))
+    assert ("OpenRouter sends requests only to model providers that keep no data. "
+            "OpenRouter itself may keep what you send.") in models
 
 
 def test_no_screen_says_an_ats_rates_the_resume():
@@ -663,10 +673,11 @@ def test_the_web_app_recognises_every_key_sentence_the_server_writes():
     from app.services import llm
 
     missing, refused = _exported_regex("MISSING_KEY"), _exported_regex("REFUSED_KEY")
-    for text in (llm.NO_KEY_MESSAGE, llm.NO_GEMINI_KEY_MESSAGE, "GEMINI_API_KEY is required for Gemini models"):
+    for text in (llm.NO_KEY_MESSAGE, llm.NO_GEMINI_KEY_MESSAGE, llm.NO_ANTHROPIC_KEY_MESSAGE,
+                 llm.NO_OPENROUTER_KEY_MESSAGE, "GEMINI_API_KEY is required for Gemini models"):
         assert missing.search(text), text
     sentences = [str(llm._no_answer(llm._KEY_REFUSED, "detail", provider=who))
-                 for who in ("OpenAI", "Gemini", "Your AI server")]
+                 for who in ("OpenAI", "Gemini", "Claude", "OpenRouter", "Your AI server")]
     sentences.append("The AI model didn't answer (your key was refused). Try again, or check your key in "
                      "Settings › AI & models.")
     sentences += ["Error code: 401 - {'error': {'code': 'invalid_api_key'}}",

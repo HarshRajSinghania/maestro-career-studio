@@ -25,7 +25,14 @@ import {
 import { keyFormatProblem, keysSavedText } from "@/lib/api-key-format";
 import { apiFetch } from "@/lib/api";
 import { couldnt, errorDetail } from "@/lib/error-text";
-import { modelName, providerLabel, showsModelId } from "@/lib/model-catalog";
+import {
+  PROVIDERS,
+  keyWarning,
+  modelName,
+  providerLabel,
+  showsModelId,
+  type Provider,
+} from "@/lib/model-catalog";
 import type { CapabilityReport, OpenAIInfo } from "@/lib/types";
 
 export type ModelSettingsPatch = {
@@ -33,7 +40,9 @@ export type ModelSettingsPatch = {
   smart_model?: string;
   chat_model?: string;
   openai_api_key?: string | null;
+  anthropic_api_key?: string | null;
   gemini_api_key?: string | null;
+  openrouter_api_key?: string | null;
   base_url?: string | null;
   json_mode?: string;
 };
@@ -231,6 +240,7 @@ function RoleModel({
 }) {
   const hintId = useId();
   const model = info[role.key];
+  const warning = keyWarning(role.label, model, info);
   return (
     <div className="grid content-start gap-1.5">
       <ModelField
@@ -250,6 +260,11 @@ function RoleModel({
         busy={probing !== null}
         onProbe={() => onProbe(model)}
       />
+      {warning ? (
+        <p className="text-warning text-body-small" role="note">
+          {warning}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -372,45 +387,108 @@ function ModelProfileNote() {
   );
 }
 
+/** One row per provider: its label, where to get a key, and which payload fields say it is set. */
+const KEY_FIELDS: Record<
+  Provider,
+  {
+    label: string;
+    hint: ReactNode;
+    configured: "api_key_configured" | "anthropic_api_key_configured" | "gemini_api_key_configured" | "openrouter_api_key_configured";
+    source: "openai_key_source" | "anthropic_key_source" | "gemini_key_source" | "openrouter_key_source";
+  }
+> = {
+  openai: {
+    label: "OpenAI API key",
+    hint: (
+      <>
+        Get one at <NewTabLink href="https://platform.openai.com/api-keys">platform.openai.com</NewTabLink>. It starts with sk-.
+      </>
+    ),
+    configured: "api_key_configured",
+    source: "openai_key_source",
+  },
+  anthropic: {
+    label: "Claude API key",
+    hint: (
+      <>
+        Get one at <NewTabLink href="https://console.anthropic.com/settings/keys">console.anthropic.com</NewTabLink>. It starts with sk-ant-.
+      </>
+    ),
+    configured: "anthropic_api_key_configured",
+    source: "anthropic_key_source",
+  },
+  gemini: {
+    label: "Gemini API key",
+    hint: (
+      <>
+        Get one at <NewTabLink href="https://aistudio.google.com/apikey">aistudio.google.com</NewTabLink>. It starts with AIza.
+      </>
+    ),
+    configured: "gemini_api_key_configured",
+    source: "gemini_key_source",
+  },
+  openrouter: {
+    label: "OpenRouter API key",
+    hint: (
+      <>
+        Get one at <NewTabLink href="https://openrouter.ai/keys">openrouter.ai</NewTabLink>. It starts with sk-or-.
+        OpenRouter sends requests only to model providers that keep no data. OpenRouter itself may keep what you send.
+      </>
+    ),
+    configured: "openrouter_api_key_configured",
+    source: "openrouter_key_source",
+  },
+};
+
+const NO_KEYS: Record<Provider, string | null> = { openai: null, anthropic: null, gemini: null, openrouter: null };
+
 export function ApiKeysSection() {
   const info = useOpenAIInfo();
   // The API never returns key material, so these inputs hold only what the
   // user types this session. null = untouched, which means the PUT omits the
   // field entirely and the stored key survives.
-  const [openaiKey, setOpenaiKey] = useState<string | null>(null);
-  const [geminiKey, setGeminiKey] = useState<string | null>(null);
+  const [keys, setKeys] = useState<Record<Provider, string | null>>(NO_KEYS);
   // A typed key survives a tab switch, but a navigation dropped it silently.
-  useLeaveGuard(openaiKey !== null || geminiKey !== null);
+  useLeaveGuard(PROVIDERS.some((p) => keys[p] !== null));
 
   // A key in the wrong shape, refused at Save before anything is sent (lib/api-key-format.ts).
-  const [openaiProblem, setOpenaiProblem] = useState<string | undefined>();
-  const [geminiProblem, setGeminiProblem] = useState<string | undefined>();
-  const openaiRef = useRef<HTMLInputElement>(null);
-  const geminiRef = useRef<HTMLInputElement>(null);
+  const [problems, setProblems] = useState<Record<Provider, string | undefined>>({
+    openai: undefined,
+    anthropic: undefined,
+    gemini: undefined,
+    openrouter: undefined,
+  });
+  const refs = {
+    openai: useRef<HTMLInputElement>(null),
+    anthropic: useRef<HTMLInputElement>(null),
+    gemini: useRef<HTMLInputElement>(null),
+    openrouter: useRef<HTMLInputElement>(null),
+  };
 
   const saveKeys = useSaveModelSettings((_info, patch) => {
-    setOpenaiKey(null);
-    setGeminiKey(null);
+    setKeys(NO_KEYS);
     // Saving calls no provider: the key is checked the first time it is used.
     toast.success(keysSavedText(patch));
   });
   const saveKeysOnce = useSingleFlight(saveKeys.mutate);
 
   const onSave = (customServer: boolean) => {
-    const openaiWrong = openaiKey !== null ? keyFormatProblem("openai", openaiKey, customServer) : undefined;
-    const geminiWrong = geminiKey !== null ? keyFormatProblem("gemini", geminiKey, customServer) : undefined;
-    setOpenaiProblem(openaiWrong);
-    setGeminiProblem(geminiWrong);
-    if (openaiWrong || geminiWrong) {
-      (openaiWrong ? openaiRef : geminiRef).current?.focus();
+    const found = Object.fromEntries(
+      PROVIDERS.map((p) => [p, keys[p] !== null ? keyFormatProblem(p, keys[p], customServer) : undefined]),
+    ) as Record<Provider, string | undefined>;
+    setProblems(found);
+    const first = PROVIDERS.find((p) => found[p]);
+    if (first) {
+      refs[first].current?.focus();
       return;
     }
     // Send only the key the user actually edited. An untouched field stays absent (preserved); a
     // field cleared to empty sends null (removes it). Spaces from a copy are not part of a key.
-    saveKeysOnce({
-      ...(openaiKey !== null ? { openai_api_key: openaiKey.trim() || null } : {}),
-      ...(geminiKey !== null ? { gemini_api_key: geminiKey.trim() || null } : {}),
-    });
+    saveKeysOnce(
+      Object.fromEntries(
+        PROVIDERS.filter((p) => keys[p] !== null).map((p) => [`${p}_api_key`, keys[p]?.trim() || null]),
+      ),
+    );
   };
 
   return (
@@ -418,64 +496,41 @@ export function ApiKeysSection() {
       id="api-keys"
       title="API keys"
       // A custom AI server on this computer needs no key (llm._get_client).
-      description="Lets the app use OpenAI or Gemini. You need one unless you use a custom AI server."
+      description="Lets the app use OpenAI, Claude, Gemini or OpenRouter. You need one unless you use a custom AI server."
       errorTitle="Couldn't load your API keys."
       skeleton="h-32 w-full"
       query={info}
     >
       {(data) => (
         <div className="grid gap-6">
-          {/* items-end: only a configured key has the hint line, so the two
+          {/* items-end: only a configured key has the hint line, so the
               inputs line up at the bottom rather than the captions at the top.
               Two columns only when the card body has room (32rem): at 768 the
               viewport's `sm:` gave each key 208px, too narrow for its status. */}
           <div className="grid items-end gap-4 @lg/setting:grid-cols-2">
-            <KeyField
-              label="OpenAI API key"
-              hintUnset={
-                <>
-                  Get one at{" "}
-                  <NewTabLink href="https://platform.openai.com/api-keys">platform.openai.com</NewTabLink>. It starts with sk-.
-                </>
-              }
-              configured={data.api_key_configured}
-              source={data.openai_key_source}
-              value={openaiKey}
-              saving={saveKeys.isPending}
-              problem={openaiProblem}
-              inputRef={openaiRef}
-              onChange={(next) => {
-                setOpenaiKey(next);
-                setOpenaiProblem(undefined);
-              }}
-            />
-            <KeyField
-              label="Gemini API key"
-              hintUnset={
-                <>
-                  Get one at{" "}
-                  <NewTabLink href="https://aistudio.google.com/apikey">aistudio.google.com</NewTabLink>. It starts with AIza.
-                </>
-              }
-              configured={data.gemini_api_key_configured}
-              source={data.gemini_key_source}
-              value={geminiKey}
-              saving={saveKeys.isPending}
-              problem={geminiProblem}
-              inputRef={geminiRef}
-              onChange={(next) => {
-                setGeminiKey(next);
-                setGeminiProblem(undefined);
-              }}
-            />
+            {PROVIDERS.map((p) => (
+              <KeyField
+                key={p}
+                label={KEY_FIELDS[p].label}
+                hintUnset={KEY_FIELDS[p].hint}
+                configured={data[KEY_FIELDS[p].configured]}
+                source={data[KEY_FIELDS[p].source]}
+                value={keys[p]}
+                saving={saveKeys.isPending}
+                problem={problems[p]}
+                inputRef={refs[p]}
+                onChange={(next) => {
+                  setKeys((k) => ({ ...k, [p]: next }));
+                  setProblems((q) => ({ ...q, [p]: undefined }));
+                }}
+              />
+            ))}
           </div>
           <div className={ACTION_ROW}>
             <Button
               size="sm"
               focusableWhenDisabled
-              disabled={
-                saveKeys.isPending || (openaiKey === null && geminiKey === null)
-              }
+              disabled={saveKeys.isPending || PROVIDERS.every((p) => keys[p] === null)}
               className="data-disabled:pointer-events-none data-disabled:opacity-50"
               onClick={() => onSave(data.custom_endpoint)}
             >
@@ -665,18 +720,11 @@ function ModelSelect({
   const selected = options.find((option) => option.id === value);
   const stale = Boolean(value) && selected === undefined;
   const id = useId();
-  const groups = [
-    {
-      key: "openai",
-      title: "OpenAI",
-      options: options.filter((option) => option.provider === "openai"),
-    },
-    {
-      key: "gemini",
-      title: "Gemini",
-      options: options.filter((option) => option.provider === "gemini"),
-    },
-  ].filter((group) => group.options.length > 0);
+  const groups = PROVIDERS.map((key) => ({
+    key,
+    title: providerLabel(key),
+    options: options.filter((option) => option.provider === key),
+  })).filter((group) => group.options.length > 0);
 
   return (
     <div className="grid gap-1.5">

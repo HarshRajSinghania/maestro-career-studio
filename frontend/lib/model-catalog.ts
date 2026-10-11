@@ -7,8 +7,14 @@
 // A Map, not an object: `{...}[provider]` answered "constructor" with a function.
 const PROVIDER_LABELS = new Map([
   ["openai", "OpenAI"],
+  ["anthropic", "Claude"],
   ["gemini", "Gemini"],
+  ["openrouter", "OpenRouter"],
 ]);
+
+/** Every provider the app can call, in the order the screen lists them. */
+export const PROVIDERS = ["openai", "anthropic", "gemini", "openrouter"] as const;
+export type Provider = (typeof PROVIDERS)[number];
 
 /** `open_router` → "Open Router": an unknown key still reads as a word. */
 function titleCase(key: string): string {
@@ -35,7 +41,7 @@ function comparable(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-const PROVIDER_WORDS = new Set(["openai", "gemini", "google"]);
+const PROVIDER_WORDS = new Set(["openai", "gemini", "google", "anthropic", "claude", "openrouter"]);
 
 /** The id is worth showing only when it says something the name does not: not when it is the name
  *  (a found OpenAI model is named by its id), nor the name without its provider ("OpenAI GPT-5.6 Luna",
@@ -70,4 +76,33 @@ export function isRemoteEndpoint(raw: string): boolean {
   } catch {
     return false; // not a parseable URL yet: the backend rejects it on save
   }
+}
+
+/** The slice of the settings payload `keyWarning` reads (lib/types.ts OpenAIInfo). */
+export interface KeyState {
+  api_key_configured: boolean;
+  gemini_api_key_configured: boolean;
+  anthropic_api_key_configured: boolean;
+  openrouter_api_key_configured: boolean;
+  custom_endpoint: boolean;
+  model_options: { id: string; provider: string }[];
+}
+
+const CONFIGURED: Record<Provider, keyof KeyState> = {
+  openai: "api_key_configured",
+  anthropic: "anthropic_api_key_configured",
+  gemini: "gemini_api_key_configured",
+  openrouter: "openrouter_api_key_configured",
+};
+
+/** Set when the role's model runs on a provider with no saved key. A custom AI server takes the
+ *  OpenAI key's place, so it silences the OpenAI warning only. A model the list lacks says nothing. */
+export function keyWarning(roleLabel: string, model: string, state: KeyState): string | undefined {
+  const provider = state.model_options.find((o) => o.id === model)?.provider;
+  if (!provider || !(PROVIDERS as readonly string[]).includes(provider)) return undefined;
+  const known = provider as Provider;
+  if (state[CONFIGURED[known]] === true) return undefined;
+  if (known === "openai" && state.custom_endpoint) return undefined;
+  const name = providerLabel(known);
+  return `${roleLabel} uses ${name}, but no ${name} key is saved.`;
 }
