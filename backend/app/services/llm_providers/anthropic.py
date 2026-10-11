@@ -30,12 +30,14 @@ from app.services.llm_providers.errors import (
     _status_reason,
 )
 from app.services.llm_providers.types import (
+    Finish,
     ImagePart,
     Message,
     ProviderMeta,
     ReasoningPart,
     Request,
     Response,
+    TextDelta,
     TextPart,
     ToolCallPart,
     ToolResultPart,
@@ -171,10 +173,35 @@ def _strip_reasoning(req: Request) -> Request:
     ])
 
 
+def _signature_retry(exc: Exception, req: Request) -> Request | None:
+    """The request to re-send after a 400 about a stale thinking signature, else None.
+
+    Planning decision 5: the checked prefix changed (system prompt or tools). Only worth a retry
+    when `_strip_reasoning` actually removes a part: otherwise the re-send is identical and
+    `reasoning_dropped` would be a lie (a later task rewrites persisted history on it)."""
+    text = str(exc).lower()
+    if "signature" not in text and "thinking" not in text:
+        return None
+    if not any(is_anthropic_thinking_part(p) for m in req.messages for p in m.parts):
+        return None
+    return _strip_reasoning(req)
+
+
 @contextmanager
 def _sdk_errors() -> Iterator[None]:
-    """The ONE place an anthropic SDK error becomes a user sentence (calls and model listing)."""
+    """The ONE place an anthropic SDK error becomes a user sentence (calls, streams, model listing).
+    Raw httpx/httpx2 transport errors can escape the SDK mid-stream, so they map here too."""
     import anthropic
+    import httpx
+
+    transport: tuple[type[Exception], ...] = (httpx.HTTPError,)
+    timeouts: tuple[type[Exception], ...] = (httpx.TimeoutException,)
+    try:  # anthropic 1.x runs on httpx2
+        import httpx2
+        transport += (httpx2.HTTPError,)
+        timeouts += (httpx2.TimeoutException,)
+    except ImportError:
+        pass
 
     try:
         yield
@@ -185,6 +212,9 @@ def _sdk_errors() -> Iterator[None]:
         raise _no_answer(_TIMED_OUT, f"Anthropic API request timed out: {exc}", provider="Claude") from exc
     except anthropic.APIConnectionError as exc:
         raise _no_answer("no connection", f"Anthropic API connection failed: {exc}", provider="Claude") from exc
+    except transport as exc:
+        reason = _TIMED_OUT if isinstance(exc, timeouts) else "no connection"
+        raise _no_answer(reason, f"Anthropic API connection failed: {exc}", provider="Claude") from exc
 
 
 class AnthropicProvider:
@@ -213,11 +243,10 @@ class AnthropicProvider:
             try:
                 return once(req), False
             except anthropic.BadRequestError as exc:
-                # Planning decision 5: the checked prefix changed (system prompt or tools).
-                text = str(exc).lower()
-                if "signature" in text or "thinking" in text:
-                    return once(_strip_reasoning(req)), True
-                raise
+                retry = _signature_retry(exc, req)
+                if retry is None:
+                    raise
+                return once(retry), True
 
     def generate(self, req: Request) -> Response:
         msg, dropped = self._call(req)
@@ -225,8 +254,34 @@ class AnthropicProvider:
         return Response(Message("assistant", parts_from_message(msg)), _usage(msg),
                         msg.stop_reason or "end_turn", msg.model, reasoning_dropped=dropped)
 
-    def stream(self, req: Request) -> Iterator[Any]:  # Task 9
-        raise NotImplementedError
+    def stream(self, req: Request) -> Iterator[Any]:
+        """TextDeltas, then one Finish carrying the whole Message (planning decision 1).
+        A signature 400 arrives when the stream opens, before any delta, so the retry cannot
+        duplicate text; once a delta has gone out a 400 is surfaced, never retried."""
+        import anthropic
+
+        with _sdk_errors():
+            attempt, dropped = req, False
+            while True:
+                sent = False
+                try:
+                    # The with-block closes the SDK stream on error and on early generator close.
+                    with self._client(attempt).beta.messages.stream(
+                            **build_kwargs(attempt, stream=True)) as s:
+                        for event in s:
+                            if event.type == "text":
+                                sent = True
+                                yield TextDelta(event.text)
+                        msg = s.get_final_message()
+                    break
+                except anthropic.BadRequestError as exc:
+                    retry = None if (sent or dropped) else _signature_retry(exc, attempt)
+                    if retry is None:
+                        raise
+                    attempt, dropped = retry, True
+            raise_for_refusal(msg)
+            yield Finish(Message("assistant", parts_from_message(msg)), _usage(msg),
+                         msg.stop_reason or "end_turn", msg.model, reasoning_dropped=dropped)
 
     def list_models(self) -> list[dict[str, str]]:
         from app.services import llm

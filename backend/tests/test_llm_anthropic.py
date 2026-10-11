@@ -278,3 +278,175 @@ def test_list_models_rows_are_sorted_dicts(monkeypatch):
     assert ap.AnthropicProvider().list_models() == [
         {"id": "claude-a", "label": "claude-a", "provider": "anthropic"},
         {"id": "claude-b", "label": "B", "provider": "anthropic"}]
+
+
+# --- stream (Task 9) ------------------------------------------------------------------------
+
+from app.services.llm_providers.types import Finish, TextDelta  # noqa: E402
+
+
+class _EventStream(_Stream):
+    """Fake SDK stream: iterating yields events (optionally raising part-way), exit is recorded."""
+
+    def __init__(self, final, events=(), boom=None):
+        super().__init__(final)
+        self.events, self.boom, self.closed = list(events), boom, False
+
+    def __iter__(self):
+        yield from self.events
+        if self.boom is not None:
+            raise self.boom
+
+    def __exit__(self, *a):
+        self.closed = True
+        return False
+
+
+def _text(t):
+    return SimpleNamespace(type="text", text=t)
+
+
+def _stream_client(*items, seen):
+    """items: _EventStream, or an Exception raised when stream() is called."""
+    queue = list(items)
+
+    def stream(**kw):
+        seen.append(kw)
+        item = queue.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(stream=stream)))
+    client.with_options = lambda **kw: client
+    return client
+
+
+def _use(monkeypatch, client):
+    monkeypatch.setattr(llm, "_get_anthropic_client", lambda: client)
+
+
+_HI = Request(model=REF, messages=[Message("user", [TextPart("hi")])])
+
+
+def _with_thinking_history():
+    thinking = ReasoningPart("", ProviderMeta("anthropic", "m", {"type": "thinking", "signature": "s"}))
+    return Request(model=REF, messages=[Message("user", [TextPart("a")]),
+                                        Message("assistant", [thinking, TextPart("b")]),
+                                        Message("user", [TextPart("c")])])
+
+
+def test_stream_yields_deltas_in_order_then_one_finish_with_ordered_parts(monkeypatch):
+    final = _final(content=[_block(type="thinking", thinking="hm", signature="s"),
+                            _block(type="text", text="Hello world"),
+                            _block(type="tool_use", id="t1", name="f", input={"a": 1})],
+                   stop_reason="tool_use")
+    s = _EventStream(final, [_text("Hello "), SimpleNamespace(type="thinking", thinking="x"), _text("world")])
+    seen = []
+    _use(monkeypatch, _stream_client(s, seen=seen))
+    events = list(ap.AnthropicProvider().stream(_HI))
+    assert [e.text for e in events[:-1]] == ["Hello ", "world"]
+    assert all(isinstance(e, TextDelta) for e in events[:-1])
+    fin = events[-1]
+    assert isinstance(fin, Finish) and len(events) == 3
+    assert [type(p).__name__ for p in fin.message.parts] == ["ReasoningPart", "TextPart", "ToolCallPart"]
+    assert (fin.stop_reason, fin.model, fin.reasoning_dropped) == ("tool_use", "claude-opus-5-5", False)
+    assert fin.usage.input == 3 and s.closed
+    assert seen[0]["max_tokens"] == ap.STREAM_MAX_TOKENS
+
+
+def test_stream_refusal_raises_after_the_deltas(monkeypatch):
+    final = _final(stop_reason="refusal", stop_details=SimpleNamespace(category="x"))
+    _use(monkeypatch, _stream_client(_EventStream(final, [_text("par")]), seen=[]))
+    got = []
+    with pytest.raises(LLMProviderError, match="Claude declined"):
+        for e in ap.AnthropicProvider().stream(_HI):
+            got.append(e)
+    assert [e.text for e in got] == ["par"]
+
+
+def test_stream_signature_400_at_open_retries_without_thinking_and_never_duplicates_text(monkeypatch):
+    import anthropic
+    seen = []
+    err = _status_error(anthropic.BadRequestError, 400, "Invalid `signature` in `thinking` block")
+    ok = _EventStream(_final(), [_text("ok")])
+    _use(monkeypatch, _stream_client(err, ok, seen=seen))
+    events = list(ap.AnthropicProvider().stream(_with_thinking_history()))
+    assert [e.text for e in events if isinstance(e, TextDelta)] == ["ok"]
+    assert events[-1].reasoning_dropped is True
+    assert any(b["type"] == "thinking" for b in seen[0]["messages"][1]["content"])
+    assert all(b["type"] != "thinking" for b in seen[1]["messages"][1]["content"])
+    assert len(seen) == 2
+
+
+def test_stream_400_after_a_delta_is_not_retried(monkeypatch):
+    import anthropic
+    err = _status_error(anthropic.BadRequestError, 400, "Invalid `signature` in `thinking` block")
+    bad = _EventStream(_final(), [_text("partial")], boom=err)
+    seen = []
+    _use(monkeypatch, _stream_client(bad, seen=seen))
+    got = []
+    with pytest.raises(LLMProviderError):
+        for e in ap.AnthropicProvider().stream(_with_thinking_history()):
+            got.append(e)
+    assert [e.text for e in got] == ["partial"] and len(seen) == 1 and bad.closed
+
+
+@pytest.mark.parametrize("use_stream", [False, True])
+def test_signature_400_without_reasoning_to_strip_is_not_retried(monkeypatch, use_stream):
+    import anthropic
+    seen = []
+    err = _status_error(anthropic.BadRequestError, 400, "thinking is not supported for this model")
+    if use_stream:
+        _use(monkeypatch, _stream_client(err, _EventStream(_final()), seen=seen))
+        call = lambda: list(ap.AnthropicProvider().stream(_HI))  # noqa: E731
+    else:
+        _use(monkeypatch, _client_returning(err, _final(), seen=seen))
+        call = lambda: ap.AnthropicProvider().generate(_HI)  # noqa: E731
+    with pytest.raises(LLMProviderError):
+        call()
+    assert len(seen) == 1
+
+
+def test_stream_unrelated_400_and_statuses_map_to_user_sentences(monkeypatch):
+    import anthropic
+    err = _status_error(anthropic.AuthenticationError, 401, "bad key")
+    _use(monkeypatch, _stream_client(err, seen=[]))
+    with pytest.raises(LLMProviderError, match="Claude refused your API key"):
+        list(ap.AnthropicProvider().stream(_HI))
+
+
+def _transport_errors():
+    import anthropic
+    import httpx
+    import httpx2
+    req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return [
+        anthropic.APIConnectionError(request=req),
+        anthropic.APITimeoutError(request=req),
+        httpx.ReadError("reset"),
+        httpx.ReadTimeout("slow"),
+        httpx2.ReadError("reset"),
+        httpx2.ReadTimeout("slow"),
+    ]
+
+
+@pytest.mark.parametrize("idx", range(6))
+def test_mid_stream_transport_errors_become_llm_provider_errors_and_close_the_stream(monkeypatch, idx):
+    boom = _transport_errors()[idx]
+    s = _EventStream(_final(), [_text("a")], boom=boom)
+    _use(monkeypatch, _stream_client(s, seen=[]))
+    got = []
+    with pytest.raises(LLMProviderError):
+        for e in ap.AnthropicProvider().stream(_HI):
+            got.append(e)
+    assert [e.text for e in got] == ["a"] and s.closed
+
+
+def test_early_stop_closes_the_sdk_stream(monkeypatch):
+    s = _EventStream(_final(), [_text("a"), _text("b")])
+    _use(monkeypatch, _stream_client(s, seen=[]))
+    gen = ap.AnthropicProvider().stream(_HI)
+    assert next(gen).text == "a"
+    gen.close()
+    assert s.closed
