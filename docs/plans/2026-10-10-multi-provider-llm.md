@@ -104,13 +104,43 @@ plan says the pinned behavior changes, and say so in the commit.
    changes only named keys; `set_models` stops touching keys and returns `(fast, smart)`. The
    router's "re-supply the stored key" workaround is deleted.
 
+## Adapted to main at v0.9.0 (merge 4cbade4c, 2026-10-11)
+
+The plan was written on local main `42839099`; this branch now carries `origin/main` at
+`717d40ca` (v0.9.0 release prep: the `maestro` uv install in `backend/maestro_cs/`, wheel
+packaging, README split into `docs/USING_MAESTRO.md` + `docs/SETUP_REFERENCE.md`, Typst
+fallback, template work). None of the plan's core code files changed (`llm.py`,
+`chat_agent.py`, `model_settings.py`, `routers/settings.py`, `routers/chat.py`,
+`setup_status.py`, `llm_capabilities.py`, `models/chat.py`; alembic head still
+`559244b575bc`). What changed for the plan:
+- **SYSTEM.md is at its cap: 1000/1000**, with size warnings on §2 and §12. Task 15 must be
+  net-zero or negative in the orientation tier: extract reference detail to
+  `docs/entities/others.md` first, never move the cap.
+- **The uv install lists provider env names in four places**, and
+  `tests/maestro_cs/test_home.py:238` walks `Settings.model_fields` to check every
+  secret-bearing field is in `maestro_cs/home.py`'s `_WEB_STRIPPED`. Task 4 adds the new keys
+  there (see its Step 7). The importer (`maestro_cs/importer.py`) carries every key not in
+  `_NOT_CARRIED`, so it needs no change.
+- **`backend/pyproject.toml` is now the published wheel** (`maestro-career-studio` 0.9.0 on
+  PyPI): a dependency added there ships to every uv install. Task 5 adds the wheel checks.
+- **Provider docs moved** out of README (Task 15 has the new locations).
+- **Native/uv installs inherit the user's shell environment** (`home.backend_env` blocks only
+  `_STRIPPED`). Developers often export `ANTHROPIC_API_KEY` for Claude Code, and the env
+  fallback would pick it up. This plan keeps today's rule for every key (env is a fallback;
+  Settings shows the source as "env"), and the startup log names each key's source. The
+  explicit `base_url` in `_get_anthropic_client` matters more now, since a shell
+  `ANTHROPIC_BASE_URL` would otherwise reach the backend.
+- `seeding.py` changed (migrations dir, template order), but the KB-seed gate Task 4 replaces
+  is unchanged; cite it by content (`if not llm.get_openai_key() and not llm.get_gemini_key():`)
+  rather than by line.
+
 ## Ground rules for every task
 
 - Work in this worktree; never the main checkout, never the live compose stack
   (fixed project name: any checkout's `docker compose down` hits the live app).
-- Read `SYSTEM.md` first. Orientation tier is 973/1000 lines (`scripts/check_system_md.py`):
-  every added line is paid for by tightening the section you touch, or by moving reference
-  detail into `docs/entities/others.md`.
+- Read `SYSTEM.md` first. Orientation tier is 1000/1000 lines (`scripts/check_system_md.py`),
+  with size warnings on §2 and §12: every added line is paid for by tightening the section you
+  touch, or by moving reference detail into `docs/entities/others.md`. Never move the cap.
 - Python: anaconda interpreter, run from `backend/`. Full suite (always xdist):
   `cd backend && MAESTRO_SKIP_SLOW=1 python -m pytest tests/ mcp_server/tests/ -q -n auto --dist loadfile -p no:cacheprovider`.
   Single file: `cd backend && python -m pytest tests/test_x.py -q -p no:cacheprovider`.
@@ -982,8 +1012,9 @@ def any_model_key_configured() -> bool:
 
 - `setup_status.py:179-182`: `key_configured = llm.any_model_key_configured()`. Test: a custom
   endpoint alone marks the step done; a Claude key alone marks it done.
-- `seeding.py:156`: `if not llm.any_model_key_configured():` (today it checks only OpenAI and
-  Gemini, so a Claude-only install would never seed the Career KB). Extend
+- `seeding.py` (the KB-seed gate in `seed_career_kb`, `if not llm.get_openai_key() and not
+  llm.get_gemini_key():`): `if not llm.any_model_key_configured():` (today it checks only OpenAI
+  and Gemini, so a Claude-only install would never seed the Career KB). Extend
   `tests/test_kb_seed.py:129-130`'s monkeypatches with `get_anthropic_key`,
   `get_openrouter_key` and `get_base_url`, and add a case: Claude key only → seeds.
 - `main.py:95-98`: log each provider's key source in one line, and use the predicate for the
@@ -991,6 +1022,24 @@ def any_model_key_configured() -> bool:
 - `docker-compose.yml`: `ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}` and
   `OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}` (empty = unset; `config.scrub_empty_env`).
 - `.env.example`: both keys, commented, one line each on where to get them.
+- **uv install and its scrub lists (added by v0.9.0).** Every list below that names
+  `OPENAI_API_KEY`/`GEMINI_API_KEY` gains `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY`; find
+  them with `grep -rln "GEMINI_API_KEY" backend scripts .github --include=*.py --include=*.yml
+  --include=*.template --include=*.example`:
+  - `backend/maestro_cs/home.py` `_WEB_STRIPPED` (the web server never sees a secret;
+    `tests/maestro_cs/test_home.py:238` fails without it). Also add `ANTHROPIC_AUTH_TOKEN`
+    and `ANTHROPIC_BASE_URL` there: the web server needs neither.
+  - `backend/maestro_cs/maestro.env.template` and `backend/scripts/native/maestro.env.example`:
+    `#ANTHROPIC_API_KEY=` and `#OPENROUTER_API_KEY=` under "Model provider", whose comment
+    becomes "Leave all empty to use Maestro without AI features."
+  - `scripts/smoke_uv_install.py` and `scripts/upgrade_check.py` `_SCRUBBED` (the smoke must
+    run with no LLM key).
+  - `.github/workflows/ci.yml` (~line 139) env blanking, `backend/tests/sync/conftest.py:72`,
+    `backend/tests/test_mcp_http_loopback.py:38`, `backend/tests/test_native_scripts.py`
+    (~:395 loop, ~:1583 env).
+  - `backend/maestro_cs/importer.py` needs nothing (it carries every key not in
+    `_NOT_CARRIED`); add one importer test that an `ANTHROPIC_API_KEY` line in a Docker `.env`
+    is carried into `maestro.env`.
 
 **Step 8: Tests.** Update `test_settings_router.py` (new fields; a PUT with only
 `anthropic_api_key` stores it and leaves the other three untouched; the response never contains
@@ -1389,6 +1438,12 @@ an `LLMProviderError` whose `provider_detail` contains `authentication_error` is
 (dependency change). Regenerate the lock in Docker; diff shows `anthropic`, `httpx2` and their
 deps only. Startup time check: `python -X importtime -c "import app.main" 2>&1 | grep -i
 anthropic` — record; `anthropic` is imported lazily inside functions so it must not appear.
+The dependency now also ships in the published wheel (v0.9.0 packaging): build it and run the
+wheel checks as CI does — `python scripts/build_wheel.py` (see `.github/workflows/ci.yml` for
+the exact invocation), `python scripts/check_wheel.py dist/*.whl`, and
+`backend/tests/test_wheel_scripts.py`. The uv smoke (`scripts/smoke_uv_install.py --wheel …`)
+needs network and a clean machine state; run it if it works in your environment, else leave it
+to CI and say so in the Gate table.
 
 **Step 7: Commit** — `feat(llm): native Claude adapter (anthropic SDK) for one-shot calls`.
 
@@ -2009,17 +2064,28 @@ two-tool scenario once with both tools requested in one step.
 
 ### Task 15: Docs, privacy, SYSTEM.md
 
-**Files:** `PRIVACY.md:78-92`, `SYSTEM.md`, `.system_md_enforcement.json`, `README.md`
-(provider table ~:387-401 and key mentions), `.env.example` (Task 4 done), `docs/entities/others.md`,
-`KNOWN_ISSUES.md:80`, `docs/native-install.md` / `docs/GETTING_STARTED.md` where keys are
-listed (`grep -rln "GEMINI_API_KEY\|OpenAI or Gemini" docs README.md`).
+**Files** (locations as of v0.9.0 main; re-grep with `grep -rn -i "OpenAI or Gemini\|GEMINI_API_KEY\|either one is enough" README.md docs PRIVACY.md KNOWN_ISSUES.md CONTRIBUTING.md`):
+- `PRIVACY.md` "### AI services you choose" (~:87-112): its bullet list of recipients.
+- `README.md:42` and `:101` ("OpenAI or Gemini, either one is enough"). The provider table is
+  no longer in README.
+- `docs/USING_MAESTRO.md` §5 "Choose your models deliberately" (~:188-202, the OpenAI vs
+  Gemini table) and `:90` ("OpenAI or Gemini"). Add Claude as a third row (one key, the three
+  seeded Claude models listed, roles still chosen by the user); OpenRouter is a sentence, not a
+  row. No cost figures unless measured.
+- `docs/SETUP_REFERENCE.md:74`, `:93`, `:151` (AI key requirements and the custom-server note).
+- `docs/GETTING_STARTED.md:111-112` (`.env` key lines).
+- `frontend/components/settings/models-section.tsx` `ModelProfileNote` (it names GPT-5.6 Luna
+  and Gemini 3.7 Flash): add one Claude sentence in the same "words, not figures" style.
+- `KNOWN_ISSUES.md:80`, `docs/entities/others.md`, `SYSTEM.md`, `.system_md_enforcement.json`.
 
 - PRIVACY.md "AI services you choose": Anthropic (api.anthropic.com, your key, Anthropic's
   retention terms); OpenRouter (openrouter.ai, your key; requests are forced to model providers
   with zero data retention and no data collection, but OpenRouter ITSELF may keep inputs — its
   privacy policy says inputs containing personal data are collected — so a resume sent through
   OpenRouter reaches OpenRouter under its terms). Link https://openrouter.ai/privacy.
-- SYSTEM.md (orientation tier stays ≤ 1000; pay for lines):
+- SYSTEM.md (orientation tier is AT 1000: this task must be net-zero or negative — first move
+  reference detail from the sections you touch into `docs/entities/others.md`, and do not add
+  lines to §2 or §12, which already carry size warnings):
   - §3: the LLM row describes `llm.py` front door + `llm_providers/` adapters + registry rule.
   - §6: new invariant `{#inv-provider-tagged-meta}` — **Provider data** opaque blocks
     (`ProviderMeta`) reach only their own provider; enforcement `tests/test_replay.py`; pin it
@@ -2041,7 +2107,9 @@ listed (`grep -rln "GEMINI_API_KEY\|OpenAI or Gemini" docs README.md`).
 ### Task 16: Final gates and review
 
 1. Full suite (xdist), ruff, frontend checks, `check_system_md.py`, slop ratchet for the
-   backend and frontend surfaces touched (maintainer's `slop_scan.py check <surface>`).
+   backend and frontend surfaces touched (maintainer's `slop_scan.py check <surface>`), and the
+   wheel checks from Task 5 Step 6 (the branch changed a shipped dependency and the uv-install
+   env lists).
 2. `grep -rn "chat.completions.create" backend/app` → only `llm_providers/openai_compat.py`.
    `grep -rn "startswith(\"claude-\|startswith(\"gemini-" backend/app` → only
    `llm_providers/` and `model_settings._provider_for` (label only).
