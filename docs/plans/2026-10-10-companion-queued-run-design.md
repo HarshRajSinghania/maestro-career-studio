@@ -28,14 +28,16 @@ of the gates. Lowering that friction is part of the goal, not a side effect.
 - **Sign-in:** use the saved job-site login to sign in to an existing account. Creating an account,
   email or SMS codes and CAPTCHAs always park.
 - **Where it asks:** in the tab. The tab waits on the field, the panel lists every tab that needs you,
-  you answer in the existing pause row, "Remember this answer" saves it, and that tab's run resumes.
+  you answer in the form itself and press **Resume**, and that tab's run resumes. **Answers are
+  always remembered** (2026-10-11): no checkbox. Resume saves them to the profile and the panel says
+  "Saved N answers to your profile · Undo". Long written answers are never saved as standing answers.
 - **Friction rules:**
   - A run stops only for the protected list (below) or a wall it cannot pass (CAPTCHA, email code,
     account creation). Everything else is answered, marked, and shown on the review page. Flags warn;
     they never stop a run.
   - One stop per page, not per field: fill everything else first, then park once with all that
     page's open questions together.
-  - Questions that can be predicted are asked once, before the run (the "Before we start" sheet).
+  - Questions that can be predicted are asked once, before the run (on the Queue view, Part 5).
   - An answer is asked once: saved to the profile, it never parks again.
   - A job with no tailored PDF is settled before the run, never during it (Part 7). The run never
     quick-tailors a job that has an open tailoring session or a tailored draft: the custom tailoring
@@ -60,8 +62,15 @@ of the gates. Lowering that friction is part of the goal, not a side effect.
 - **Panel look (2026-10-11):** direction C, "one next step": a single Next card that changes as the
   run moves (Apply → Filling page N → Needs you → Ready to submit), under a four-segment progress bar.
   Mockups of the Job step (Save job / Apply + Queue / finish tailoring first), a running job (filling,
-  Needs you, a wall, Ready to submit with the 8 s Undo) and Apply to queued (Before we start, the run
-  list, run finished) live in the owner's private design canvas. Tasks 19, 20 and 20a build to them.
+  Needs you, a wall, Ready to submit with the 8 s Undo) and the Queue view (before a run, running,
+  finished) live in the owner's private design canvas. Tasks 19, 20 and 20a build to them.
+- **Two views (2026-10-11):** a **This page | Queue (N)** switch tops the panel. **This page** is the
+  Job → Resume → Fill → Track steps for the active tab, as today; its Job step's Apply and Queue are
+  how jobs enter the queue. **Queue** is a live list of the user's Queued jobs, read from the server:
+  before a run, each row shows its readiness and a tick, and **Apply to N** starts the run; during a
+  run the same rows show live status; after it, a summary sits above them. There is no separate
+  "Before we start" sheet. A fresh open picks the view: an application form or a job posting opens
+  on This page; any other page, and any open while a run is going, opens on Queue.
 - **Park less (2026-10-11):** a run parks only on required fields it could not answer or could not
   operate. A field that shows a value the engine could not prove does not park: the run clicks Next
   and lets the page's own validation decide (refill once, then park with the page's error text).
@@ -176,21 +185,22 @@ text. At most 15 steps per application; the same fingerprint seen twice parks.
 
 ## Part 5: Running several tabs, the run list, Needs you
 
-- **Start:** an **Apply to queued** button in the panel, shown while full automation is On. It calls
-  `GET /api/autofill/queue-run`: Queued jobs minus skipped companies and already-applied, up to the
-  remaining daily cap, each with its apply link, PDF readiness and knock-out pre-scan.
-- **Before we start:** profile facts the pre-scan found missing are asked once and saved. Jobs with
-  a knock-out conflict are listed unticked with "apply anyway"; an unstated requirement just runs.
-  Jobs with no PDF are listed with a per-job choice (Part 7).
+- **The Queue view** (shown while full automation is On) reads `GET /api/autofill/queue-run`:
+  Queued jobs minus skipped companies and already-applied, up to the remaining daily cap, each with
+  its apply link, PDF readiness and knock-out pre-scan. **Apply to N** starts the run.
+- **Before a run, on the same list:** each row carries its readiness inline. Profile facts the
+  pre-scan found missing are asked once (a link to Settings) and saved. Jobs with a knock-out
+  conflict are unticked with "Apply anyway"; an unstated requirement just runs. Jobs with no PDF show
+  the choice that will be made, with Change (Part 7).
 - **Opening tabs:** a dedicated normal window, 3 tabs filling at once by default (1 to 5 in the
   panel). Ready-to-submit tabs stay open and do not count as filling; opening pauses at 10 waiting
   tabs.
 - **Pacing:** a random gap of a few seconds between opening jobs, so a run never arrives as a burst
   from one browser.
-- **Run list** at the top of the panel, one row per job: Opening, Filling page N, Needs you (N),
-  Ready to submit, Applied, Stopped: reason. A row brings its tab forward and the panel shows that
-  tab's Fill view. A parked tab shows today's pause rows, one per open question, "Remember this
-  answer" on; answering resumes the tab's run. Stop per row and Stop all.
+- **During a run, the same list** shows one row per job: Opening, Filling page N, Needs you,
+  Ready to submit, Applied, Stopped: reason; unticked jobs stay as Queued, "Not in this run". A row
+  brings its tab forward and switches the panel to This page for it. A parked tab lists its open
+  questions; the user answers in the form and presses Resume. Stop per row and Stop all.
 - **After your Submit:** a confirmation page in that tab marks the job applied with an undo (consent
   channel `frontend`, since you clicked Submit; the confirmation is the submit evidence; the
   proposal goes Queued, approved, submitted, so the daily cap counts it). With no confirmation page
@@ -226,7 +236,7 @@ treatment for run tabs.
 - **Prepare when queued: optional, off by default.** A setting "Prepare queued jobs" quick-tailors
   and renders a PDF when a job is Queued, so a run starts filling at once. It skips any job with an
   open tailoring session or a tailored draft.
-- **At run start,** jobs without a PDF appear in Before we start with a per-job choice: Quick
+- **At run start,** jobs without a PDF show on the Queue view with a per-job choice: Quick
   tailor, Use base resume, or Skip. Default Quick tailor, except a job with an open custom tailoring
   session defaults to Skip ("finish tailoring first"). Quick tailor and renders run one at a time
   while earlier tabs fill. Nothing in a run overwrites a custom tailoring session or draft.

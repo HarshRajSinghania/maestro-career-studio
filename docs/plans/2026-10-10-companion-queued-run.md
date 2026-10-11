@@ -61,16 +61,17 @@ widen scope.
 
 1. **Parked questions are answered in the page itself, not in a new panel input.** Loop mode has
    no pause rows today (its report rows only jump to the field). A parked tab is left with the
-   field focused; the panel lists the page's open questions (jump links) with a "Remember my
-   answers" box (default on) and a **Resume** button. Resume re-reads the page, learns the typed
-   answers through the existing `learnAnswer` (`panel/actions/pause.js`), and continues the run.
+   field focused; the panel lists the page's open questions (jump links) and a **Resume** button.
+   Resume re-reads the page, ALWAYS learns the typed answers through the existing `learnAnswer`
+   (`panel/actions/pause.js`; owner 2026-10-11: no checkbox), says "Saved N answers to your
+   profile · Undo", and continues the run.
    This is the user's original "need you in the application itself", and avoids building a second
    answer widget for every field shape.
 2. **The confirmation is recorded with consent channel `companion`,** not `frontend`, so the audit
    trail says the Companion observed it after the user's own Submit. `CONSENT_CHANNELS` gains it.
 3. **Auto-mark's undo is a delay, not a reversal.** `submitted` is terminal in the proposal state
    machine, so the row shows "Marking applied in 8 s · Undo" and posts only after 8 s.
-4. **Missing profile facts in "Before we start" link to Settings › Profile** in the web app instead
+4. **Missing profile facts on the Queue view link to Settings › Profile** in the web app instead
    of an inline editor. They're still asked once and saved there.
 5. **Dial migration:** the low-stakes switch stores no row when off, so "explicitly off" and "never
    touched" can't be told apart. Every install without a new dial row reads the default, **Backed by
@@ -1275,15 +1276,20 @@ Parallel runs and the user's own Autofill must not share a changed budget.
 
 **Step 5: Commit** `feat(fill-loop): per-run limits; queued runs try harder`.
 
-### Task 19: Panel host: start a run, the "Before we start" sheet, tabs, sign-in, stop
+### Task 19: Panel host: the Queue view, start a run, tabs, sign-in, stop
 
 **Files:**
-- Create: `extension/panel/actions/run.js` (`ns.panelActionsRun = { openRunSheet, startRun, stopRun,
-  stopAll, resumeRun, focusRun, setRunChoice }`)
+- Create: `extension/panel/actions/run.js` (`ns.panelActionsRun = { loadQueue, startRun, stopRun,
+  stopAll, resumeRun, focusRun, setRunChoice, setView }`)
 - Modify: `extension/panel/actions.js` (roster: `need("actions/run.js", ns.panelActionsRun)` plus the
   bindings), `extension/panel/panel.html` (after `actions/track.js`)
 - Modify: `extension/panel/panel.js`:
-  - new `card` fields `runs: []`, `runSheet: null`, `runWindowId: null`, `runParallel: 3`;
+  - new `card` fields `view: "page" | "queue"`, `queue: null`, `runs: []`, `runWindowId: null`,
+    `runParallel: 3`;
+  - `render()` draws the **This page | Queue (N)** switch at the top (a tablist; N = queued count)
+    and either today's rail (`page`) or the Queue view (`queue`, Task 20's `panel/runs.js`);
+  - fresh-open view rule: `view = "queue"` when a run is active or the active tab has neither a
+    matched job nor a detected form; otherwise `"page"`. A user switch sticks until the panel closes;
   - `actionStore()` gains `tabBroadcast(tabId, message)` = `ask("page_broadcast", {tabId, message})`
     and `tabFrame0(tabId, message)`;
   - `withFlowOrigin` reads a run record's `flowOrigin` when `payload.tabId` belongs to a run (the
@@ -1293,10 +1299,12 @@ Parallel runs and the user's own Autofill must not share a changed budget.
 - Test: `backend/tests/test_extension_panel_run.py` (new; panel harness)
 
 **Behaviour:**
-- **The Apply to queued button** sits at the top of the panel (Task 20 renders it). It shows only
-  when `GET /api/settings/auto-apply` says `full_automation`. Press → `openRunSheet` →
-  `GET /api/autofill/queue-run` → `card.runSheet = {items, skipped, cap_left, choices}`.
-- **Sheet choices per item:**
+- **The Queue view** shows only when `GET /api/settings/auto-apply` says `full_automation` (else
+  the switch is hidden and the panel is today's). Opening it → `loadQueue` →
+  `GET /api/autofill/queue-run` → `card.queue = {items, skipped, cap_left, choices}`, re-read on
+  every switch to Queue and after every run. The list itself is the pre-run step; there is no
+  separate sheet. **Apply to N** (N = ticked rows) starts the run.
+- **Per-row choices on the Queue view:**
   - `knockout === "conflict"` → unticked, "Apply anyway" toggle;
   - `board_native` → listed, unticked, "Opens on the job board; apply there yourself";
   - `pdf_ready` → nothing to choose;
@@ -1348,12 +1356,13 @@ Parallel runs and the user's own Autofill must not share a changed budget.
 **Step 1: Failing panel-harness tests.** Extend the stub with `windows.create`, `tabs.create`,
 `tabs.onCreated`, `tabs.onRemoved` and `tabs.update`, recording calls:
 - the button is hidden when full automation is off;
-- the sheet defaults: a conflict is unticked; a tailoring-open job defaults to Skip with no quick
+- the switch is hidden with full automation off; the fresh-open rule picks `queue` on a page with no job
+  and no form, and `page` on a posting; the Queue view's defaults: a conflict is unticked; a tailoring-open job defaults to Skip with no quick
   tailor offered; a draft offers only Create PDF;
 - startRun opens ONE window, never focuses it, and opens at most 3 tabs with gaps
   (`sleep` fake records the pace);
 - `quick-tailor` is never called for a job with `tailoring_open` or `has_draft`, whatever the user
-  clicked (guard inside `startRun`, not only in the sheet);
+  clicked (guard inside `startRun`, not only in the Queue view's rows);
 - sign-in: the credentials never appear in `card`, `sessionWrites`, `writes`, telemetry or trace
   sends (scan every recorded message for the password string);
 - a tab switch during a run sends no `fill_cancel` to run tabs;
@@ -1366,7 +1375,7 @@ Parallel runs and the user's own Autofill must not share a changed budget.
 **Step 4: Run** `pytest tests/test_extension_panel*.py tests/test_extension_sw_router.py
 tests/test_extension_queue_run.py -q`. Expected: PASS.
 
-**Step 5: Commit** `feat(companion): start a queued run: sheet, run window, pacing, sign-in`.
+**Step 5: Commit** `feat(companion): the Queue view, run window, pacing, sign-in`.
 
 ### Task 20: Run list, Needs you, Resume, auto-mark applied, run log
 
@@ -1390,13 +1399,14 @@ tests/test_extension_queue_run.py -q`. Expected: PASS.
 - Clicking a row: `chrome.tabs.update(tabId, {active: true})` and
   `chrome.windows.update(runWindowId, {focused: true})`.
 - **Needs you (open_questions):** the row expands to list `open` questions as jump links
-  (`fill_focus` to that tab), a "Remember my answers" checkbox (default on) and **Resume**.
+  (`fill_focus` to that tab) and **Resume**. No checkbox: answers are always remembered.
   Resume:
   1. `fill_inventory {peek: true, readOnly: true}` on the tab, then build the receipt with
      `ns.receipt.fromEdits` (values the user typed) and post it (source `you`);
-  2. when "Remember" is on, `learnAnswer(store, {label: question}, answer)` for each answered open
-     question, using the same `saveTargetFor` path as pause rows (move `learnAnswer` to accept a
-     plain label);
+  2. `learnAnswer(store, {label: question}, answer)` for each answered open question that is not
+     long free text (the `textarea` shape is never learned), using the same `saveTargetFor` path as
+     pause rows (move `learnAnswer` to accept a plain label). Keep each target's PREVIOUS value; the
+     panel shows "Saved N answers to your profile · Undo", and Undo writes the previous values back;
   3. re-enter `drive(record, deps)`, which refills, then advances or reaches ready.
   Walls (captcha / verify / create_account / sign_in_failed) also show **Resume** after "Do this
   step in the tab, then Resume".
@@ -1418,8 +1428,8 @@ tests/test_extension_queue_run.py -q`. Expected: PASS.
 
 **Step 1: Failing panel-harness tests:**
 - the rows render each status word;
-- Resume posts a `you`-source receipt, calls the learn path when Remember is on and not when off,
-  then re-drives;
+- Resume posts a `you`-source receipt, always calls the learn path (never for a textarea), shows the
+  "Saved N answers" line, Undo restores the previous profile values, then re-drives;
 - confirmation → nothing posted before 8 s (fake timers) → posted after; Undo within 8 s → nothing
   posted, Mark applied shows;
 - the run log posts once with medians;
@@ -1453,7 +1463,7 @@ with **Queue** beside it; with it off, **Save job** exactly as today.
   scores from the panel's `card.scores`), then `PATCH /api/proposals/{id}` with
   `{status: "accepted", consent: {channel: "companion"}}` (Task 9 adds the channel). The note says
   "Queued. Apply to queued will pick it up."
-- **Apply:** Queue, then resume readiness by the same rules as the "Before we start" sheet (Task 19)
+- **Apply:** Queue, then resume readiness by the same rules as the Queue view's rows (Task 19)
   for this one job: a PDF is ready → go; a draft without a PDF → Create PDF; nothing tailored and no
   open custom session → Quick tailor with the picked base; an open custom session → stop with "You're
   tailoring this job in Maestro. Finish it, then press Apply." (never quick-tailor over it). Then a
