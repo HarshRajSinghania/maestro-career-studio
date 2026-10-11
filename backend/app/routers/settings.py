@@ -41,7 +41,6 @@ from app.services import (
     jev,
     job_preferences,
     job_site_login,
-    llm,
     llm_capabilities,
     market_settings,
     markets,
@@ -52,6 +51,7 @@ from app.services import (
     quick_tailor,
 )
 from app.services.llm import LLMProviderError
+from app.services.llm_providers import registry
 from app.services.sync import offers as sync_offers
 from app.services.sync import pairing as sync_pairing
 
@@ -573,15 +573,10 @@ def probe_model(payload: ProbePayload, db: Annotated[Session, Depends(get_db)]):
 
 @router.post("/openai/sync")
 def sync_provider_models(payload: SyncPayload, db: Annotated[Session, Depends(get_db)]):
-    """List chat-like models from OpenAI or Gemini for discovery (+ adds to catalog)."""
-    if payload.provider in ("anthropic", "openrouter"):
-        # Task 7 wires these adapters' model listing and removes this.
-        raise HTTPException(status_code=400, detail="Not available yet.")
+    """List chat-like models from the chosen provider (OpenAI, Gemini, Claude or OpenRouter)
+    for discovery; nothing is added to the catalog until the user clicks +."""
     try:
-        if payload.provider == "openai":
-            discovered = llm.list_openai_models()
-        else:
-            discovered = llm.list_gemini_models()
+        discovered = registry.get(payload.provider).list_models()
     except LLMProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 

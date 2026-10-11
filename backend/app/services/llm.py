@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
-import openai
 from openai import OpenAI
 
 from app.config import settings
@@ -355,57 +354,3 @@ def call_openai(
     if last_error is not None:
         raise ValueError("OpenAI response was not valid JSON after retries") from last_error
     raise RuntimeError("OpenAI call failed without a captured response")
-
-
-# Non-chat OpenAI model id fragments — keep discovery focused on generation.
-_OPENAI_SKIP_FRAGMENTS = (
-    "embedding",
-    "whisper",
-    "tts",
-    "dall-e",
-    "davinci",
-    "babbage",
-    "moderation",
-    "transcribe",
-    "realtime",
-    "audio",
-    "image",
-    "search",
-)
-
-
-def _openai_model_is_chatlike(model_id: str) -> bool:
-    lowered = model_id.lower()
-    return not any(fragment in lowered for fragment in _OPENAI_SKIP_FRAGMENTS)
-
-
-def list_openai_models() -> list[dict[str, str]]:
-    """Models visible to the configured OpenAI-compatible client.
-
-    Uses the same key + base_url as inference. Filtered to chat-like ids; the
-    UI still requires an explicit + before anything enters the usable catalog.
-    """
-    try:
-        page = _get_client().models.list()
-    except openai.OpenAIError as exc:
-        raise LLMProviderError(f"OpenAI models.list failed: {exc}") from exc
-
-    seen: set[str] = set()
-    out: list[dict[str, str]] = []
-    for item in page.data:
-        model_id = getattr(item, "id", None)
-        if not isinstance(model_id, str) or not model_id or model_id in seen:
-            continue
-        if not _openai_model_is_chatlike(model_id):
-            continue
-        seen.add(model_id)
-        out.append({"id": model_id, "label": model_id, "provider": "openai"})
-    out.sort(key=lambda row: row["id"])
-    return out
-
-
-def list_gemini_models() -> list[dict[str, str]]:
-    """Gemini models that support generateContent for the configured Gemini key."""
-    from app.services.llm_providers import registry
-
-    return registry.get("gemini").list_models()

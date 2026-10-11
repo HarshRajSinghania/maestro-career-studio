@@ -601,11 +601,15 @@ def test_a_rejected_chat_model_saves_no_key(db_session, client):
     assert db_session.get(Setting, "llm.anthropic_api_key") is None
 
 
-def test_sync_for_claude_and_openrouter_is_not_available_yet(client):
-    for provider in ("anthropic", "openrouter"):
+def test_sync_for_claude_and_openrouter_without_a_key_is_a_502_sentence(client, monkeypatch):
+    from app.services import llm
+
+    monkeypatch.setattr(llm, "get_anthropic_key", lambda: None)
+    monkeypatch.setattr(llm, "get_openrouter_key", lambda: None)
+    for provider, sentence in (("anthropic", "No Claude API key"), ("openrouter", "No OpenRouter API key")):
         response = client.post("/api/settings/openai/sync", json={"provider": provider})
-        assert response.status_code == 400
-        assert "Not available yet" in response.json()["detail"]
+        assert response.status_code == 502
+        assert sentence in response.json()["detail"]
 
 
 def test_extra_model_accepts_the_new_providers(client):

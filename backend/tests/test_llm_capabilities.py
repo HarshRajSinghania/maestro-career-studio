@@ -196,7 +196,10 @@ def test_tools_probe_routes_gemini_through_compat_client(monkeypatch):
 
 
 def test_tools_probe_custom_endpoint_does_not_hijack_gemini_id(monkeypatch):
-    """A local Ollama model named gemini-* must stay on the custom endpoint."""
+    """A local Ollama model named gemini-* must stay on the custom endpoint.
+
+    Uses the NON-catalog id `gemini-local`: the seeded `gemini-3.5-flash-lite` is now tagged
+    to Gemini by the registry (Task 4 "Known changes", Task 7)."""
     client = _RecordingClient(_tool_call_stream())
     monkeypatch.setattr(llm_capabilities.llm, "_get_client", lambda: client)
     monkeypatch.setattr(
@@ -217,7 +220,7 @@ def test_tools_probe_custom_endpoint_does_not_hijack_gemini_id(monkeypatch):
     monkeypatch.setattr(llm_capabilities.llm, "OpenAI", boom_compat)
     llm_capabilities.llm._chat_clients.clear()
 
-    report = llm_capabilities.probe("gemini-3.5-flash-lite")
+    report = llm_capabilities.probe("gemini-local")
 
     assert client.calls, "custom-endpoint Gemini id must use the global client"
     assert report.tools is True
@@ -301,3 +304,63 @@ def test_anthropic_error_vocabulary_is_unreachable_not_a_capability_no():
                  "overloaded_error", "Error code: 529", "No Claude API key is set."):
         exc = LLMProviderError("The AI model didn't answer.", provider_detail=sign)
         assert llm_capabilities._never_reached_the_model(exc), sign
+
+
+# --- the tools probe goes through the registry (Task 7) --------------------------------------
+
+def test_tools_probe_passes_when_the_adapter_streams_a_tool_call(monkeypatch):
+    from app.services.llm_providers.types import ToolCallPart
+    from tests.fake_provider import FakeProvider, install
+
+    fake = install(monkeypatch, FakeProvider([[[ToolCallPart("c1", "report_ok", {"ok": True})]]]))
+
+    llm_capabilities._probe_tools("fake-model")
+
+    sent = fake.requests[0]
+    assert [t.name for t in sent.tools] == ["report_ok"]
+    assert sent.model.provider == "fake"
+
+
+def test_tools_probe_fails_on_text_only(monkeypatch):
+    from tests.fake_provider import FakeProvider, install
+
+    install(monkeypatch, FakeProvider([["I cannot call tools."]]))
+
+    with pytest.raises(RuntimeError, match="streamed no tool call"):
+        llm_capabilities._probe_tools("fake-model")
+
+
+def test_probe_reports_tools_for_an_anthropic_tagged_model(monkeypatch):
+    from app.services.llm_providers.types import ToolCallPart
+    from tests.fake_provider import FakeProvider, install
+
+    install(monkeypatch, FakeProvider([[[ToolCallPart("c1", "report_ok", {"ok": True})]]]))
+    monkeypatch.setattr(llm_capabilities.llm, "get_base_url", lambda: None)
+    monkeypatch.setattr(
+        llm_capabilities.llm, "call_openai",
+        lambda **kw: "ok" if kw["response_format"] == "text" else {"ok": True})
+
+    report = llm_capabilities.probe("fake-model")
+
+    assert report.tools is True
+
+
+def test_an_adapter_without_stream_yet_is_not_persisted_as_a_no(db_session, monkeypatch):
+    from tests.fake_provider import FakeProvider, install
+
+    fake = FakeProvider([])
+
+    def no_stream(req):
+        raise NotImplementedError
+
+    fake.stream = no_stream
+    install(monkeypatch, fake)
+    monkeypatch.setattr(llm_capabilities.llm, "get_base_url", lambda: None)
+    monkeypatch.setattr(
+        llm_capabilities.llm, "call_openai",
+        lambda **kw: "ok" if kw["response_format"] == "text" else {"ok": True})
+
+    report = llm_capabilities.probe_and_save(db_session, "fake-model")
+
+    assert report.reachable is False
+    assert llm_capabilities.load(db_session, "fake-model") is None

@@ -28,6 +28,8 @@ from sqlalchemy.orm import Session
 
 from app.models.setting import Setting
 from app.services import llm
+from app.services.llm_providers import registry
+from app.services.llm_providers.types import Finish, Message, Request, TextPart, ToolSpec
 
 logger = logging.getLogger(__name__)
 
@@ -95,14 +97,31 @@ def _probe_json(model: str) -> None:
         raise RuntimeError("model did not return a JSON object")
 
 
-def _probe_tools(model: str) -> None:
-    """Tool calling AND streaming — the chat agent needs both together.
+_PROBE_SPEC = ToolSpec(
+    "report_ok", "Report that the check succeeded.",
+    {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]})
 
-    Every argument here must match what `chat_agent.run_turn` sends: the same
-    client (`llm.get_chat_client`), and the same per-model kwargs from
-    `llm.completion_extras`. A probe of a call the app never makes measures
-    nothing.
-    """
+
+def _probe_tools(model: str) -> None:
+    """Tool calling AND streaming, through the same adapter.stream call `chat_agent.run_turn`
+    makes. A probe of a call the app never makes measures nothing (SYSTEM.md §12)."""
+    ref = registry.resolve(model)
+    if ref.provider in {"openai", "gemini"}:
+        # TEMPORARY (Task 7): the OpenAI-compat and Gemini adapters have no `stream` until
+        # Tasks 8-10, and chat still runs on the old client. Task 12 Step 6 deletes this branch.
+        _probe_tools_legacy(model)
+        return
+    request = Request(model=ref, messages=[Message("user", [TextPart("Call report_ok with ok=true.")])],
+                      tools=[_PROBE_SPEC])
+    for event in registry.get(ref.provider).stream(request):
+        if isinstance(event, Finish) and event.message.tool_calls:
+            return
+    raise RuntimeError("model streamed no tool call")
+
+
+def _probe_tools_legacy(model: str) -> None:
+    """The pre-registry body: the same client (`llm.get_chat_client`) and per-model kwargs
+    (`llm.completion_extras`) as the chat agent."""
     stream = llm.get_chat_client(model).chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": "Call report_ok with ok=true."}],
@@ -160,6 +179,10 @@ _UNREACHABLE_SIGNS = (
 
 
 def _never_reached_the_model(exc: Exception) -> bool:
+    if isinstance(exc, NotImplementedError):
+        # TEMPORARY (Task 7, removed with the legacy branch in Task 12): an adapter whose
+        # `stream` has not landed yet says nothing about the model; never store it as a No.
+        return True
     # What the PROVIDER said (`LLMProviderError.provider_detail`), never the
     # sentence written for the user, which names no status code.
     text = str(getattr(exc, "provider_detail", None) or exc).lower()

@@ -19,6 +19,7 @@ imports this module and `llm` imports the registry).
 from __future__ import annotations
 
 import base64
+from contextlib import contextmanager
 from dataclasses import replace
 from typing import Any, Iterator
 
@@ -170,6 +171,22 @@ def _strip_reasoning(req: Request) -> Request:
     ])
 
 
+@contextmanager
+def _sdk_errors() -> Iterator[None]:
+    """The ONE place an anthropic SDK error becomes a user sentence (calls and model listing)."""
+    import anthropic
+
+    try:
+        yield
+    except anthropic.APIStatusError as exc:
+        raise _no_answer(_status_reason(exc.status_code), f"Anthropic API request failed: {exc}",
+                         provider="Claude") from exc
+    except anthropic.APITimeoutError as exc:
+        raise _no_answer(_TIMED_OUT, f"Anthropic API request timed out: {exc}", provider="Claude") from exc
+    except anthropic.APIConnectionError as exc:
+        raise _no_answer("no connection", f"Anthropic API connection failed: {exc}", provider="Claude") from exc
+
+
 class AnthropicProvider:
     name = "anthropic"
 
@@ -192,7 +209,7 @@ class AnthropicProvider:
             with self._client(r).beta.messages.stream(**build_kwargs(r, stream=False)) as s:
                 return s.get_final_message()
 
-        try:
+        with _sdk_errors():
             try:
                 return once(req), False
             except anthropic.BadRequestError as exc:
@@ -201,13 +218,6 @@ class AnthropicProvider:
                 if "signature" in text or "thinking" in text:
                     return once(_strip_reasoning(req)), True
                 raise
-        except anthropic.APIStatusError as exc:
-            raise _no_answer(_status_reason(exc.status_code), f"Anthropic API request failed: {exc}",
-                             provider="Claude") from exc
-        except anthropic.APITimeoutError as exc:
-            raise _no_answer(_TIMED_OUT, f"Anthropic API request timed out: {exc}", provider="Claude") from exc
-        except anthropic.APIConnectionError as exc:
-            raise _no_answer("no connection", f"Anthropic API connection failed: {exc}", provider="Claude") from exc
 
     def generate(self, req: Request) -> Response:
         msg, dropped = self._call(req)
@@ -221,7 +231,8 @@ class AnthropicProvider:
     def list_models(self) -> list[dict[str, str]]:
         from app.services import llm
         rows = []
-        for m in llm._get_anthropic_client().models.list():
-            rows.append({"id": m.id, "label": getattr(m, "display_name", None) or m.id,
-                         "provider": "anthropic"})
+        with _sdk_errors():
+            for m in llm._get_anthropic_client().models.list():
+                rows.append({"id": m.id, "label": getattr(m, "display_name", None) or m.id,
+                             "provider": "anthropic"})
         return sorted(rows, key=lambda r: r["id"])
