@@ -12,7 +12,6 @@ from openai import OpenAI
 
 from app.config import settings
 from app.services import tracing
-from app.services.llm_providers.openai_compat import completion_extras  # noqa: F401 — re-exported until Task 12 moves chat and the probe
 from app.services.llm_providers.errors import (  # noqa: F401 — re-exported; callers use llm.*
     _KEY_REFUSED,
     _TIMED_OUT,
@@ -25,6 +24,7 @@ from app.services.llm_providers.errors import (  # noqa: F401 — re-exported; c
     _openai_reason,
     _status_reason,
 )
+from app.services.llm_providers.openai_compat import completion_extras  # noqa: F401 — re-exported until Task 12 moves chat and the probe
 
 logger = logging.getLogger(__name__)
 

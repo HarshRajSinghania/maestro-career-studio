@@ -1,7 +1,23 @@
+import json
+from types import SimpleNamespace as NS
+
 import pytest
 
 from app.services.llm_providers import openai_compat as oc
-from app.services.llm_providers.types import ImagePart, Message, ModelRef, Request, TextPart
+from app.services.llm_providers.types import (
+    Finish,
+    ImagePart,
+    Message,
+    ModelRef,
+    ProviderMeta,
+    ReasoningPart,
+    Request,
+    TextDelta,
+    TextPart,
+    ToolCallPart,
+    ToolResultPart,
+    ToolSpec,
+)
 
 
 def _req(**kw):
@@ -60,20 +76,6 @@ def test_generate_normalizes_sdk_errors_to_llm_provider_error():
 
 
 # --- Task 8: streaming ---------------------------------------------------------------------
-
-import json  # noqa: E402
-from types import SimpleNamespace as NS  # noqa: E402
-
-from app.services.llm_providers.types import (  # noqa: E402
-    Finish,
-    ProviderMeta,
-    ReasoningPart,
-    TextDelta,
-    ToolCallPart,
-    ToolResultPart,
-    ToolSpec,
-)
-
 
 def _chunk(content=None, tool_calls=None, finish=None, usage=None, model=None, **delta_extra):
     delta = NS(content=content, tool_calls=tool_calls, **delta_extra)
@@ -253,3 +255,47 @@ def test_stream_errors_go_through_map_error_at_call_and_mid_stream():
     client.chat.completions.create.return_value = broken()
     with pytest.raises(LLMProviderError):
         list(provider.stream(_req()))
+
+
+@pytest.mark.parametrize("exc,wording", [
+    (lambda: __import__("httpx").ReadTimeout("slow"), "timed out"),
+    (lambda: __import__("httpx").RemoteProtocolError("cut off"), "no connection"),
+])
+def test_raw_httpx_errors_mid_stream_become_user_sentences(exc, wording):
+    from unittest.mock import MagicMock
+
+    from app.services.llm_providers.errors import LLMProviderError
+
+    def broken():
+        yield _chunk("a")
+        raise exc()
+
+    client = MagicMock()
+    client.chat.completions.create.return_value = broken()
+    provider = oc.OpenAICompatProvider("openai", lambda: client, lambda: True, lambda: "OpenAI")
+    with pytest.raises(LLMProviderError) as ei:
+        list(provider.stream(_req()))
+    assert wording in str(ei.value)
+
+
+def test_stream_closes_the_sdk_stream_on_early_stop():
+    class Stream:
+        closed = False
+
+        def __iter__(self):
+            yield _chunk("a")
+            yield _chunk("b")
+
+        def close(self):
+            self.closed = True
+
+    from unittest.mock import MagicMock
+
+    sdk = Stream()
+    client = MagicMock()
+    client.chat.completions.create.return_value = sdk
+    provider = oc.OpenAICompatProvider("openai", lambda: client, lambda: True, lambda: "OpenAI")
+    gen = provider.stream(_req())
+    next(gen)
+    gen.close()
+    assert sdk.closed

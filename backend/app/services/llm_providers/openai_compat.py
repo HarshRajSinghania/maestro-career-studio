@@ -8,12 +8,14 @@ import json
 import re
 from typing import Any, Callable, Iterable, Iterator
 
+import httpx
 import openai
 from urllib.error import HTTPError, URLError
 from urllib.request import Request as HttpRequest
 from urllib.request import urlopen
 
 from app.services.llm_providers.errors import (
+    _TIMED_OUT,
     LLMProviderError,
     _no_answer,
     _openai_reason,
@@ -262,10 +264,20 @@ class OpenAICompatProvider:
         client = self._client()
         if req.timeout is not None:
             client = client.with_options(timeout=req.timeout, max_retries=0)
+        sdk_stream = None
         try:
-            yield from accumulate(client.chat.completions.create(**kwargs), req.model)
+            sdk_stream = client.chat.completions.create(**kwargs)
+            yield from accumulate(sdk_stream, req.model)
         except openai.OpenAIError as exc:
             raise self._map_error(exc) from exc
+        except httpx.HTTPError as exc:
+            # Older SDK lines let raw transport errors escape mid-iteration.
+            reason = _TIMED_OUT if isinstance(exc, httpx.TimeoutException) else "no connection"
+            raise _no_answer(reason, f"OpenAI API request failed: {exc}", provider=self._label()) from exc
+        finally:
+            close = getattr(sdk_stream, "close", None)
+            if callable(close):
+                close()
 
     def list_models(self) -> list[dict[str, str]]:
         """Chat-like models for Settings › Find models. OpenRouter lists only zero-retention
