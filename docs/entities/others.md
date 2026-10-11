@@ -235,6 +235,16 @@
   compose/context + typed job preferences. Returns `{draft}` and persists **nothing** — Profile puts it into the
   persona editor as a dirty edit; only `PUT /api/settings/persona` saves; an empty Career KB 422s with an
   import-first message.
+- **In-app chat: interaction model** (SYSTEM.md §7; "chips in, cards out"): assistant prose renders Markdown (content passed to
+  tools stays plain); `propose_edits` stages ANY typed-op set as an approval card (`proposal_ops`, validated and scope-checked at
+  propose time, applied via the standard `/edits` PATCH); proposal cards persist their resolution via `PATCH
+  /api/chat/messages/{id}/card-state` (`meta_json.card_state`, 409 on conflicting re-stamp) and card SSE events carry
+  `message_id` (the tool row persists before the card event); `ChatSelection` is kind-tagged (`resume` | `kb_entity`,
+  missing=resume), and KB chips pin context without constraining the resume scope guard; three read-only analytics tools
+  (`analytics_activity`, `analytics_gap_frequency` incl. build-areas, `analytics_base_summaries`) answer job-search questions.
+- **Chat transcript parts**: `chat_messages.parts` holds versioned neutral parts (+ `provider`, `model`); `ProviderMeta` is
+  provider-tagged and opaque, and `llm_providers/replay.py` `for_provider` hands it only to its own provider, normalizes tool-call
+  ids and repairs orphan calls/results. A NULL `parts` row is legacy: `transcript.from_legacy` reads `tool_calls`/`tool_call_id`.
 - **In-app chat: pinned-resume resolution** (SYSTEM.md §7): the pin is a HINT, not a guard — it reaches the model as one line of the
   ephemeral context block; the enforced guard is `check_ops_in_scope` over selection PATHS (which needs a
   pin only because the scope picker is fed the pinned resume). The composer resolves it once per session —

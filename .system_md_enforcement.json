@@ -203,6 +203,10 @@
       {"path": "backend/tests/maestro_cs/test_home.py", "symbol": "test_backend_env_strips_foreign_data_pointers"},
       {"path": "backend/maestro_cs/home.py", "symbol": "def default_home"}
     ],
+    "inv-provider-tagged-meta": [
+      {"path": "backend/tests/test_replay.py", "symbol": "test_foreign_reasoning_is_dropped_and_own_kept"},
+      {"path": "backend/app/services/llm_providers/replay.py", "symbol": "def for_provider"}
+    ],
     "inv-env-before-app": [
       {"path": "backend/tests/maestro_cs/test_maintenance.py", "symbol": "test_importing_the_cli_alone_imports_no_app_module"},
       {"path": "backend/tests/maestro_cs/test_maintenance.py", "symbol": "test_check_binds_settings_to_the_home_after_apply_env"},

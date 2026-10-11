@@ -87,7 +87,7 @@ that read as machine-written — so the leverage is in depth per application.
   actually did.
 - **Match score** — Maestro's comparison of your resume with a saved job
   description. It is not an employer's score or a prediction of an interview.
-- **AI service** — OpenAI or Gemini, whichever you choose.
+- **AI service** — OpenAI, Gemini or Claude, whichever you choose.
 
 ### 1. Build your career history first (once)
 
@@ -194,12 +194,24 @@ tested setups, one per AI service:
 | Cost per application | **about a penny** | **under 3¢** *(Gemini promo pricing doubles Jan 2027)* |
 | Made-up skills | none measured | none measured |
 
-Neither is better overall, and any OpenAI-compatible model can be used instead.
+| | **Claude** · your key, your roles |
+|---|---|
+| The one key you need | Claude (Anthropic) |
+| Models you can pick | `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5` |
+| Roles | you choose per role (Fast, Smart, Assistant) in **Settings › AI & models** |
+
+We have not measured Claude against the other two, so there are no figures for
+it here. Press **Test** next to each model to check it works. An OpenRouter key
+reaches many other models; Maestro asks OpenRouter to use only providers that
+keep no data, but see [PRIVACY.md](../PRIVACY.md) for what OpenRouter itself
+may keep.
+
+Neither OpenAI nor Gemini is better overall, and any OpenAI-compatible model can be used instead.
 A fresh install starts with the OpenAI setup, because a model that misses
 requirements quietly *inflates* your score — by about nine points in our tests.
-With only a Gemini key, switch all three roles in **Settings › AI & models** (or set
+With only a Gemini or Claude key, switch all three roles in **Settings › AI & models** (or set
 `FAST_MODEL`/`SMART_MODEL`/`CHAT_MODEL` in `.env`). Press **Test** next to each model
-to check it works; **Find Gemini models** (or **Find OpenAI models**) lists
+to check it works; **Find Gemini models** (or **Find OpenAI models**; Claude's three models are built in) lists
 what your key can use.
 
 ### Driving it from Claude, Codex, or ChatGPT (MCP)

@@ -376,8 +376,9 @@ function ModelProfileNote() {
         <p className="text-muted-foreground max-w-prose">
           GPT-5.6 Luna gives the most thorough results and cost less per
           application in our tests, but it is slower. Gemini 3.7 Flash is the
-          fastest. In our tests the Fast model mattered most. Prices change
-          often, so check the current ones:{" "}
+          fastest. Claude works with one key and you choose its model for each
+          role, but we have not measured it. In our tests the Fast model
+          mattered most. Prices change often, so check the current ones:{" "}
           <NewTabLink href="https://openai.com/api/pricing/">OpenAI pricing</NewTabLink>{" "}
           and{" "}
           <NewTabLink href="https://ai.google.dev/gemini-api/docs/pricing">Gemini API pricing</NewTabLink>.

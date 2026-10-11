@@ -39,7 +39,7 @@ Maestro tailors it from your whole career history in under a minute, and every b
 ![Score, tailor, see every AI edit, download the PDF — end to end](docs/assets/hero.gif)
 
 **Works with Claude, Codex or the ChatGPT desktop app** (88 tools) ·
-**bring your own AI key**, OpenAI or Gemini (scoring, PDFs and tracking work
+**bring your own AI key**, OpenAI, Gemini or Claude (scoring, PDFs and tracking work
 without one) · **real LaTeX and Typst PDFs** · **runs on your computer, no
 account** · **take everything with you** in one `career.md` file
 
@@ -98,7 +98,7 @@ Python under emulation: `uv tool install --python cpython-3.12-windows-x86_64-no
 
 Then:
 
-1. Add your AI key in **Settings › AI & models**. OpenAI or Gemini, either one is enough. Without a key, scoring, PDFs and tracking still work ([what a key costs and does](docs/SETUP_REFERENCE.md#do-you-need-an-api-key)).
+1. Add your AI key in **Settings › AI & models**. One key from OpenAI, Gemini or Claude is enough. Without a key, scoring, PDFs and tracking still work ([what a key costs and does](docs/SETUP_REFERENCE.md#do-you-need-an-api-key)).
 2. Import your resumes, save a job, and tailor ([step by step](docs/GETTING_STARTED.md#3-your-first-tailored-resume)).
 3. Optional: `maestro connect` adds Maestro to Claude Desktop, Claude Code, Codex, Cursor or VS Code, and the [Companion](docs/GETTING_STARTED.md#4-the-companion-browser-extension-optional) is a Chrome side panel for saving and filling job pages.
 

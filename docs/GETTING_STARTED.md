@@ -22,7 +22,7 @@ Three steps: [install it](#1-what-you-need) → [add your resumes](#3-your-first
 - **Base resume** — your main resume for one kind of role, such as Data Scientist.
 - **Tailoring** — adjusting a base resume to one job, using only things you actually did.
 - **Match score** — Maestro's comparison of your resume with a saved job description. It is not an employer's score or a prediction of an interview.
-- **AI service** — OpenAI or Gemini, whichever you choose; you add its key in Settings › AI & models.
+- **AI service** — OpenAI, Gemini or Claude (Anthropic), whichever you choose; you add its key in Settings › AI & models.
 - **Companion** — the Maestro CS browser extension, a side panel in Chrome.
 - **Assistant** — the chat inside the app. **Connected agents** are AI assistants outside it (Claude, Codex, ChatGPT desktop) that use the app over MCP.
 
@@ -55,7 +55,7 @@ assistant** ([§5](#5-connect-your-ai-assistant-optional)).
   package manager.
 - **Disk space.** About a 1 GB download, which takes roughly 3–4 GB once
   unpacked ([details](SETUP_REFERENCE.md#prerequisites)).
-- **An AI key — optional for now.** OpenAI or Gemini (or a local
+- **An AI key — optional for now.** OpenAI, Gemini or Claude (or a local
   OpenAI-compatible server). You add it inside the app after it starts.
   Without one, scoring, PDFs and tracking still work
   ([No-Key Mode](SETUP_REFERENCE.md#do-you-need-an-api-key)).
@@ -109,7 +109,7 @@ and adds a demo resume so you have something to look at.
 Don't put your AI key in `.env`. Add it in the app (Settings › AI & models), which
 is step 3 below. A key saved in the app always wins over one in `.env`. Use
 `.env` only for a setup with no browser: paste the key after `OPENAI_API_KEY=`
-(or `GEMINI_API_KEY=`) and don't also save one in the app.
+(or `GEMINI_API_KEY=`, `ANTHROPIC_API_KEY=`, `OPENROUTER_API_KEY=`) and don't also save one in the app.
 
 **Already use a coding agent** (Claude Code, the Codex CLI)? Install Docker
 and Git yourself, run the `git clone` command, open the agent in that folder,

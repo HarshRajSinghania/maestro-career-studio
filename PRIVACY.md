@@ -90,9 +90,17 @@ Maestro CS has no AI model of its own. AI features work only after you add a key
 or an endpoint; scoring, PDF rendering, and tracking work without one. When you
 use an AI feature, the app sends a request to the service you configured:
 
-- **OpenAI**, or any **OpenAI-compatible endpoint** you enter (OpenRouter,
-  Ollama, LM Studio, vLLM). The default is `api.openai.com`.
+- **OpenAI**, or any **OpenAI-compatible endpoint** you enter (Ollama, LM
+  Studio, vLLM). The default is `api.openai.com`.
 - **Google Gemini** (`generativelanguage.googleapis.com`), if you add a Gemini key.
+- **Anthropic Claude** (`api.anthropic.com`), if you add a Claude key. Your key,
+  and Anthropic's retention terms.
+- **OpenRouter** (`openrouter.ai`), if you add an OpenRouter key. Maestro asks
+  OpenRouter to route only to model providers with zero data retention and no
+  data collection. OpenRouter itself may still keep inputs: its
+  [privacy policy](https://openrouter.ai/privacy) says inputs containing
+  personal data are collected, so a resume sent through OpenRouter reaches
+  OpenRouter under its terms.
 - **Jev (TypeSafe AI), via OpenRouter** (default `openrouter.ai`), only if you
   add a Jev key and switch the Companion's form filling to it.
 

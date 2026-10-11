@@ -71,7 +71,7 @@ These are for the Docker route below.
   `sudo apt install git`).
 - **Disk space** — about a 1 GB download, roughly 3–4 GB once unpacked. Most of
   it is the PDF tools and the small scoring model.
-- **An AI key — OpenAI or Gemini; either one is enough.** It powers tailoring,
+- **An AI key — OpenAI, Gemini or Claude; any one is enough.** It powers tailoring,
   cover letters and screening answers, building your career history, the
   Companion's form filling, and the Assistant. Without a key, scoring, PDFs and tracking
   still work — see [Do you need an API key?](#do-you-need-an-api-key)
@@ -90,7 +90,7 @@ time:
 | Piece | What it takes |
 |---|---|
 | **1. The app** | one `docker compose up -d` (below) — runs on your own computer only |
-| **2. An AI key** | **Settings › AI & models** in the app; OpenAI *or* Gemini, [either alone is enough](USING_MAESTRO.md#5-choose-your-models-deliberately) |
+| **2. An AI key** | **Settings › AI & models** in the app; OpenAI, Gemini *or* Claude, [any one alone is enough](USING_MAESTRO.md#5-choose-your-models-deliberately) |
 | **3. Your AI assistant** | **optional.** Claude: install the `.mcpb` extension from Settings → Extensions. Codex / ChatGPT desktop: add the plugin from Settings → Plugins. [Details](USING_MAESTRO.md#driving-it-from-claude-codex-or-chatgpt-mcp) |
 | **4. The Companion (browser extension)** | **optional.** `chrome://extensions` → Developer mode → **Load unpacked** → the repo's `extension/` folder. Nothing to configure — [full steps](../extension/README.md) |
 

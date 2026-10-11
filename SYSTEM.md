@@ -126,7 +126,7 @@ scripts/               setup-mcp.sh (deprecated stdio, §13), update.sh (Docker 
 ```
 
 `data/maestro_cs.sqlite3` (SQLite, WAL) holds rows and local sync clocks; ORM flushes stamp jobs/profile, including imports and both sides of moves. A job still at revision 0 is stamped from that clock when this copy pushes or lists its jobs. Deleted jobs leave tombstones; Core writers touch their subtree (`services/sync/hooks.py`; the write guard is §6
-inv-flush-guard). Resume JSON/rendered files stay on disk (`base_resumes` row + file required); job-site login: `settings/secrets/` (§6). A uv install keeps all of it in one per-user folder (inv-one-home).
+inv-flush-guard). Resume JSON/rendered files stay on disk (`base_resumes` row + file required); job-site login: `settings/secrets/` (§6). A uv install keeps all of it in one per-user folder (inv-one-home). **LLM calls** go through the front door `llm.py` (`call_openai`, key getters; four keys, env keys as fallback). `llm_providers/registry.resolve` routes a model id by catalog tag, then keys/prefix, to an adapter (OpenAI-compatible incl. custom servers and the privacy-locked OpenRouter preset, Claude, Gemini); chat streams through the same adapters.
 
 **Sync** is optional, on only while a key file exists (`docs/sync-setup.md`): the laptop owns the profile, each job has one owner
 (docs/entities/job.md), nothing merges (inv-one-writer-ownership). The always-on copy drives: `sync.sh` (cron; `--now` forces a round) or MCP `sync_now` asks its
@@ -384,13 +384,17 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   only on its own yes carrying the current policy (`agreed_policy`; `test_eeo_consent.py`). One flag for both would make
   an EEO yes agree to terms. ONE gate, `eeo_consent.withhold_unconsented`, strips `profile.eeo` unless `enabled` for
   every outward reader: `GET /api/autofill/context`, the `/choose` prompt AND the Jev engine's slot catalog (model
-  providers — Jev, OpenRouter serving Jev — are recipients too); it fails CLOSED when consent cannot be computed. The
+  providers — OpenAI, Gemini, Claude, OpenRouter, Jev — are recipients too); it fails CLOSED when consent cannot be computed. The
   MCP client keeps its OWN strip — two gates, not a relocated one. Which path asks never decides whether protected-class
   data is served. Pins (router, `/choose`, Jev): `.system_md_enforcement.json`. No inference or invented EEO answers;
   never solicit pasted demographic answers in chat when consented values are in Profile. Human-only at ANY setting is
   Next/Submit and nothing wider; `consent_forms` lifts every label refusal for the callers that pass it (the fill loop,
   a model included; never the old collector/pause rows), and only it, as served (lapsed or unreadable: absent), adds
   `derived.agrees_to_terms`.
+- **Provider data** `{#inv-provider-tagged-meta}`: opaque blocks (`ProviderMeta`: Claude thinking signatures, Gemini thought
+  signatures) carry their provider and reach only that provider; `replay.for_provider` strips them for any other, so a model
+  switch mid-chat never leaks one vendor's blocks to another. Pinned by `tests/test_replay.py`.
+
 - **PDF word-spacing** `{#inv-pdf-word-spacing}`: pdflatex+XCharter joins words for strict extractors;
   `pdfinterwordspaceon` + the parse_certified gate protect this — see the shared header partial `_header.tex.j2`, which
   BOTH resume and cover-letter templates include (format/scanner changes must handle both). pdfTeX 1.40.27 misplaces
@@ -546,25 +550,13 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   toolset (resume edit, KB capture, template admin including the mutations MCP
   deliberately lacks). Its resume-edit tool runs the SAME pipeline as the REST
   endpoints (`services/resume_ops.py`); scope checks and ToolError mapping
-  remain chat-side. **Chat interaction model** ("chips in, cards out"):
-  assistant prose renders Markdown (content passed to tools stays plain);
-  `propose_edits` stages ANY typed-op set as an approval card (`proposal_ops` —
-  validated + scope-checked at propose time, applied via the standard `/edits`
-  PATCH); proposal cards persist their resolution via `PATCH
-  /api/chat/messages/{id}/card-state` (`meta_json.card_state`, 409 on
-  conflicting re-stamp) and card SSE events carry `message_id` (tool row
-  persists before the card event); `ChatSelection` is kind-tagged (`resume` |
-  `kb_entity`, missing=resume) — KB chips pin context and never constrain the
-  resume scope guard; three read-only analytics tools (`analytics_activity`,
-  `analytics_gap_frequency` incl. build-areas, `analytics_base_summaries`)
-  answer job-search questions in chat. **Pinned-resume resolution**: the pin is a HINT, not a guard (the enforced guard is
+  remain chat-side. Cards, selections and the analytics tools: `docs/entities/others.md`, "In-app chat: interaction model". **Pinned-resume resolution**: the pin is a HINT, not a guard (the enforced guard is
   `check_ops_in_scope` over selection PATHS); how it resolves, reloads and follows a changed base is reference
   tier: `docs/entities/others.md`, "In-app chat: pinned-resume resolution". **Social posts**: chat
   drafts LinkedIn/social posts as copy-out markdown — no card, no persistence,
   the transcript is the history — grounded via read-only `get_career_context`;
-  conventions live in chat_system.txt. The router resolves the model client before the
-  capability check (no key → a 422 "The Assistant needs an API key…") and hands it to
-  `run_turn`; working chips are words (`TOOL_PHRASES`), and deleting a chat asks first.
+  conventions live in chat_system.txt. The router checks the Assistant's key before the
+  capability check (no key → a 422 "The Assistant needs an API key…"); `run_turn` streams through the adapter; working chips are words (`TOOL_PHRASES`), and deleting a chat asks first.
   Prompt rows seed at startup. `prompts.get_prompt` lazy-seeds only with a caller's session; its own session reads
   the file default without writing when a row is absent. Prompt-file changes need the DB `prompt.chat_system` row
   reset (Settings › AI & models › AI instructions → Reset to default, or delete the row); a deploy uses a
@@ -621,8 +613,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   knock-out heads Fill.
   **`/choose` has two engines**, `fast` and `jev` (`llm.autofill_engine`, Settings › AI & models › **Form filling**);
   how each decides, and the Jev key's host rule, are reference tier: `docs/entities/others.md`, "Form-filling engines".
-- **Streaming chat** needs the OpenAI streaming tool-call wire shape (OpenAI, or Gemini via the OpenAI-compat
-  URL); eligibility is the tools probe.
+- **Streaming chat** runs through `llm_providers` on any provider; eligibility is the tools probe.
 
 ## 8. Frontend conventions
 
@@ -927,7 +918,7 @@ citation. Priority lives in the item text, not in the ordinal.
 - **Check model capability in the ROUTER, never inside `run_turn`**: `run_turn` is a generator — anything it raises
   fires after the SSE headers are out and reaches the browser as a truncated stream. Capabilities are probed on save
   (`llm_capabilities.probe()`); `require()` raises `CapabilityMissing`; unprobed models are never blocked.
-- **A probe must issue the SAME call as the surface it measures**: same client (`llm.get_chat_client`), same kwargs from
+- **A probe must issue the SAME call as the surface it measures**: same client (the adapter `stream` call in `llm_providers`), same kwargs from
   `llm.completion_extras`. A re-implemented call's stored row SHADOWS reality (a false tools=No once 422'd every chat message).
 - **LLM provider outages are ONE exception type**: `llm.py` normalizes them to `llm.LLMProviderError`; `app.main` maps it to
   502 + its `str()`, a user sentence; plain `RuntimeError` is LOCAL (500). Never catch `openai.*` in routers; classify on
@@ -972,6 +963,7 @@ survives as fallback/backup) · `blocked` (trigger cannot be evaluated until a n
 | `autofill-work-auth-shape` | `work_auth.authorized_to_work` + `requires_sponsorship` (two timeless booleans, stored "yes"/"no") → typed `WorkAuth` (`schemas/autofill_profile.py`: `status`, `authorized_now`, `sponsorship_now`, `sponsorship_future`, `authorization_expires_on`, `countries_authorized`) | both-live | Delete when no raw-profile reader uses either legacy key. Today's storage readers are FOUR: `services/autofill_profile.py`'s legacy branch, the Settings editor's legacy-on-edit bridge (`components/settings/autofill-section.tsx`), the fill engine's dual-read (`content/autofill.js`, the `w` binding in the profile normalizer; moved from agent.js at the phase-2 split), and the panel's `workAuthForWrite` (`panel/actions/pause.js`), which promotes the legacy pair before the first typed pause-row write. The panel copy is the trap: `.slopledger.json`'s trigger paths cover `extension/content` only, so the mechanical check goes GREEN while that reader lives — widen the paths or verify it by hand. `job_search_brief`'s identically named response fields are a frozen outward compatibility projection from typed `authorized_now` / `sponsorship_future`, not a legacy reader, and do not block removal. ALSO `GET /api/settings/autofill` must return a `work_auth` carrying neither legacy key. Then delete the legacy branch of BOTH `autofill_profile.get_work_auth` and the extension's `w` binding. Per `autofill-education-shape`: cut the frontend first, the extension one release later. | small |
 | `job-location-raw` | `jobs.location` (dual-written) → `location_raw` + city/state/country | both-live | Stage 1 (schema shim + `.location` property) already met. Stage 2: no reader of `jobs.location` remains, then `op.drop_column`. | small |
 | `health-rewrite-cache` | unattended rewrite always-LLM → `bullet_rewrites` (NULL text = tried-ask) + ephemeral ask answers → `health_ask_answers` | new-is-default | Migration `85a1bb628e28` (pre-SQLite chain, removed in v0.5.0; the tables are in the SQLite baseline). The LLM miss path is the intended fallback, not a second product — cut this row when a follow-up deletes either table or the GET `/api/resume-lint/{kind}/{key}/answers` rehydrate. | small |
+| `chat-message-parts` | `chat_messages.tool_calls` / `tool_call_id` columns → neutral versioned `parts` (+ `provider`, `model`; migration `cf0804d00ae2` backfills) | new-is-default | The release after this one ships: drop both columns, `transcript.from_legacy` and the `ChatMessageRead` legacy fields in one migration. Readers: `transcript.from_legacy` fallback, `ChatMessageRead`. | S |
 | `native-scripts-to-maestro` | `backend/scripts/native/*.sh` (always-on bot) → the `maestro` command | both-live | The always-on bot runs on `maestro` for one release, then delete `backend/scripts/native/`, `docs/native-install.md` and `tests/test_native_scripts.py`. | medium |
 | `lock-wheel-deps` | `requirements.lock` as the image's whole runtime set (names the old `maestro-career-studio-backend`, no `psutil`) → regenerated lock that omits `nodejs-wheel-binaries` (`pip-compile --unsafe-package`); the image adds the project with `--no-deps -e .` | both-live | Lock regenerated in `python:3.12-slim`: it has `psutil==`, `nodejs-wheel-binaries` not pinned, no `maestro-career-studio-backend`. | small |
 
