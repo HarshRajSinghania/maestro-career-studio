@@ -12,6 +12,7 @@
     "scripts.eval_fill_decisions",
     "scripts.fill_trace",
     "scripts.health_golden",
+    "scripts.live_provider_check",
     "scripts.memory_profile",
     "scripts.sync_key",
     "scripts.template_parity",
