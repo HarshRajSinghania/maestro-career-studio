@@ -211,7 +211,7 @@ A fresh install starts with the OpenAI setup, because a model that misses
 requirements quietly *inflates* your score — by about nine points in our tests.
 With only a Gemini or Claude key, switch all three roles in **Settings › AI & models** (or set
 `FAST_MODEL`/`SMART_MODEL`/`CHAT_MODEL` in `.env`). Press **Test** next to each model
-to check it works; **Find Gemini models** (or **Find OpenAI models**; Claude's three models are built in) lists
+to check it works; **Find Gemini models** (or **Find OpenAI models**, **Find Claude models**) lists
 what your key can use.
 
 ### Driving it from Claude, Codex, or ChatGPT (MCP)

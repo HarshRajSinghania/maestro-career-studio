@@ -391,10 +391,10 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   Next/Submit and nothing wider; `consent_forms` lifts every label refusal for the callers that pass it (the fill loop,
   a model included; never the old collector/pause rows), and only it, as served (lapsed or unreadable: absent), adds
   `derived.agrees_to_terms`.
+
 - **Provider data** `{#inv-provider-tagged-meta}`: opaque blocks (`ProviderMeta`: Claude thinking signatures, Gemini thought
   signatures) carry their provider and reach only that provider; `replay.for_provider` strips them for any other, so a model
   switch mid-chat never leaks one vendor's blocks to another. Pinned by `tests/test_replay.py`.
-
 - **PDF word-spacing** `{#inv-pdf-word-spacing}`: pdflatex+XCharter joins words for strict extractors;
   `pdfinterwordspaceon` + the parse_certified gate protect this — see the shared header partial `_header.tex.j2`, which
   BOTH resume and cover-letter templates include (format/scanner changes must handle both). pdfTeX 1.40.27 misplaces
@@ -918,8 +918,8 @@ citation. Priority lives in the item text, not in the ordinal.
 - **Check model capability in the ROUTER, never inside `run_turn`**: `run_turn` is a generator — anything it raises
   fires after the SSE headers are out and reaches the browser as a truncated stream. Capabilities are probed on save
   (`llm_capabilities.probe()`); `require()` raises `CapabilityMissing`; unprobed models are never blocked.
-- **A probe must issue the SAME call as the surface it measures**: same client (the adapter `stream` call in `llm_providers`), same kwargs from
-  `llm.completion_extras`. A re-implemented call's stored row SHADOWS reality (a false tools=No once 422'd every chat message).
+- **A probe must issue the SAME call as the surface it measures**: the adapter `stream` call in `llm_providers` (`provider.stream`), so client and kwargs
+  match by construction. A re-implemented call's stored row SHADOWS reality (a false tools=No once 422'd every chat message).
 - **LLM provider outages are ONE exception type**: `llm.py` normalizes them to `llm.LLMProviderError`; `app.main` maps it to
   502 + its `str()`, a user sentence; plain `RuntimeError` is LOCAL (500). Never catch `openai.*` in routers; classify on
   `provider_detail`, never `str(exc)` (a user sentence once replaced the text the capability probe matched on, 2026-09-24).
@@ -963,7 +963,7 @@ survives as fallback/backup) · `blocked` (trigger cannot be evaluated until a n
 | `autofill-work-auth-shape` | `work_auth.authorized_to_work` + `requires_sponsorship` (two timeless booleans, stored "yes"/"no") → typed `WorkAuth` (`schemas/autofill_profile.py`: `status`, `authorized_now`, `sponsorship_now`, `sponsorship_future`, `authorization_expires_on`, `countries_authorized`) | both-live | Delete when no raw-profile reader uses either legacy key. Today's storage readers are FOUR: `services/autofill_profile.py`'s legacy branch, the Settings editor's legacy-on-edit bridge (`components/settings/autofill-section.tsx`), the fill engine's dual-read (`content/autofill.js`, the `w` binding in the profile normalizer; moved from agent.js at the phase-2 split), and the panel's `workAuthForWrite` (`panel/actions/pause.js`), which promotes the legacy pair before the first typed pause-row write. The panel copy is the trap: `.slopledger.json`'s trigger paths cover `extension/content` only, so the mechanical check goes GREEN while that reader lives — widen the paths or verify it by hand. `job_search_brief`'s identically named response fields are a frozen outward compatibility projection from typed `authorized_now` / `sponsorship_future`, not a legacy reader, and do not block removal. ALSO `GET /api/settings/autofill` must return a `work_auth` carrying neither legacy key. Then delete the legacy branch of BOTH `autofill_profile.get_work_auth` and the extension's `w` binding. Per `autofill-education-shape`: cut the frontend first, the extension one release later. | small |
 | `job-location-raw` | `jobs.location` (dual-written) → `location_raw` + city/state/country | both-live | Stage 1 (schema shim + `.location` property) already met. Stage 2: no reader of `jobs.location` remains, then `op.drop_column`. | small |
 | `health-rewrite-cache` | unattended rewrite always-LLM → `bullet_rewrites` (NULL text = tried-ask) + ephemeral ask answers → `health_ask_answers` | new-is-default | Migration `85a1bb628e28` (pre-SQLite chain, removed in v0.5.0; the tables are in the SQLite baseline). The LLM miss path is the intended fallback, not a second product — cut this row when a follow-up deletes either table or the GET `/api/resume-lint/{kind}/{key}/answers` rehydrate. | small |
-| `chat-message-parts` | `chat_messages.tool_calls` / `tool_call_id` columns → neutral versioned `parts` (+ `provider`, `model`; migration `cf0804d00ae2` backfills) | new-is-default | The release after this one ships: drop both columns, `transcript.from_legacy` and the `ChatMessageRead` legacy fields in one migration. Readers: `transcript.from_legacy` fallback, `ChatMessageRead`. | S |
+| `chat-message-parts` | `chat_messages.tool_calls` / `tool_call_id` columns → neutral versioned `parts` (+ `provider`, `model`; migration `cf0804d00ae2` backfills) | new-is-default | The release after this one ships: drop both columns, `transcript.from_legacy` and the `ChatMessageRead` legacy fields in one migration. Readers: `transcript.from_legacy` fallback, `ChatMessageRead`. | small |
 | `native-scripts-to-maestro` | `backend/scripts/native/*.sh` (always-on bot) → the `maestro` command | both-live | The always-on bot runs on `maestro` for one release, then delete `backend/scripts/native/`, `docs/native-install.md` and `tests/test_native_scripts.py`. | medium |
 | `lock-wheel-deps` | `requirements.lock` as the image's whole runtime set (names the old `maestro-career-studio-backend`, no `psutil`) → regenerated lock that omits `nodejs-wheel-binaries` (`pip-compile --unsafe-package`); the image adds the project with `--no-deps -e .` | both-live | Lock regenerated in `python:3.12-slim`: it has `psutil==`, `nodejs-wheel-binaries` not pinned, no `maestro-career-studio-backend`. | small |
 

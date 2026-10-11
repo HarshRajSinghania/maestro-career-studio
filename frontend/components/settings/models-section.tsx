@@ -379,9 +379,11 @@ function ModelProfileNote() {
           fastest. Claude works with one key and you choose its model for each
           role, but we have not measured it. In our tests the Fast model
           mattered most. Prices change often, so check the current ones:{" "}
-          <NewTabLink href="https://openai.com/api/pricing/">OpenAI pricing</NewTabLink>{" "}
-          and{" "}
-          <NewTabLink href="https://ai.google.dev/gemini-api/docs/pricing">Gemini API pricing</NewTabLink>.
+          <NewTabLink href="https://openai.com/api/pricing/">OpenAI pricing</NewTabLink>
+          ,{" "}
+          <NewTabLink href="https://ai.google.dev/gemini-api/docs/pricing">Gemini API pricing</NewTabLink>
+          , and{" "}
+          <NewTabLink href="https://www.anthropic.com/pricing#api">Claude API pricing</NewTabLink>.
         </p>
       )}
     </div>
