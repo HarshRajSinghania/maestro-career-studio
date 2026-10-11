@@ -31,6 +31,8 @@ other musl Linux are not supported by the PDF engine's wheels; use a glibc distr
 
 `maestro start`, then open http://localhost:3000. `maestro stop` closes it, `maestro update`
 updates it (your data is snapshotted first), and `maestro connect` connects an AI agent.
+Coming from the Docker install? Stop it, then `maestro import-docker <your checkout>` copies your
+data over once (the Docker install is only read).
 
 ## Where your data lives
 
