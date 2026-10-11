@@ -914,6 +914,21 @@ def test_a_failed_replace_puts_back_env_and_database_and_removes_what_it_added(f
     assert [p.name for p in (home / "data").iterdir()] == [control.DB_FILENAME]
 
 
+@pytest.mark.skipif(not POSIX, reason="POSIX modes")
+def test_a_failed_replace_restores_each_file_with_its_original_mode(world, template_db, monkeypatch):
+    ctx, checkout = world
+    seed_uv_db(ctx, template_db, job=True)
+    uv_files(ctx)
+    (ctx.home / "settings" / "persona.md").chmod(0o644)
+    monkeypatch.setattr(importer.Importer, "_verify", lambda *a, **k: (_ for _ in ()).throw(
+        importer.ImportFailure("boom")))
+    imp, _ = importer_for(ctx)
+    with pytest.raises(ControlError):
+        imp.run(str(checkout), replace=True, dry_run=False)
+    modes = [stat.S_IMODE((ctx.home / n).stat().st_mode) for n in ("settings/persona.md", "sync-key")]
+    assert modes == [0o644, 0o600]
+
+
 def test_a_failed_replace_says_so_in_one_sentence(failed_replace):
     assert "put back" in failed_replace.error and "\n" not in failed_replace.error
 
@@ -930,6 +945,20 @@ def test_a_successful_replace_keeps_the_replaced_files_next_to_the_snapshot_and_
     assert (saved / "base_resumes" / "main.json").read_text() == "uv main resume"
     assert str(saved) in "\n".join(said)
     assert [p.name for p in (ctx.home / "data").iterdir()] == [control.DB_FILENAME]
+
+
+def test_the_undo_steps_of_a_first_import_say_to_delete_the_key_it_added(imported):
+    assert f"delete {imported.home / 'sync-key'}" in imported.out and "Docker's key" in imported.out
+
+
+def test_the_undo_steps_do_not_mention_the_key_when_the_uv_install_had_its_own(world, template_db):
+    ctx, checkout = world
+    seed_uv_db(ctx, template_db, job=True)
+    uv_files(ctx)
+    imp, said = importer_for(ctx)
+    imp.run(str(checkout), replace=True, dry_run=False)
+    undo = next(line for line in said if line.startswith("To undo:"))
+    assert "restore the snapshot" in undo and "delete" not in undo
 
 
 def test_a_first_import_saves_only_the_settings_file_it_appended_to(imported):
@@ -952,6 +981,19 @@ def test_leftovers_of_an_interrupted_import_are_refused_naming_them_and_the_snap
         imp.run(str(checkout), replace=True, dry_run=False)
     assert leftover in str(info.value) and snapshot.name in str(info.value) and "\n" not in str(info.value)
     assert tree_hash(ctx.home) == before and said == []
+
+
+def test_the_saved_copies_are_to_be_copied_back_before_anything_is_deleted(world):
+    ctx, checkout = world
+    write(ctx.home / "data" / ".before-import" / "sync-key", "only copy")
+    write(ctx.home / "data" / "maestro_cs.sqlite3.before-import", "x")
+    imp, _ = importer_for(ctx)
+    with pytest.raises(ControlError) as info:
+        imp.run(str(checkout), replace=True, dry_run=False)
+    text = str(info.value)
+    assert f"Copy what is in {ctx.home / 'data' / '.before-import'}/ back over the same names in {ctx.home}" in text
+    assert "only copies" in text and text.index("Copy what is in") < text.index("delete")
+    assert "maestro_cs.sqlite3.before-import back under its name without .before-import" in text
 
 
 def test_leftovers_are_refused_by_a_dry_run_too(world):

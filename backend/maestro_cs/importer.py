@@ -104,7 +104,7 @@ class _Undo:
         if stat.S_ISREG(info.st_mode):
             copy = self.saved / path.relative_to(self.home)
             copy.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            _copy_file(path, copy, info)
+            _copy_file(path, copy, info, exact_mode=True)
 
     def restore(self) -> None:
         for path in reversed(self.created):
@@ -283,14 +283,14 @@ def _ensure_dir(path: Path) -> None:
         raise ImportFailure(f"{path} is not a folder.")
 
 
-def _copy_file(src: Path, dst: Path, info: os.stat_result) -> None:
+def _copy_file(src: Path, dst: Path, info: os.stat_result, exact_mode: bool = False) -> None:
     tmp = dst.with_name(dst.name + ".importing")
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0)
     try:
         with open(src, "rb") as reader, os.fdopen(os.open(tmp, flags, 0o600), "wb") as writer:
             shutil.copyfileobj(reader, writer)
-        if POSIX:  # owner bits only: a copy never ends up wider than 0700/0600
-            os.chmod(tmp, (info.st_mode & 0o700) | 0o600)
+        if POSIX:  # imported copies are owner-only; a saved copy keeps its mode so a restore is exact
+            os.chmod(tmp, stat.S_IMODE(info.st_mode) if exact_mode else (info.st_mode & 0o700) | 0o600)
         os.utime(tmp, ns=(info.st_atime_ns, info.st_mtime_ns))
         os.replace(tmp, dst)
     except BaseException:
@@ -422,16 +422,28 @@ class Importer:
 
     def _refuse_if_interrupted(self) -> None:
         data = self.ctx.home / "data"
-        left = sorted({p.name for p in data.glob(f"*{ASIDE}")} | {n for n in (STAGE, SAVED) if (data / n).exists()})
-        if not left:
+        asides = sorted(p.name for p in data.glob(f"*{ASIDE}") if p.name != SAVED)
+        saved, stage = (data / SAVED).exists(), (data / STAGE).exists()
+        if not (asides or saved or stage):
             return
-        snaps = sorted((self.ctx.home / "backups").glob(maintenance.BACKUP_GLOB), key=lambda p: p.stat().st_mtime)
-        newest = f"Your earlier data is in {snaps[-1].name} in {data.parent / 'backups'}" if snaps else (
-            "There is no snapshot in backups/")
-        raise ControlError(
-            f"A previous import was interrupted: {', '.join(left)} {'is' if len(left) == 1 else 'are'} still in "
-            f"{data}. {newest}, and in the {ASIDE} files here (put each back under its name without {ASIDE}). "
-            "Delete the leftovers, then run this again.")
+        steps = []
+        if saved:  # the only copies of what the import replaced: restore them before deleting anything
+            steps.append(f"Copy what is in {data / SAVED}/ back over the same names in {self.ctx.home} (those are "
+                         "the only copies of your old sync key, settings and maestro.env), then delete that folder.")
+        if asides:
+            steps.append(f"Put {', '.join(asides)} back under its name without {ASIDE}"
+                         f"{' (each)' if len(asides) > 1 else ''}.")
+        if stage:
+            steps.append(f"Delete {data / STAGE}/.")
+        raise ControlError(f"A previous import was interrupted and left files in {data}. {' '.join(steps)} "
+                           f"{self._newest_snapshot_sentence()} Then run this again.")
+
+    def _newest_snapshot_sentence(self) -> str:
+        backups = self.ctx.home / "backups"
+        snaps = sorted(backups.glob(maintenance.BACKUP_GLOB), key=lambda p: p.stat().st_mtime)
+        if not snaps:
+            return "There is no snapshot in backups/."
+        return f"Your earlier database is also in {snaps[-1].name} in {backups}."
 
     def _check_checkout(self, root: Path) -> Path:
         if not root.is_dir():
@@ -657,6 +669,8 @@ class Importer:
         say("Start it with `maestro start`.")
         steps = [f"restore the snapshot {snapshot}"] if snapshot else []
         steps += [f"copy the files in {kept} back over the matching names in {self.ctx.home}"] if kept else []
+        if home / "sync-key" in undo.created:  # no uv key before: leaving Docker's would keep sync on with it
+            steps.append(f"delete {home / 'sync-key'} (the import added it; otherwise sync stays on with Docker's key)")
         if steps:
             say("To undo: " + ", then ".join(steps) + " (docs/UPDATING.md, Move from Docker to the uv install).")
         return 0

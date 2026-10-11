@@ -137,16 +137,19 @@ back): `maestro stop`, delete the three files `data/maestro_cs.sqlite3*`, unpack
 the snapshot it printed over `data/maestro_cs.sqlite3` (macOS and Linux:
 `gunzip -c backups/db-<time>.sqlite3.gz > data/maestro_cs.sqlite3`), copy the
 contents of `backups/import-replaced-files-<time>/` back over the same names in
-your Maestro folder, and `maestro start`. Files the import added that did not
-exist before are harmless and can stay.
+your Maestro folder, and `maestro start`. If the folder had no `sync-key` before
+the import, also delete `sync-key` there; otherwise sync stays on with the Docker
+install's key. The other files the import added are harmless and can stay.
 
 **If the import is interrupted** (power loss, the terminal killed mid-run), the
 next `maestro import-docker` refuses, and so does `maestro start` when the
 database file is missing, naming the leftovers in `data/`
 (`maestro_cs.sqlite3.before-import`, `maestro_cs.sqlite3-wal.before-import`, `.importing/`,
-`.before-import/`). Put each `*.before-import` file back under its name without
-the suffix (or restore the snapshot), copy anything in `data/.before-import/` back
-over the same names in your Maestro folder, delete the leftovers, and run it again.
+`.before-import/`). **First** copy what is in `data/.before-import/` back over the
+same names in your Maestro folder: those are the only copies of your old sync key,
+settings and `maestro.env`, and only then delete that folder. Put each
+`*.before-import` database file back under its name without the suffix (or
+restore the snapshot), delete `data/.importing/`, and run it again.
 
 Afterwards, **don't start the Docker install again alongside this one**: both
 would share one sync identity. The Docker folder is still yours; delete it when
