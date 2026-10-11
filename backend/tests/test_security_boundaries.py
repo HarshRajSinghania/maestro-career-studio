@@ -130,6 +130,35 @@ def test_a_template_cannot_read_a_file_outside_its_output_directory(tmp_path):
     )
 
 
+def _compile_outcome(tex: str, out_dir) -> str:
+    """The text a compile produced: the PDF's text, or the error text when TeX
+    refused (nonstopmode with halt-on-error makes a missing file fatal, and the
+    error echoes any source line TeX did read)."""
+    pdfplumber = pytest.importorskip("pdfplumber")
+    if shutil.which("pdflatex") is None:
+        pytest.skip("pdflatex is not installed")
+    try:
+        pdf = pdf_render.compile_pdf(tex, out_dir, stem="mine")
+    except RuntimeError as exc:
+        return str(exc)
+    with pdfplumber.open(pdf) as doc:
+        return "\n".join((page.extract_text() or "") for page in doc.pages)
+
+
+def _sibling_in_shared_dir(tmp_path):
+    """A second resume's source in the shared tex/ dir (no TeX special
+    characters in the canary, so a successful read typesets cleanly)."""
+    out_dir = tmp_path / "tex"
+    out_dir.mkdir()
+    sibling = out_dir / "other_resume.tex"
+    sibling.write_text("CANARYSIBLINGSOURCE\n", encoding="utf-8")
+    return out_dir, sibling
+
+
+def _document(body: str) -> str:
+    return f"\\documentclass{{article}}\n\\begin{{document}}\nRendered.\n{body}\n\\end{{document}}\n"
+
+
 @pytest.mark.parametrize("how", ["relative", "absolute"])
 def test_a_template_cannot_input_a_sibling_source_in_its_output_directory(tmp_path, how):
     """Base-resume sources share one tex/ directory. The compile used to run
@@ -137,39 +166,31 @@ def test_a_template_cannot_input_a_sibling_source_in_its_output_directory(tmp_pa
     both `\\input{sibling.tex}` and its absolute path: a hostile template could
     print another resume's source into its own PDF. Each compile now runs in a
     fresh temporary folder holding only its own source."""
-    pdfplumber = pytest.importorskip("pdfplumber")
-    if shutil.which("pdflatex") is None:
-        pytest.skip("pdflatex is not installed")
-
-    out_dir = tmp_path / "tex"
-    out_dir.mkdir()
-    sibling = out_dir / "other_resume.tex"
-    sibling.write_text("CANARYSIBLINGSOURCE\n", encoding="utf-8")
-
+    out_dir, sibling = _sibling_in_shared_dir(tmp_path)
     target = "other_resume.tex" if how == "relative" else str(sibling)
-    tex = (
-        "\\documentclass{article}\n"
-        "\\begin{document}\n"
-        "Rendered.\n"
-        f"\\input{{{target}}}\n"
-        "\\end{document}\n"
-    )
 
-    # No special TeX characters in the canary, so a successful read typesets
-    # cleanly. The file being missing is a fatal TeX error (nonstopmode with
-    # halt-on-error), which is the expected outcome; the error text echoes any
-    # source line TeX did read, so it is checked too.
-    try:
-        pdf = pdf_render.compile_pdf(tex, out_dir, stem="mine")
-    except RuntimeError as exc:
-        assert "CANARYSIBLINGSOURCE" not in str(exc)
-        return
+    outcome = _compile_outcome(_document(f"\\input{{{target}}}"), out_dir)
 
-    with pdfplumber.open(pdf) as doc:
-        text = "\n".join((page.extract_text() or "") for page in doc.pages)
-    assert "CANARYSIBLINGSOURCE" not in text, (
+    assert "CANARYSIBLINGSOURCE" not in outcome, (
         "a template read a sibling source from its output directory"
     )
+
+
+@pytest.mark.parametrize("how", ["relative", "absolute"])
+def test_a_template_cannot_overwrite_a_sibling_source_in_its_output_directory(tmp_path, how):
+    """The write side of the same hole: `\\openout` over a sibling's .tex in the
+    shared tex/ directory. A relative name now lands in the discarded compile
+    folder and an absolute path outside it is refused by paranoid mode."""
+    out_dir, sibling = _sibling_in_shared_dir(tmp_path)
+    target = "other_resume.tex" if how == "relative" else str(sibling)
+    body = (
+        f"\\immediate\\openout3={target}\n"
+        "\\immediate\\write3{OVERWRITTEN}\n"
+        "\\immediate\\closeout3"
+    )
+
+    _compile_outcome(_document(body), out_dir)  # refusing to compile is fine
+
     assert sibling.read_text(encoding="utf-8") == "CANARYSIBLINGSOURCE\n"
 
 
@@ -187,6 +208,20 @@ def test_the_compile_leaves_the_same_artifacts_in_the_output_directory(tmp_path)
     assert pdf == out_dir / "mine.pdf" and pdf.stat().st_size > 0
     assert (out_dir / "mine.tex").exists()
     assert (out_dir / "mine.log").exists()
+
+
+def test_copy_back_replaces_atomically_and_leaves_no_partial_file(tmp_path):
+    produced = tmp_path / "work" / "mine.pdf"
+    produced.parent.mkdir()
+    produced.write_bytes(b"%PDF new")
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    (out_dir / "mine.pdf").write_bytes(b"%PDF old")
+
+    pdf_render._copy_back(produced, out_dir)
+
+    assert (out_dir / "mine.pdf").read_bytes() == b"%PDF new"
+    assert [p.name for p in out_dir.iterdir()] == ["mine.pdf"]
 
 
 def test_every_pdflatex_call_site_passes_the_hardened_environment():
@@ -282,9 +317,9 @@ def test_the_compile_environment_pins_paranoid_file_access(tmp_path):
 
     assert env["openin_any"] == "p"
     assert env["openout_any"] == "p"
-    # Paranoid mode restricts ABSOLUTE input paths to under TEXMFOUTPUT, and
-    # compile_pdf passes an absolute \input{...} of the staged file — so
-    # without this the bundled templates would stop compiling.
+    # pdflatex writes its output under -output-directory with openout_any=p,
+    # and kpathsea allows absolute reads and writes only under TEXMFOUTPUT —
+    # so without this the bundled templates would stop compiling.
     assert env["TEXMFOUTPUT"] == str(tmp_path)
     # Belt and braces beside -no-shell-escape on the command line.
     assert env["shell_escape"] == "f"

@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.parse
 
 import pytest
 
@@ -109,7 +110,10 @@ def test_a_computed_package_import_cannot_download(tmp_path):
             package_dir=str(cache),
             timeout=30,
         )
-    assert "download" in str(ei.value).lower()
+    # "Connection Failed" proves the request went to the dead proxy and was
+    # refused; an offline machine with no proxy would say "Dns Failed" instead.
+    assert "failed to download package" in str(ei.value).lower()
+    assert "connection failed" in str(ei.value).lower()
     assert list(cache.rglob("*")) == [], "a package was fetched into the cache"
     assert not (tmp_path / "bad.pdf").exists()
 
@@ -132,7 +136,7 @@ def test_cut_network_env_sets_every_proxy_variable_and_drops_no_proxy(monkeypatc
 
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
                  "http_proxy", "https_proxy", "all_proxy"):
-        assert os.environ[name] == "http://127.0.0.1:9"
+        assert os.environ[name] == typst_compiler._DEAD_PROXY
     assert "NO_PROXY" not in os.environ
     assert "no_proxy" not in os.environ
 
@@ -159,7 +163,6 @@ def test_worker_cuts_the_network_in_the_child_only(monkeypatch):
     not touched by anything the child does."""
     monkeypatch.setenv("NO_PROXY", "packages.typst.org")
     monkeypatch.setenv("HTTPS_PROXY", "http://parent.invalid:3128")
-    before = dict(os.environ)
 
     out = subprocess.run(
         [sys.executable, "-c", _CHILD_PROBE],
@@ -170,6 +173,35 @@ def test_worker_cuts_the_network_in_the_child_only(monkeypatch):
 
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
                  "http_proxy", "https_proxy", "all_proxy"):
-        assert seen[name] == "http://127.0.0.1:9", name
+        assert seen[name] == typst_compiler._DEAD_PROXY, name
     assert seen["NO_PROXY"] is None and seen["no_proxy"] is None
+
+
+def test_the_dead_proxy_is_a_valid_url_with_an_in_range_port():
+    """An unparsable proxy value (``:99999``) is silently ignored by the
+    client, which then goes direct: the cut would fail OPEN. ``.port`` raises
+    ValueError for an out-of-range port."""
+    parsed = urllib.parse.urlparse(typst_compiler._DEAD_PROXY)
+    assert parsed.scheme == "http"
+    assert parsed.hostname == "127.0.0.1"
+    assert parsed.port is not None and 0 <= parsed.port <= 65535
+
+
+def test_a_real_compile_leaves_the_parents_proxy_environment_alone(tmp_path, monkeypatch):
+    """The cut runs in the spawned child; run the real spawn path and check the
+    app process's own environment afterwards."""
+    monkeypatch.setenv("NO_PROXY", "packages.typst.org")
+    monkeypatch.setenv("HTTPS_PROXY", "http://parent.invalid:3128")
+    before = dict(os.environ)
+    src = tmp_path / "ok.typ"
+    src.write_text("= hi\n", encoding="utf-8")
+    pkg = tmp_path / "pkgs"
+    pkg.mkdir()
+
+    typst_compiler.run_typst_compile(
+        input=str(src), output=str(tmp_path / "ok.pdf"), root=str(tmp_path),
+        font_paths=[], sys_inputs={}, package_dir=str(pkg), timeout=60,
+    )
+
+    assert (tmp_path / "ok.pdf").exists()
     assert dict(os.environ) == before

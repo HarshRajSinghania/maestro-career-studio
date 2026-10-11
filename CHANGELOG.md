@@ -48,7 +48,7 @@ None.
 
 ### Security
 
-- Typst renders can no longer download packages, including through a computed import path. LaTeX compiles each run in its own temporary folder, so a template cannot read another resume's source.
+- Typst renders can no longer download packages, including through a computed import path. LaTeX compiles each run in its own temporary folder, so a template cannot read or overwrite another resume's source.
 
 ### Fixed
 

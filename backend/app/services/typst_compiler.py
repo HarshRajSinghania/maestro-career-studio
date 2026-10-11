@@ -104,9 +104,14 @@ def source_imports_package(source: str) -> bool:
 
 
 # typst-py downloads packages with a client that honours the standard proxy
-# variables. Port 9 (discard) on loopback refuses connections, so a download
-# attempt fails fast and offline-deterministically instead of reaching the net.
-_DEAD_PROXY = "http://127.0.0.1:9"
+# variables. Nothing can listen on TCP port 0, so every connection to the proxy
+# fails at once (refused, or "address not available" on macOS) with no listener
+# on the machine able to answer it. That beats a low port such as 9: an
+# unprivileged macOS process may bind it, and a silent listener would hang the
+# compile until the timeout. The value MUST parse as a URL with a port in
+# 0..65535: the client silently ignores an unparsable proxy (``:99999``) and
+# goes direct, so a malformed value here fails OPEN.
+_DEAD_PROXY = "http://127.0.0.1:0"
 _PROXY_VARS = (
     "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
     "http_proxy", "https_proxy", "all_proxy",

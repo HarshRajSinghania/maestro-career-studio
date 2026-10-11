@@ -260,8 +260,8 @@ this contract. Code citing "§4" lands here; the table says which file to open.
      unconditional; `compile_cover_letter_pdf` stays a thin alias of `compile_pdf`. `\input` opens anything past Jinja's
      sandbox, so `_compile_env` adds kpathsea paranoid mode (`openin_any`/`openout_any=p`), and `_run_pdflatex` compiles
      in a fresh temp folder per run (cwd = `TEXMFOUTPUT` = that folder; only the PDF and log are copied back), so base
-     resumes' shared `tex/` is unreachable. Typst: the `@pkg` regex is only the friendly error (a computed import path
-     walks past it); `_worker` kills proxies in the child so a download fails. BOUNDS; the render worker is the fix (KNOWN_ISSUES).
+     resumes' shared `tex/` can be neither read nor overwritten. Typst: the `@pkg` regex is only the friendly error (a computed import path
+     walks past it); `_worker` points proxies at a dead address in the child so a download fails. BOUNDS; the render worker is the fix (KNOWN_ISSUES).
   6. **A template id is a slug, enforced in the REGISTRY.** `validate_template_id` (`schemas/template.py`, importing
      nothing from `app`) gates `create_draft`, `duplicate` and `_preview_path` — not just `TemplateCreate`, since chat
      and MCP reach the registry directly and `Template.id` is a bare `Text` PK. `_preview_path` ALSO

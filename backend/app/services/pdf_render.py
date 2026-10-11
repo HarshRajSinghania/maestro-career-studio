@@ -311,11 +311,12 @@ def _compile_env(out_dir: Path) -> dict[str, str]:
     traversal, and absolute paths outside ``TEXMFOUTPUT``. ``openout_any=p``
     does the same for writes.
 
-    **TEXMFOUTPUT must be the staging directory**, because paranoid mode judges
-    absolute input paths against it and ``_pdflatex_argv`` passes an absolute
-    ``\\input{...}`` of the staged file. Point it elsewhere and every bundled
-    template stops compiling. ``_run_pdflatex`` passes its own fresh folder
-    here, so nothing a template can name sits beside the staged source.
+    **TEXMFOUTPUT must be the compile folder**: pdflatex writes its PDF, log and
+    aux files under ``-output-directory`` with ``openout_any=p``, and kpathsea
+    allows absolute reads and writes only under ``TEXMFOUTPUT``. Point it
+    elsewhere and every bundled template stops compiling. ``_run_pdflatex``
+    passes its own fresh folder here, so nothing a template can name, to read or
+    to overwrite, sits beside the staged source.
 
     ``shell_escape=f`` repeats ``-no-shell-escape`` in the environment
     (texmf.cnf's own switch), so the setting holds even if the argv is changed.
@@ -345,26 +346,42 @@ def _compile_cwd(staged_source: Path) -> Path:
     return staged_source.parent
 
 
+def _pdflatex_spawn_error(exc: OSError) -> RuntimeError:
+    """A missing (or wrongly configured) binary is the actionable "install TeX
+    or pick a Typst template" error, not an OSError 500. OSError covers
+    FileNotFoundError and PermissionError: a wrong MAESTRO_CS_PDFLATEX may name a
+    missing path or a directory (exec of a directory is EACCES, not
+    IsADirectoryError), and ENOEXEC is a bare OSError."""
+    _, reason = engines.find_pdflatex()
+    if reason is None:
+        # The probe found a binary but the spawn still failed (fork failure,
+        # ENOEXEC, EACCES): "not installed" would send the user to install TeX
+        # they already have.
+        return RuntimeError(
+            f"pdflatex could not be started ({exc}). Reinstall TeX or pick a Typst template."
+        )
+    return RuntimeError(
+        f"pdflatex is not installed on this machine ({reason}). "
+        "Install TeX or pick a Typst template."
+    )
+
+
 def _run_pdflatex(source_path: Path, out_dir: Path, stem: str) -> subprocess.CompletedProcess:
     """The one spawn, in a fresh temporary folder per compile.
 
     Base-resume sources share one ``tex/`` directory, and a compile used to run
     with that directory as its working directory and ``TEXMFOUTPUT``: a hostile
-    template could ``\\input`` a sibling resume's source into its own PDF. Now
-    the source is copied alone into a new folder, pdflatex runs there (cwd,
-    output directory and ``TEXMFOUTPUT``), and only the PDF and the log are
-    copied back to ``out_dir``, the files callers expect to find. The bundled
-    templates need nothing else beside the source: they are plain ``article``
-    documents whose packages, fonts and ``glyphtounicode`` come from the TeX
-    tree, and the shared header is a Jinja partial already expanded into the
-    source text.
+    template could ``\\input`` a sibling resume's source into its own PDF, or
+    ``\\openout`` over it. Now the source is copied alone into a new folder,
+    pdflatex runs there (cwd, output directory and ``TEXMFOUTPUT``), and only
+    the PDF and the log are copied back to ``out_dir``, the files callers expect
+    to find. The bundled templates need nothing else beside the source: they are
+    plain ``article`` documents whose packages, fonts and ``glyphtounicode``
+    come from the TeX tree, and the shared header is a Jinja partial already
+    expanded into the source text.
 
-    A missing (or wrongly configured) binary is the actionable
-    "install TeX or pick a Typst template" error, not an OSError 500. OSError
-    covers FileNotFoundError and PermissionError — a wrong MAESTRO_CS_PDFLATEX
-    may name a missing path or a directory (exec of a directory is EACCES, not
-    IsADirectoryError), and ENOEXEC is a bare OSError; TimeoutExpired is not an
-    OSError and keeps propagating as before."""
+    TimeoutExpired is not an OSError and propagates (the folder is still
+    removed)."""
     with tempfile.TemporaryDirectory(prefix="maestro-tex-") as tmp:
         work = Path(tmp).resolve()
         staged = work / source_path.name
@@ -373,10 +390,8 @@ def _run_pdflatex(source_path: Path, out_dir: Path, stem: str) -> subprocess.Com
             result = subprocess.run(
                 _pdflatex_argv(staged, work, stem),
                 capture_output=True,
-                # Not text=True: that decodes STRICTLY, and one non-UTF-8 byte in a
-                # pdflatex transcript (a font name, a stray Latin-1 log line) would
-                # raise UnicodeDecodeError out of the compile instead of the
-                # pdflatex diagnostic we are about to report.
+                # Not text=True: that decodes strictly and a stray non-UTF-8
+                # byte would raise out of the compile instead of the diagnostic.
                 encoding="utf-8",
                 errors="replace",
                 timeout=60,
@@ -385,18 +400,7 @@ def _run_pdflatex(source_path: Path, out_dir: Path, stem: str) -> subprocess.Com
                 cwd=_compile_cwd(staged),
             )
         except OSError as exc:
-            _, reason = engines.find_pdflatex()
-            if reason is None:
-                # The probe found a binary but the spawn still failed (fork
-                # failure, ENOEXEC, EACCES): "not installed" would send the user
-                # to install TeX they already have.
-                raise RuntimeError(
-                    f"pdflatex could not be started ({exc}). Reinstall TeX or pick a Typst template."
-                ) from exc
-            raise RuntimeError(
-                f"pdflatex is not installed on this machine ({reason}). "
-                "Install TeX or pick a Typst template."
-            ) from exc
+            raise _pdflatex_spawn_error(exc) from exc
         _copy_back(work / f"{stem}.log", out_dir)
         if result.returncode == 0:
             _copy_back(work / f"{stem}.pdf", out_dir)
@@ -404,9 +408,17 @@ def _run_pdflatex(source_path: Path, out_dir: Path, stem: str) -> subprocess.Com
 
 
 def _copy_back(produced: Path, out_dir: Path) -> None:
-    if produced.is_file():
-        out_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(produced, out_dir / produced.name)
+    """Copy one produced file into ``out_dir`` atomically (temp name, then
+    replace) so a concurrent reader never sees a half-written PDF."""
+    if not produced.is_file():
+        return
+    out_dir.mkdir(parents=True, exist_ok=True)
+    partial = out_dir / f".{produced.name}.tmp"
+    try:
+        shutil.copyfile(produced, partial)
+        os.replace(partial, out_dir / produced.name)
+    finally:
+        partial.unlink(missing_ok=True)
 
 
 def compile_pdf(
@@ -529,8 +541,9 @@ def _compile_typst_file(
 ) -> None:
     """Compile ``typ_path`` -> ``pdf_path`` with the pdflatex branch's
     RuntimeError contract. Hardened (see app.services.typst_compiler): a
-    wall-clock timeout, a fail-closed reject of remote (@preview) package
-    imports, and a per-render staging root so a template cannot ``read()`` other
+    wall-clock timeout, an early friendly reject of literal remote (@preview)
+    package imports (the regex; the network cut in the compile child is the
+    control), and a per-render staging root so a template cannot ``read()`` other
     renders' sources. The message carries typst's located diagnostic."""
     source = typ_path.read_text(encoding="utf-8")
     typst_compiler.compile_typst(
