@@ -15,7 +15,7 @@ each surface ask whether its own requirement is met.
 
 `set_models` gates chat on the stored tools probe (unprobed is allowed through,
 matching `require()`). The tools probe must issue the same call as chat —
-including `get_chat_client` routing — or its stored row shadows reality.
+including the registry's provider routing — or its stored row shadows reality.
 """
 
 import json
@@ -32,22 +32,6 @@ from app.services.llm_providers import registry
 from app.services.llm_providers.types import Finish, Message, Request, TextPart, ToolSpec
 
 logger = logging.getLogger(__name__)
-
-_PROBE_TOOL = [
-    {
-        "type": "function",
-        "function": {
-            "name": "report_ok",
-            "description": "Report that the check succeeded.",
-            "parameters": {
-                "type": "object",
-                "properties": {"ok": {"type": "boolean"}},
-                "required": ["ok"],
-            },
-        },
-    }
-]
-
 
 @dataclass
 class CapabilityReport:
@@ -106,40 +90,14 @@ def _probe_tools(model: str) -> None:
     """Tool calling AND streaming, through the same adapter.stream call `chat_agent.run_turn`
     makes. A probe of a call the app never makes measures nothing (SYSTEM.md §12)."""
     ref = registry.resolve(model)
-    if ref.provider in {"openai", "gemini"}:
-        # TEMPORARY (Task 7): the OpenAI-compat and Gemini adapters have no `stream` until
-        # Tasks 8-10, and chat still runs on the old client. Task 12 Step 6 deletes this branch.
-        _probe_tools_legacy(model)
-        return
     request = Request(model=ref, messages=[Message("user", [TextPart("Call report_ok with ok=true.")])],
-                      tools=[_PROBE_SPEC])
-    for event in registry.get(ref.provider).stream(request):
+                      tools=[_PROBE_SPEC], cache=True)
+    provider = registry.get(ref.provider)
+    provider.ready()  # chat does the same: Gemini's stream raises a missing key only when pulled
+    for event in provider.stream(request):
         if isinstance(event, Finish) and event.message.tool_calls:
             return
     raise RuntimeError("model streamed no tool call")
-
-
-def _probe_tools_legacy(model: str) -> None:
-    """The pre-registry body: the same client (`llm.get_chat_client`) and per-model kwargs
-    (`llm.completion_extras`) as the chat agent."""
-    stream = llm.get_chat_client(model).chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": "Call report_ok with ok=true."}],
-        tools=_PROBE_TOOL,
-        stream=True,
-        **llm.completion_extras(model),
-    )
-    saw_tool_call = False
-    for chunk in stream:
-        choices = getattr(chunk, "choices", None) or []
-        if not choices:
-            continue
-        delta = getattr(choices[0], "delta", None)
-        if delta is not None and getattr(delta, "tool_calls", None):
-            saw_tool_call = True
-            break
-    if not saw_tool_call:
-        raise RuntimeError("model streamed no tool call")
 
 
 _PROBES = {"text": _probe_text, "json": _probe_json, "tools": _probe_tools}
@@ -179,10 +137,6 @@ _UNREACHABLE_SIGNS = (
 
 
 def _never_reached_the_model(exc: Exception) -> bool:
-    if isinstance(exc, NotImplementedError):
-        # TEMPORARY (Task 7, removed with the legacy branch in Task 12): an adapter whose
-        # `stream` has not landed yet says nothing about the model; never store it as a No.
-        return True
     # What the PROVIDER said (`LLMProviderError.provider_detail`), never the
     # sentence written for the user, which names no status code.
     text = str(getattr(exc, "provider_detail", None) or exc).lower()

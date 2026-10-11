@@ -129,12 +129,6 @@ def test_completion_extras_covers_gpt_5_4_and_up_after_any_vendor_prefix(model, 
     assert (oc.completion_extras(model) == {"reasoning_effort": "none"}) is expected
 
 
-def test_llm_module_still_exposes_completion_extras():
-    from app.services import llm
-
-    assert llm.completion_extras is oc.completion_extras
-
-
 def _accumulate(chunks, ref=None):
     return list(oc.accumulate(iter(chunks), ref or ModelRef("openai", "gpt-4o")))
 

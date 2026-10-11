@@ -22,7 +22,8 @@ from app.schemas.chat import (
 )
 from app.services import chat_agent, llm_capabilities, model_settings
 from app.services.attachment_extract import extract_text
-from app.services.llm import LLMProviderError, get_chat_client
+from app.services.llm_providers import registry
+from app.services.llm_providers.errors import LLMProviderError
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -98,12 +99,13 @@ def send_message(
     # so anything it raises fires after the headers are already out and reaches
     # the browser as a truncated stream, not an error the UI can render.
     model = model_settings.get_chat_model(db)
-    # The client first: a missing key raised inside `run_turn`, before the
+    # The provider's key first: a missing key raised inside `run_turn`, before the
     # user's message was saved, and the browser got an empty stream. It comes
     # before the capability check because a model tested with no key is
     # recorded as unable to do anything, which is not the cause to report.
     try:
-        client = get_chat_client(model)
+        provider = registry.get(registry.resolve(model).provider)
+        provider.ready()
     except LLMProviderError as exc:
         raise HTTPException(status_code=422, detail=NO_MODEL_KEY) from exc
     try:
@@ -113,7 +115,7 @@ def send_message(
 
     def event_stream():
         for event in chat_agent.run_turn(
-            db, row, payload.content, payload.context, client=client, model=model
+            db, row, payload.content, payload.context, provider=provider, model=model
         ):
             yield f"data: {json.dumps(event, default=str)}\n\n"
 

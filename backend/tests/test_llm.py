@@ -299,7 +299,6 @@ def test_a_provider_failure_is_never_stored_as_a_missing_capability(
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     monkeypatch.setattr(llm, "_get_client", lambda: client)
-    monkeypatch.setattr(llm, "get_chat_client", lambda *_a, **_k: client)
 
     with pytest.raises(llm.LLMProviderError) as raised:
         llm._call_model("hi", "gpt-4o-mini", "text")

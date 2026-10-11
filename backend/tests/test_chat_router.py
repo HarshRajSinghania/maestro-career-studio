@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 
 from app.db import get_db
 from app.main import app
-from app.routers import chat as chat_router
-from app.services import chat_agent, llm
+from app.services import chat_agent, llm, model_settings
+from tests import fake_provider
 
 
 def _client(db_session, *, raise_server_exceptions=True) -> TestClient:
@@ -56,8 +56,8 @@ def test_send_message_streams_sse(db_session, monkeypatch):
         yield {"type": "done", "session_id": str(row.id)}
 
     monkeypatch.setattr(chat_agent, "run_turn", fake_run_turn)
-    # The router resolves the model client before the stream (no key in tests).
-    monkeypatch.setattr(chat_router, "get_chat_client", lambda model: object())
+    # The router checks the provider is ready before the stream (no key in tests).
+    fake_provider.install(monkeypatch, fake_provider.FakeProvider([]), model=model_settings.get_chat_model(db_session))
 
     with client.stream(
         "POST", f"/api/chat/sessions/{session_id}/messages", json={"content": "hello"}

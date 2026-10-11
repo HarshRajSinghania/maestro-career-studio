@@ -24,7 +24,6 @@ from app.services.llm_providers.errors import (  # noqa: F401 — re-exported; c
     _openai_reason,
     _status_reason,
 )
-from app.services.llm_providers.openai_compat import completion_extras  # noqa: F401 — re-exported until Task 12 moves chat and the probe
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +40,10 @@ def _openai_provider() -> str:
 # tokens}. None when the provider response has no usable counts (e.g. mocks).
 Usage = dict[str, int] | None
 
-# Google's OpenAI-compatible chat completions URL. Code-owned constant — never
-# a user-set base_url (that value decides where the OpenAI key is sent).
-GEMINI_OPENAI_COMPAT_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-
 _client: OpenAI | None = None
 _client_key: tuple[str | None, str | None] | None = None
-# Chat-scoped clients keyed by (provider, key). Separate from `_client` so a
-# Gemini chat turn cannot repoint the JSON-services client.
+# OpenRouter clients keyed by (provider, key). Separate from `_client` so an
+# OpenRouter call cannot repoint the JSON-services client.
 _chat_clients: dict[tuple[str, str], OpenAI] = {}
 
 
@@ -148,40 +143,10 @@ def _get_client() -> OpenAI:
     return _client
 
 
-def get_chat_client(model: str) -> OpenAI:
-    """OpenAI-SDK client for the chat/tools surface.
-
-    Custom endpoints win first so a locally served `gemini-*` id is not
-    hijacked to Google. Hosted Gemini ids go to Google's OpenAI-compat URL
-    with the Gemini key. Everything else shares `_get_client()`. Never
-    mutates the global `_client` — that client is shared by every JSON service.
-    """
-    from app.services import model_settings
-
-    if model_settings.using_custom_endpoint():
-        return _get_client()
-    if _is_gemini_model(model):
-        gemini_key = get_gemini_key()
-        if not gemini_key:
-            raise LLMProviderError(NO_GEMINI_KEY_MESSAGE)
-        cache_key = ("gemini", gemini_key)
-        cached = _chat_clients.get(cache_key)
-        if cached is None:
-            cached = OpenAI(api_key=gemini_key, base_url=GEMINI_OPENAI_COMPAT_URL)
-            _chat_clients[cache_key] = cached
-        return cached
-    return _get_client()
-
-
 def _usage_details(input_tokens: Any, output_tokens: Any) -> Usage:
     if isinstance(input_tokens, int) and isinstance(output_tokens, int):
         return {"input": input_tokens, "output": output_tokens}
     return None
-
-
-def _is_gemini_model(model: str) -> bool:
-    # Kept for get_chat_client until the chat path moves behind the registry (a later task).
-    return model.removeprefix("models/").startswith("gemini-")
 
 
 def _json_mode_supported() -> bool:

@@ -597,7 +597,8 @@ def test_the_key_is_checked_before_the_model_capability():
     """No key: every capability is recorded as No, so the key is the real cause and says so first."""
     router = (_ROOT / "backend/app/routers/chat.py").read_text(encoding="utf-8")
     send = _between(router, "def send_message(", "def event_stream():")
-    assert send.index("client = get_chat_client(model)") < send.index('llm_capabilities.require(db, model, "tools")')
+    # The provider's key (`.ready()` via the registry) is checked before the capability row.
+    assert send.index("provider.ready()") < send.index('llm_capabilities.require(db, model, "tools")')
 
 
 def test_a_key_in_the_wrong_shape_is_refused_at_save():
