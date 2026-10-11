@@ -110,7 +110,6 @@ def build_kwargs(req: Request, *, stream: bool) -> dict[str, Any]:
         "model": req.model.model,
         "max_tokens": req.max_tokens or (STREAM_MAX_TOKENS if stream else GENERATE_MAX_TOKENS),
         "messages": build_messages(req.messages),
-        "betas": [],
     }
     if req.system:
         kw["system"] = [{"type": "text", "text": req.system}]

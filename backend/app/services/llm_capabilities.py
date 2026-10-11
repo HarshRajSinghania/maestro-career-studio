@@ -29,6 +29,11 @@ from sqlalchemy.orm import Session
 from app.models.setting import Setting
 from app.services import llm
 from app.services.llm_providers import registry
+from app.services.llm_providers.errors import (
+    NO_ANTHROPIC_KEY_MESSAGE,
+    NO_GEMINI_KEY_MESSAGE,
+    NO_KEY_MESSAGE,
+)
 from app.services.llm_providers.types import Finish, Message, Request, TextPart, ToolSpec
 
 logger = logging.getLogger(__name__)
@@ -132,7 +137,9 @@ _UNREACHABLE_SIGNS = (
     "rate_limit_error",
     "overloaded_error",
     "error code: 529",
-    "no claude api key",
+    # Every no-key sentence, built from the constants so they cannot drift.
+    *(m.split(".")[0].lower() for m in (
+        NO_KEY_MESSAGE, NO_GEMINI_KEY_MESSAGE, NO_ANTHROPIC_KEY_MESSAGE, llm.NO_OPENROUTER_KEY_MESSAGE)),
 )
 
 

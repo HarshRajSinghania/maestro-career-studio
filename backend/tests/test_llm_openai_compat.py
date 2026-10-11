@@ -293,3 +293,16 @@ def test_stream_closes_the_sdk_stream_on_early_stop():
     next(gen)
     gen.close()
     assert sdk.closed
+
+
+def test_accumulate_tolerates_servers_that_omit_tool_call_index():
+    events = _accumulate([
+        _chunk(tool_calls=[_tc(None, "c1", "lookup", '{"q"')]),
+        _chunk(tool_calls=[_tc(None, None, None, ': "x"}')]),
+        _chunk(tool_calls=[_tc(None, "c2", "other", "{}")]),
+        _chunk(tool_calls=[_tc(None, "c1", None, "")]),
+        _chunk(finish="tool_calls"),
+    ])
+    calls = events[-1].message.tool_calls
+    assert [(c.id, c.name, c.arguments) for c in calls] == [
+        ("c1", "lookup", {"q": "x"}), ("c2", "other", {})]

@@ -40,7 +40,7 @@ def test_fallbacks_only_on_models_that_accept_them():
     assert on["fallbacks"] == "default" and on["betas"] == [ap.FALLBACK_BETA]
     off = ap.build_kwargs(Request(model=ModelRef("anthropic", "claude-haiku-5-5"),
                                   messages=[Message("user", [TextPart("x")])]), stream=False)
-    assert "fallbacks" not in off and off["betas"] == []
+    assert "fallbacks" not in off and "betas" not in off
 
 
 def test_schema_output_and_effort_go_in_output_config():

@@ -184,7 +184,14 @@ def accumulate(chunks: Iterable[Any], ref: ModelRef) -> Iterator[StreamEvent]:
             text.append(delta.content)
             yield TextDelta(delta.content)
         for tc in delta.tool_calls or []:
-            slot = calls.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+            key = tc.index
+            if not isinstance(key, int):
+                # Some servers omit `index`: an id we have seen is that slot, a new
+                # id opens the next one, an id-less fragment continues the last.
+                key = next((k for k, v in calls.items() if tc.id and v["id"] == tc.id), None)
+                if key is None:
+                    key = len(calls) if tc.id or not calls else max(calls)
+            slot = calls.setdefault(key, {"id": "", "name": "", "arguments": ""})
             if tc.id:
                 slot["id"] = tc.id
             if tc.function:

@@ -617,3 +617,21 @@ def test_extra_model_accepts_the_new_providers(client):
         "/api/settings/openai/models", json={"id": "anthropic/claude-x", "provider": "openrouter"}
     )
     assert response.status_code == 200
+
+
+def test_key_only_put_does_not_auto_pick_fast_smart_or_chat(db_session, client):
+    """Goal Card "No auto-pick": saving a key never changes any role's model."""
+    for key, value in (("fast", "gemini-3.5-flash-lite"), ("smart", "gemini-3.7-flash"),
+                       ("chat", "gpt-5.6-luna")):
+        db_session.add(Setting(key=f"llm.{key}_model", value=value))
+    db_session.commit()
+
+    response = client.put("/api/settings/openai", json={"gemini_api_key": "g-new"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["fast_model"], body["smart_model"], body["chat_model"]) == (
+        "gemini-3.5-flash-lite", "gemini-3.7-flash", "gpt-5.6-luna")
+    for key, value in (("fast", "gemini-3.5-flash-lite"), ("smart", "gemini-3.7-flash"),
+                       ("chat", "gpt-5.6-luna")):
+        assert db_session.get(Setting, f"llm.{key}_model").value == value

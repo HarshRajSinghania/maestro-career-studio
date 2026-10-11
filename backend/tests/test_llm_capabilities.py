@@ -2,7 +2,8 @@ from unittest.mock import patch
 
 import pytest
 
-from app.services import llm_capabilities
+from app.services import llm, llm_capabilities
+from app.services.llm_providers import errors
 
 
 def _capable_fake(monkeypatch, scripts):
@@ -256,3 +257,28 @@ def test_a_provider_that_is_not_ready_is_unreachable_not_a_no(db_session, monkey
 def test_no_adapter_error_is_special_cased_as_unreachable():
     """The Task 7 NotImplementedError exemption is gone: every adapter streams now."""
     assert not llm_capabilities._never_reached_the_model(NotImplementedError())
+
+
+@pytest.mark.parametrize("message", [
+    errors.NO_KEY_MESSAGE,
+    errors.NO_GEMINI_KEY_MESSAGE,
+    errors.NO_ANTHROPIC_KEY_MESSAGE,
+    llm.NO_OPENROUTER_KEY_MESSAGE,
+])
+def test_every_no_key_sentence_is_unreachable_and_stores_nothing(db_session, monkeypatch, message):
+    from app.services.llm_providers.errors import LLMProviderError
+    from tests.fake_provider import FakeProvider, install
+
+    fake = FakeProvider([])
+
+    def not_ready():
+        raise LLMProviderError("shown to user", provider_detail=message)
+
+    fake.ready = not_ready
+    install(monkeypatch, fake)
+    monkeypatch.setattr(llm_capabilities.llm, "get_base_url", lambda: None)
+
+    report = llm_capabilities.probe_and_save(db_session, "fake-model")
+
+    assert report.reachable is False
+    assert llm_capabilities.load(db_session, "fake-model") is None

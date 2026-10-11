@@ -50,8 +50,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openrouter_api_key: str = ""
     # Point the OpenAI-compatible client at something other than api.openai.com:
-    # Ollama (http://host.docker.internal:11434/v1), LM Studio, vLLM, LiteLLM,
-    # OpenRouter. Setting this is what makes the local-first claim literally
+    # Ollama (http://host.docker.internal:11434/v1), LM Studio, vLLM, LiteLLM.
+    # For OpenRouter use its own key/preset instead: on this path the forced
+    # zdr/data_collection body is never sent. Setting this is what makes the local-first claim literally
     # true — with a local endpoint no resume text leaves the machine. A DB
     # setting (llm.base_url) overrides this env default.
     openai_base_url: str = ""
