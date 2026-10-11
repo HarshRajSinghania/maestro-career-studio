@@ -115,7 +115,15 @@ compiler is allowed to read. `-no-shell-escape` does not touch them — it block
 The compiler therefore runs under kpathsea's paranoid mode (`openin_any=p`,
 `openout_any=p`, with `TEXMFOUTPUT` pinned to the per-render staging directory),
 which refuses dotfiles, parent-directory traversal, and absolute paths outside
-that directory.
+that directory. Each compile runs in its own fresh temporary folder holding only
+that compile's source, so another resume's source in the shared output folder is
+not reachable by name or by path; only the PDF and the log are copied back.
+
+Typst templates are plain source, not Jinja. A literal `@preview/...` import is
+refused up front, but that check reads string literals and a computed import
+path gets past it, so the Typst compile child also runs with its proxy variables
+pointed at a closed local port. A package download fails and nothing is fetched
+or run from the network.
 
 **This bounds the damage; it is not isolation.** A render worker that holds no
 secrets, no PII mounts and no network is the real answer, and it is not built
@@ -132,7 +140,8 @@ checked to resolve inside the preview directory, so an id like
 
 ### PDF compilation cannot run shell commands
 
-`pdflatex` is always invoked with `-no-shell-escape`, with no opt-out, so no
+`pdflatex` is always invoked with `-no-shell-escape` (and `shell_escape=f` in its
+environment), with no opt-out, so no
 document — including one built from model-generated text — can use `\write18` to
 run host commands.
 

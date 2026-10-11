@@ -130,6 +130,65 @@ def test_a_template_cannot_read_a_file_outside_its_output_directory(tmp_path):
     )
 
 
+@pytest.mark.parametrize("how", ["relative", "absolute"])
+def test_a_template_cannot_input_a_sibling_source_in_its_output_directory(tmp_path, how):
+    """Base-resume sources share one tex/ directory. The compile used to run
+    with that directory as its cwd AND as TEXMFOUTPUT, so paranoid mode allowed
+    both `\\input{sibling.tex}` and its absolute path: a hostile template could
+    print another resume's source into its own PDF. Each compile now runs in a
+    fresh temporary folder holding only its own source."""
+    pdfplumber = pytest.importorskip("pdfplumber")
+    if shutil.which("pdflatex") is None:
+        pytest.skip("pdflatex is not installed")
+
+    out_dir = tmp_path / "tex"
+    out_dir.mkdir()
+    sibling = out_dir / "other_resume.tex"
+    sibling.write_text("CANARYSIBLINGSOURCE\n", encoding="utf-8")
+
+    target = "other_resume.tex" if how == "relative" else str(sibling)
+    tex = (
+        "\\documentclass{article}\n"
+        "\\begin{document}\n"
+        "Rendered.\n"
+        f"\\input{{{target}}}\n"
+        "\\end{document}\n"
+    )
+
+    # No special TeX characters in the canary, so a successful read typesets
+    # cleanly. The file being missing is a fatal TeX error (nonstopmode with
+    # halt-on-error), which is the expected outcome; the error text echoes any
+    # source line TeX did read, so it is checked too.
+    try:
+        pdf = pdf_render.compile_pdf(tex, out_dir, stem="mine")
+    except RuntimeError as exc:
+        assert "CANARYSIBLINGSOURCE" not in str(exc)
+        return
+
+    with pdfplumber.open(pdf) as doc:
+        text = "\n".join((page.extract_text() or "") for page in doc.pages)
+    assert "CANARYSIBLINGSOURCE" not in text, (
+        "a template read a sibling source from its output directory"
+    )
+    assert sibling.read_text(encoding="utf-8") == "CANARYSIBLINGSOURCE\n"
+
+
+def test_the_compile_leaves_the_same_artifacts_in_the_output_directory(tmp_path):
+    """Callers see the source (written by them), the PDF and the log, exactly
+    as before the compile moved into a temporary folder."""
+    if shutil.which("pdflatex") is None:
+        pytest.skip("pdflatex is not installed")
+    out_dir = tmp_path / "tex"
+    pdf = pdf_render.compile_pdf(
+        "\\documentclass{article}\n\\begin{document}\nHi\n\\end{document}\n",
+        out_dir,
+        stem="mine",
+    )
+    assert pdf == out_dir / "mine.pdf" and pdf.stat().st_size > 0
+    assert (out_dir / "mine.tex").exists()
+    assert (out_dir / "mine.log").exists()
+
+
 def test_every_pdflatex_call_site_passes_the_hardened_environment():
     """There is more than one, and the second one was missed.
 
@@ -227,6 +286,8 @@ def test_the_compile_environment_pins_paranoid_file_access(tmp_path):
     # compile_pdf passes an absolute \input{...} of the staged file — so
     # without this the bundled templates would stop compiling.
     assert env["TEXMFOUTPUT"] == str(tmp_path)
+    # Belt and braces beside -no-shell-escape on the command line.
+    assert env["shell_escape"] == "f"
 
 
 # --- S2: Host header validation (DNS rebinding) ----------------------------

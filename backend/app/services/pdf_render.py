@@ -2,7 +2,9 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from datetime import date as _date
 from pathlib import Path
@@ -150,12 +152,10 @@ def _pdflatex_argv(tex_path: Path, out_dir: Path, jobname: str) -> list[str]:
     The cover-letter compile used to pass ``no_shell_escape=False`` for no
     recorded reason; it does not need it.
 
-    The input is the BARE FILENAME and the caller runs pdflatex with ``cwd``
-    set to the file's directory (see ``_compile_cwd``). An absolute ``\\input``
-    is what paranoid mode judges against ``TEXMFOUTPUT``, and the base-resume
-    path writes its source and its PDF into two DIFFERENT directories — so an
-    absolute path there made kpathsea refuse the app's own staged source.
-    A plain relative name inside the working directory is always readable.
+    The input is the BARE FILENAME and ``_run_pdflatex`` runs pdflatex with
+    ``cwd`` set to the fresh per-compile folder holding the staged source (see
+    ``_compile_cwd``). A plain relative name inside the working directory is
+    always readable under paranoid mode, whatever ``TEXMFOUTPUT`` is.
     """
     argv = [engines.pdflatex_command(), "-no-shell-escape"]
     argv += [
@@ -314,7 +314,11 @@ def _compile_env(out_dir: Path) -> dict[str, str]:
     **TEXMFOUTPUT must be the staging directory**, because paranoid mode judges
     absolute input paths against it and ``_pdflatex_argv`` passes an absolute
     ``\\input{...}`` of the staged file. Point it elsewhere and every bundled
-    template stops compiling.
+    template stops compiling. ``_run_pdflatex`` passes its own fresh folder
+    here, so nothing a template can name sits beside the staged source.
+
+    ``shell_escape=f`` repeats ``-no-shell-escape`` in the environment
+    (texmf.cnf's own switch), so the setting holds even if the argv is changed.
 
     This BOUNDS the damage; it is not isolation. The real answer is a
     disposable, networkless render worker holding no secrets and no PII mounts,
@@ -324,58 +328,85 @@ def _compile_env(out_dir: Path) -> dict[str, str]:
         **os.environ,
         "openin_any": "p",
         "openout_any": "p",
+        "shell_escape": "f",
         "TEXMFOUTPUT": str(out_dir),
     }
 
 
-def _compile_cwd(source_path: Path) -> Path:
-    """Working directory for a pdflatex run: the directory holding the source.
+def _compile_cwd(staged_source: Path) -> Path:
+    """Working directory for a pdflatex run: the directory holding the staged
+    source, which `_run_pdflatex` made fresh for this one compile.
 
     Paired with `_pdflatex_argv` passing a bare filename. Under paranoid mode a
-    relative name inside the working directory is readable, while an ABSOLUTE
-    path is only readable if it sits under `TEXMFOUTPUT` — and the base-resume
-    path stages its `.tex` and its `.pdf` in two different directories, so no
-    single `TEXMFOUTPUT` can cover both. Reading from the cwd and writing to
-    `TEXMFOUTPUT` covers them without widening either.
+    relative name inside the working directory is readable, and that directory
+    holds only this compile's own source (plus what pdflatex writes there), so
+    no sibling resume's source is reachable by name or by absolute path.
     """
-    return source_path.parent
+    return staged_source.parent
 
 
 def _run_pdflatex(source_path: Path, out_dir: Path, stem: str) -> subprocess.CompletedProcess:
-    """The one spawn. A missing (or wrongly configured) binary is the actionable
+    """The one spawn, in a fresh temporary folder per compile.
+
+    Base-resume sources share one ``tex/`` directory, and a compile used to run
+    with that directory as its working directory and ``TEXMFOUTPUT``: a hostile
+    template could ``\\input`` a sibling resume's source into its own PDF. Now
+    the source is copied alone into a new folder, pdflatex runs there (cwd,
+    output directory and ``TEXMFOUTPUT``), and only the PDF and the log are
+    copied back to ``out_dir``, the files callers expect to find. The bundled
+    templates need nothing else beside the source: they are plain ``article``
+    documents whose packages, fonts and ``glyphtounicode`` come from the TeX
+    tree, and the shared header is a Jinja partial already expanded into the
+    source text.
+
+    A missing (or wrongly configured) binary is the actionable
     "install TeX or pick a Typst template" error, not an OSError 500. OSError
     covers FileNotFoundError and PermissionError — a wrong MAESTRO_CS_PDFLATEX
     may name a missing path or a directory (exec of a directory is EACCES, not
     IsADirectoryError), and ENOEXEC is a bare OSError; TimeoutExpired is not an
     OSError and keeps propagating as before."""
-    try:
-        return subprocess.run(
-            _pdflatex_argv(source_path, out_dir, stem),
-            capture_output=True,
-            # Not text=True: that decodes STRICTLY, and one non-UTF-8 byte in a
-            # pdflatex transcript (a font name, a stray Latin-1 log line) would
-            # raise UnicodeDecodeError out of the compile instead of the
-            # pdflatex diagnostic we are about to report.
-            encoding="utf-8",
-            errors="replace",
-            timeout=60,
-            check=False,
-            env=_compile_env(out_dir),
-            cwd=_compile_cwd(source_path),
-        )
-    except OSError as exc:
-        _, reason = engines.find_pdflatex()
-        if reason is None:
-            # The probe found a binary but the spawn still failed (fork
-            # failure, ENOEXEC, EACCES): "not installed" would send the user
-            # to install TeX they already have.
+    with tempfile.TemporaryDirectory(prefix="maestro-tex-") as tmp:
+        work = Path(tmp).resolve()
+        staged = work / source_path.name
+        shutil.copyfile(source_path, staged)
+        try:
+            result = subprocess.run(
+                _pdflatex_argv(staged, work, stem),
+                capture_output=True,
+                # Not text=True: that decodes STRICTLY, and one non-UTF-8 byte in a
+                # pdflatex transcript (a font name, a stray Latin-1 log line) would
+                # raise UnicodeDecodeError out of the compile instead of the
+                # pdflatex diagnostic we are about to report.
+                encoding="utf-8",
+                errors="replace",
+                timeout=60,
+                check=False,
+                env=_compile_env(work),
+                cwd=_compile_cwd(staged),
+            )
+        except OSError as exc:
+            _, reason = engines.find_pdflatex()
+            if reason is None:
+                # The probe found a binary but the spawn still failed (fork
+                # failure, ENOEXEC, EACCES): "not installed" would send the user
+                # to install TeX they already have.
+                raise RuntimeError(
+                    f"pdflatex could not be started ({exc}). Reinstall TeX or pick a Typst template."
+                ) from exc
             raise RuntimeError(
-                f"pdflatex could not be started ({exc}). Reinstall TeX or pick a Typst template."
+                f"pdflatex is not installed on this machine ({reason}). "
+                "Install TeX or pick a Typst template."
             ) from exc
-        raise RuntimeError(
-            f"pdflatex is not installed on this machine ({reason}). "
-            "Install TeX or pick a Typst template."
-        ) from exc
+        _copy_back(work / f"{stem}.log", out_dir)
+        if result.returncode == 0:
+            _copy_back(work / f"{stem}.pdf", out_dir)
+        return result
+
+
+def _copy_back(produced: Path, out_dir: Path) -> None:
+    if produced.is_file():
+        out_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(produced, out_dir / produced.name)
 
 
 def compile_pdf(

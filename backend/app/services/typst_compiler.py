@@ -9,16 +9,25 @@ concerns live here because the in-process ``typst.compile()`` has neither:
   worker forever; the pdflatex branch bounds its subprocess at 60s. We run the
   compile in a terminable ``spawn`` subprocess with a join-timeout and kill it.
 * ``@preview/*`` imports resolve over the NETWORK, downloading and executing
-  third-party (LLM / user authored) code at render time. We FAIL CLOSED by
-  rejecting any package import in the source before compiling. Empty
-  ``package_path`` / ``package_cache_path`` do NOT prevent the fetch in typst
-  0.15.0 (verified: the cache dir is populated from the network), so an empty
-  dir is only defense in depth, never the gate.
+  third-party (LLM / user authored) code at render time. Two layers stop it:
+
+  1. ``source_imports_package`` rejects a literal ``import "@..."`` before
+     compiling. It is a regex over string literals, so it is the early,
+     friendly error and NOT a security control: a computed path
+     (``#let p = "@pre" + "view/x:1.0.0"`` then ``#import p: x``) walks past it.
+  2. ``_worker`` points every proxy variable at a dead local port before
+     ``import typst``, so any download fails with "connection refused". This is
+     the actual control. Empty ``package_path`` / ``package_cache_path`` do NOT
+     prevent the fetch in typst 0.15.0 (the cache dir is populated from the
+     network), so they are only defense in depth. A package already present in
+     ``package_cache_path`` still compiles offline, so a future vendored-package
+     design is not blocked by this.
 """
 
 from __future__ import annotations
 
 import multiprocessing
+import os
 import re
 import tempfile
 from pathlib import Path
@@ -94,8 +103,31 @@ def source_imports_package(source: str) -> bool:
     return bool(_PACKAGE_IMPORT_RE.search(strip_typst_comments(source)))
 
 
+# typst-py downloads packages with a client that honours the standard proxy
+# variables. Port 9 (discard) on loopback refuses connections, so a download
+# attempt fails fast and offline-deterministically instead of reaching the net.
+_DEAD_PROXY = "http://127.0.0.1:9"
+_PROXY_VARS = (
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+    "http_proxy", "https_proxy", "all_proxy",
+)
+
+
+def cut_network_env() -> None:
+    """Make every outbound HTTP(S) request from THIS process fail.
+
+    Mutates ``os.environ``, so it is called only inside the spawned compile
+    child, never in the app process. ``NO_PROXY`` is removed so no host is
+    exempted from the dead proxy."""
+    for name in _PROXY_VARS:
+        os.environ[name] = _DEAD_PROXY
+    os.environ.pop("NO_PROXY", None)
+    os.environ.pop("no_proxy", None)
+
+
 def _worker(conn, kwargs) -> None:
     try:
+        cut_network_env()  # before import typst: the client may read env at load
         import typst
 
         typst.compile(**kwargs)
@@ -155,8 +187,9 @@ def run_typst_compile(
         # chat_system.txt state the substitution behavior explicitly.
         "ignore_system_fonts": True,
         "sys_inputs": sys_inputs,
-        # Defense in depth only (the package gate already rejected @-imports):
-        # point package resolution at an empty dir so nothing local resolves.
+        # Defense in depth only (the regex gate and the dead proxy in _worker
+        # are the controls): point package resolution at an empty dir so
+        # nothing local resolves.
         "package_path": package_dir,
         "package_cache_path": package_dir,
     }
@@ -196,6 +229,8 @@ def compile_typst(
     (base resumes share one ``tex/`` dir); rejects package imports up front; and
     runs the compile out of process with a wall-clock cap. ``output`` may live
     outside ``root`` (writes are not root-confined)."""
+    # Early, friendly error for the literal case. A computed import path skips
+    # this check and is stopped by the network cut in `_worker`.
     if source_imports_package(source):
         raise RuntimeError(
             "typst failed\nremote package imports (@preview/...) are not allowed"

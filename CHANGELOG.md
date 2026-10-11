@@ -46,6 +46,10 @@ None.
 
 - The app calls its score the match score (it was labelled ATS score).
 
+### Security
+
+- Typst renders can no longer download packages, including through a computed import path. LaTeX compiles each run in its own temporary folder, so a template cannot read another resume's source.
+
 ### Fixed
 
 - PyPI wheels include the project license and notices; untouched Classic templates receive the complete attribution header on upgrade.
