@@ -49,7 +49,6 @@ def test_runner_reads_settings_from_its_own_database(unmigrated_app_db, monkeypa
     completions = _FakeCompletions()
     monkeypatch.setattr(llm, "_get_client",
                         lambda: SimpleNamespace(chat=SimpleNamespace(completions=completions)))
-    monkeypatch.setattr(llm, "_is_gemini_model", lambda _model: False)
     monkeypatch.delenv("LOGS_DIR", raising=False)
     monkeypatch.setattr("sys.argv", ["health_golden.py", "--split", "dev", "--trials", "1"])
     logs_before = llm.settings.logs_dir

@@ -2125,7 +2125,7 @@ two-tool scenario once with both tools requested in one step.
 | Gate | Result |
 |---|---|
 | Task 0 baseline (passed / skipped / wall) | cloud py3.12 venv: 11032 passed / 906 skipped / 68 failed + 34 errors (environmental: no pdflatex/typst, root perms, proxy env; list kept by controller), 361 s xdist; ruff clean; frontend tsc/lint/385 node tests/build green; check_system_md 1000/1000 |
-| Task 2 suite unchanged | |
+| Task 2 suite unchanged | cloud venv: 11042 passed / same 102 env failures as baseline; ruff clean |
 | Task 5 CI-venv suite, lock diff, import-time check | |
 | Task 11 upgrade/downgrade/upgrade | |
 | Task 14 live check (per provider: text/json/image/2-step tools/switch) | |
@@ -2139,3 +2139,5 @@ two-tool scenario once with both tools requested in one step.
 | 0 | anaconda interpreter, no push (ruling C22) | Cloud container: `/home/user/venv312` (py3.12) with `uv pip`; branch `claude/anthropic-api-key-compat-8b5ded-rtsdmh`; owner asked for a push after each task | Use venv312 + uv pip; push after each task (no PR, no merge) | Environment only |
 | 0 | n/a (ruling C24) | The anthropic SDK reads `ANTHROPIC_CUSTOM_HEADERS` from the shell env even with explicit key/base_url | Not fixed (scope). Known limitation for the owner: shell-set custom headers reach api.anthropic.com | Out of scope; owner to decide |
 | 2 | `_message_content`, `_openai_usage` and the OpenAI body of `_call_model` move to the adapter (brief keeps `llm.py` helpers) | Nothing outside `_call_model` references the two helpers (`_usage_details` is still used by Gemini and `test_tracing`) | Ruling C23: deleted the `llm.py` copies, no re-export. Also fixed Task 1 leftovers in `llm.py`: errors import block in sorted position, extra blank lines removed | Principle: no duplicate code paths |
+| 3 | `llm.py` keeps a copy-free `_is_gemini_model` re-export if tests import it; Gemini helpers move wholesale (ruling C5) | Only `get_chat_client` still calls `_is_gemini_model`; `_gemini_model_name`, thinking/config/usage/text helpers had no other readers; `test_health_golden_runner.py:52` patched `llm._is_gemini_model` | `llm.py` keeps a local one-line `_is_gemini_model` (no import of `gemini.py`, so no cycle) until the chat path moves; other helpers deleted, no re-export (C23); `_usage_details` stays (`test_tracing`). Removed the now no-op patch at `test_health_golden_runner.py:52` (runner passes without it) | Principle: no duplicate code paths |
+| 3 | Gemini default timeout (ruling C14) | `tests/test_llm.py:107` asserts 120 s when no timeout is given | `GeminiProvider.generate` uses 120 s when `Request.timeout` is None | Behavior preserved |

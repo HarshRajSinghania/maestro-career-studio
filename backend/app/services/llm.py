@@ -1,4 +1,3 @@
-import base64
 import hashlib
 import json
 import logging
@@ -7,8 +6,6 @@ from datetime import UTC, datetime
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Literal
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 from uuid import uuid4
 
 import openai
@@ -141,101 +138,9 @@ def _usage_details(input_tokens: Any, output_tokens: Any) -> Usage:
     return None
 
 
-def _gemini_usage(response: dict[str, Any]) -> Usage:
-    meta = response.get("usageMetadata") or {}
-    return _usage_details(meta.get("promptTokenCount"), meta.get("candidatesTokenCount"))
-
-
-def _gemini_text(response: dict[str, Any]) -> str:
-    candidates = response.get("candidates") or []
-    if not candidates:
-        return ""
-    parts = candidates[0].get("content", {}).get("parts") or []
-    return "".join(part.get("text", "") for part in parts)
-
-
-def _gemini_model_name(model: str) -> str:
-    return model.removeprefix("models/")
-
-
 def _is_gemini_model(model: str) -> bool:
-    return _gemini_model_name(model).startswith("gemini-")
-
-
-def _gemini_thinking_level(model: str) -> str | None:
-    normalized = _gemini_model_name(model)
-    if not normalized.startswith("gemini-3"):
-        return None
-    if "pro" in normalized:
-        return "high"
-    return "low"
-
-
-def _gemini_generation_config(model: str, response_format: ResponseFormat) -> dict[str, Any]:
-    config: dict[str, Any] = {}
-    if response_format == "json":
-        config["responseMimeType"] = "application/json"
-
-    thinking_level = _gemini_thinking_level(model)
-    if thinking_level:
-        config["thinkingConfig"] = {"thinkingLevel": thinking_level}
-
-    return config
-
-
-def _call_gemini(
-    prompt: str,
-    model: str,
-    response_format: ResponseFormat,
-    images: list[bytes] | None = None,
-    timeout: float = 120,
-) -> tuple[str, Usage]:
-    gemini_key = get_gemini_key()
-    if not gemini_key:
-        raise LLMProviderError(NO_GEMINI_KEY_MESSAGE)
-
-    parts: list[dict[str, Any]] = [{"text": prompt}]
-    for image in images or []:
-        parts.append(
-            {
-                "inlineData": {
-                    "mimeType": "image/png",
-                    "data": base64.b64encode(image).decode("ascii"),
-                }
-            }
-        )
-    payload: dict[str, Any] = {
-        "contents": [{"parts": parts}],
-    }
-    generation_config = _gemini_generation_config(model, response_format)
-    if generation_config:
-        payload["generationConfig"] = generation_config
-
-    request = Request(
-        "https://generativelanguage.googleapis.com/v1beta/"
-        f"models/{_gemini_model_name(model)}:generateContent",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "x-goog-api-key": gemini_key,
-        },
-        method="POST",
-    )
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise _no_answer(_gemini_reason(exc.code, body),
-                         f"Gemini API request failed: {exc.code} {body}", provider="Gemini") from exc
-    except (TimeoutError, URLError) as exc:
-        # A caller's short timeout running out is the provider not answering
-        # in time, not a local crash (URLError wraps a connect timeout).
-        if isinstance(exc, URLError) and not isinstance(exc.reason, TimeoutError):
-            raise
-        raise _no_answer(_TIMED_OUT, f"Gemini API request timed out: {exc}", provider="Gemini") from exc
-
-    return _gemini_text(data), _gemini_usage(data)
+    # Kept for get_chat_client until the chat path moves behind the registry (a later task).
+    return model.removeprefix("models/").startswith("gemini-")
 
 
 def _json_mode_supported() -> bool:
@@ -283,10 +188,6 @@ def _call_model(
     """`timeout`: seconds for this one request, with no SDK retries behind it
     (a caller on a budget, such as the fill's optional passes); None keeps the
     client's own timeout and retries."""
-    if _is_gemini_model(model):
-        return _call_gemini(prompt, model, response_format, images,
-                            **({"timeout": timeout} if timeout is not None else {}))
-
     from app.services.llm_providers import registry
     from app.services.llm_providers.types import ImagePart, Message, TextPart
     from app.services.llm_providers.types import Request as ProviderRequest
@@ -447,32 +348,6 @@ def list_openai_models() -> list[dict[str, str]]:
 
 def list_gemini_models() -> list[dict[str, str]]:
     """Gemini models that support generateContent for the configured Gemini key."""
-    gemini_key = get_gemini_key()
-    if not gemini_key:
-        raise LLMProviderError(NO_GEMINI_KEY_MESSAGE)
+    from app.services.llm_providers import registry
 
-    request = Request(
-        "https://generativelanguage.googleapis.com/v1beta/models",
-        headers={"x-goog-api-key": gemini_key},
-        method="GET",
-    )
-    try:
-        with urlopen(request, timeout=60) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise LLMProviderError(f"Gemini models.list failed: {exc.code} {body}") from exc
-
-    out: list[dict[str, str]] = []
-    for item in data.get("models") or []:
-        name = item.get("name") or ""
-        methods = item.get("supportedGenerationMethods") or []
-        if "generateContent" not in methods:
-            continue
-        model_id = _gemini_model_name(name)
-        if not model_id.startswith("gemini-"):
-            continue
-        display = item.get("displayName") or model_id
-        out.append({"id": model_id, "label": display, "provider": "gemini"})
-    out.sort(key=lambda row: row["id"])
-    return out
+    return registry.get("gemini").list_models()

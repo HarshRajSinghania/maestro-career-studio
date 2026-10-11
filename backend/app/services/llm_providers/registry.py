@@ -28,6 +28,7 @@ def get(name: str) -> Provider:
 def _load_builtins() -> None:
     """Import adapters lazily: they import `app.services.llm`, which imports this module."""
     from app.services import llm
+    from app.services.llm_providers.gemini import GeminiProvider
     from app.services.llm_providers.openai_compat import OpenAICompatProvider
 
     if "openai" not in _adapters:
@@ -37,7 +38,9 @@ def _load_builtins() -> None:
             json_mode=lambda: llm._json_mode_supported(),
             label=lambda: llm._openai_provider(),
         ))
-    # Tasks 3, 5, 6 add their adapters here.
+    if "gemini" not in _adapters:
+        register(GeminiProvider())
+    # Tasks 5, 6 add their adapters here.
 
 
 def resolve(model: str) -> ModelRef:
