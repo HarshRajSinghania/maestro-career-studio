@@ -67,6 +67,18 @@ may propose plan changes, logged against a Goal Card line. Scope is never self-e
 6. **Windows reveal uses a string command line** (`explorer /select,"<path>"`). `list2cmdline` would
    quote the whole `/select,` argument, and Explorer then ignores the selection. No CI runs a desktop,
    so Windows reveal is an owner check (G-W).
+8. **"Never raises" means catching `Exception`, not just `OSError`/`SQLAlchemyError`** (Fable verify,
+   blocker 2). The `render_resume` hook sits inside its `try:`, so any escaped exception would run
+   `_persist_render_error` and turn a successful render into a 500. `_attempt`, `copy_job` and
+   `copy_path_for` catch `Exception` (log + `last_error`). `_ready_root` treats `root(db) is None` as
+   unavailable: the sync key can appear between the two availability checks.
+9. **Error sentences carry no paths.** `errorDetail` shows a server detail only if `isPlainSentence`
+   passes (`frontend/lib/error-text.ts:15-18`). That test rejects `\` and `_`, so a path would silently
+   become "Try again."
+
+Fable 5.1 verified this plan against e3818b57 on 2026-10-11 ("ready after fixes"). Every fix is folded
+in below.
+
 7. **`RESUMES_FOLDER_DEFAULT` is a default, not an enforced value.** Like the model settings, a
    `maestro.env` line or the shell can override it. Tests and scratch stacks use that override.
 
@@ -116,7 +128,7 @@ def test_documents_dir_per_platform(tmp_path):
 
 def test_backend_env_sets_resumes_folder_default(tmp_path):
     env = _backend(tmp_path, ports=Ports(18001, 18000))
-    expected = H.documents_dir() / H.APP_DIR_NAME / "Applications"
+    expected = H.documents_dir(environ={}) / H.APP_DIR_NAME / "Applications"  # _backend passes environ={}
     assert env["RESUMES_FOLDER_DEFAULT"] == str(expected)
     # A maestro.env line overrides it (it is a default, not an enforced value).
     env = _backend(tmp_path, settings={"RESUMES_FOLDER_DEFAULT": "/elsewhere"})
@@ -381,7 +393,9 @@ def test_folder_name_is_saved_and_clashes_get_a_number(db_session, folder_on):
 
 Put the helpers `_job(db, company, title)` and `_application(db, job, pdf=None)` at the top of the test
 file, modelled on `tests/test_applications_router.py:_job`. `raw_text_hash` must be unique per job, so
-use `uuid4().hex`. `_application(..., pdf=path)` writes `pdf_path` when given.
+use `uuid4().hex`. `_job` takes keyword-only `company="Acme"` and `title="Data Scientist"` defaults.
+Task 4 calls it bare, and Task 6 passes `company=` only. `_application(..., pdf=path)` writes
+`pdf_path` when given.
 
 **Step 2:** Run `python3 -m pytest tests/test_resumes_folder.py -k "label or saved" -v`. Expected: FAIL.
 
@@ -597,8 +611,10 @@ def _record_error(exc: Exception) -> None:
         logger.warning("Couldn't record the resumes folder error", exc_info=True)
 
 
-def _ready_root(db: Session) -> Path:
+def _ready_root(db: Session) -> Path | None:
     base = root(db)
+    if base is None:  # became unavailable mid-call (the sync key appeared)
+        return None
     if is_custom(db):
         if not base.is_dir():  # an unplugged drive: never write into an empty mount point
             raise CopyError("missing", base)
@@ -663,14 +679,17 @@ def _attempt(application_id: UUID) -> tuple[bool, Path | None]:
             resume, files = _sources(db, application)
             if not files:
                 return True, None
-            folder = _ready_root(db) / _folder_for(db, application, job)
+            base = _ready_root(db)
+            if base is None:
+                return True, None
+            folder = base / _folder_for(db, application, job)
             folder.mkdir(exist_ok=True)
             placed = {src: _place(src, folder) for src in files}
             if _get(db, LAST_ERROR_KEY) is not None:
                 _put(db, LAST_ERROR_KEY, None)
                 db.commit()
             return True, placed.get(resume) if resume is not None else None
-    except (OSError, SQLAlchemyError) as exc:
+    except Exception as exc:  # noqa: BLE001 — never raise into the render (planning decision 8)
         logger.warning("Couldn't save a copy of application %s to the resumes folder",
                        application_id, exc_info=True)
         _record_error(exc)
@@ -686,7 +705,7 @@ def copy_job(job_id: UUID) -> None:
     try:
         with SessionLocal() as db:
             ids = list(db.scalars(select(Application.id).where(Application.job_id == job_id)))
-    except SQLAlchemyError:
+    except Exception:  # noqa: BLE001 — planning decision 8
         logger.warning("Couldn't list job %s for the resumes folder", job_id, exc_info=True)
         return
     for application_id in ids:
@@ -736,7 +755,7 @@ def copy_path_for(application_id: UUID) -> Path | None:
                 return None
             path = base / name / Path(application.pdf_path).name
             return path if path.exists() else None
-    except (OSError, SQLAlchemyError):
+    except Exception:  # noqa: BLE001 — planning decision 8
         return None
 ```
 
@@ -1031,7 +1050,7 @@ UNAVAILABLE = "This copy of Maestro keeps no resumes folder."
 OFF = "Saving copies is turned off in Settings › Tailoring."
 NO_PDF = "Create the PDF first."
 NOT_SAVED = "Maestro couldn't save a copy to your resumes folder. Check Settings › Tailoring."
-CANT_OPEN = "Maestro couldn't open the folder. It is at {path}."
+CANT_OPEN = "Maestro couldn't open the folder on this computer."  # no path: decision 9
 
 
 def _state(db: Session) -> ResumesFolderSettings:
@@ -1089,7 +1108,7 @@ def open_resumes_folder(db: Annotated[Session, Depends(get_db)]):
     try:
         folder_opener.open_folder(base)
     except folder_opener.OpenerUnavailable:
-        raise HTTPException(409, detail=CANT_OPEN.format(path=base)) from None
+        raise HTTPException(409, detail=CANT_OPEN) from None
 
 
 @router.post("/api/applications/{application_id}/show-copy", response_model=ShownCopy,
@@ -1108,7 +1127,7 @@ def show_copy(application_id: UUID, db: Annotated[Session, Depends(get_db)]):
     try:
         folder_opener.reveal(path)
     except folder_opener.OpenerUnavailable:
-        raise HTTPException(409, detail=CANT_OPEN.format(path=path.parent)) from None
+        raise HTTPException(409, detail=CANT_OPEN) from None
     return ShownCopy(path=str(path))
 ```
 
@@ -1129,7 +1148,11 @@ in both files):
 - `PUT {"enabled": false}` then `GET` gives `enabled false`, and the row is `"off"`.
 - `PUT {"folder": "relative"}` gives 422 with "Enter the folder's full path."
 - `PUT {"folder": str(tmp_path / "missing")}` gives 422.
-- `PUT {"folder": str(work_dir / "x")}` (inside `applications_dir`) gives 422.
+- `PUT {"folder": str(work_dir / "x")}` (inside `applications_dir`) gives 422. `mkdir` it first;
+  otherwise the "doesn't exist" branch answers and the test passes for the wrong reason.
+- **Monkeypatch `rf.start_backfill` in every PUT test** (an autouse fixture in the router test file). A
+  real daemon thread writing through `SessionLocal` races the `db_session` teardown, and conftest
+  documents a 30 s "database is locked" stall.
 - `PUT {"folder": str(ok_dir)}` gives 200 with `custom true`, and `start_backfill` was called
   (monkeypatch it to record).
 - `PUT {"folder": null}` gives `custom false`.
@@ -1137,8 +1160,8 @@ in both files):
   when `is_remote` returns True.
 - `show-copy` with a PDF calls `folder_opener.reveal` with the copy's path (monkeypatched) and returns
   it. With no PDF it gives 409 `NO_PDF`. When off it gives 409 `OFF`.
-- `show-copy` where `reveal` raises `OpenerUnavailable` gives 409, and the sentence contains the
-  folder path.
+- `show-copy` where `reveal` raises `OpenerUnavailable` gives 409 `CANT_OPEN`.
+- Every 409 and 422 sentence passes the frontend's `isPlainSentence` rule (copy the regex into the test).
 
 **Step 2:** Run both files. Expected: FAIL.
 
@@ -1205,6 +1228,21 @@ mutation with `qc.setQueryData`). Content:
 - **On success** of a folder change: `toast.success("Resumes folder changed")`. The backfill runs
   server-side.
 
+**Pinned card rules.** `tests/test_frontend_settings_cards.py::test_settings_cards_share_one_rhythm`
+globs every `components/settings/*.tsx`. It requires:
+- no `className="…m[tby]-N"`;
+- no `sm|md|lg:grid-cols-`;
+- no `border-t`;
+- `space-y-*` only inside `<fieldset>`;
+- no `<Label className="text-xs|sm">`.
+
+`SwitchRow` comes from `components/settings/setting-layout.tsx`. The inline path field follows R8:
+`className={ACTION_ROW}`, Save last and `focusableWhenDisabled`, and
+`useLeaveGuard(draft !== null)` while a path is typed. Never show a bare literal "Applications"
+(`test_frontend_vocabulary.py` bans `^Applications$`), and never write "Finder/File Explorer". Add
+`resumesFolder: FolderOpen` to `lib/concept-icons.ts` and use it in both components (one concept, one
+glyph).
+
 Use `useId()` for the input id. Keep the component under ~150 lines, and pull the folder row into a
 small inner component if it grows.
 
@@ -1213,8 +1251,8 @@ small inner component if it grows.
 2. Write the section.
 3. Wire up the tabs and page.
 4. Run `cd frontend && npx tsc --noEmit && npm run lint`, then
-   `node --test lib/settings-tabs.test.ts`. Check how CI runs this file (`grep -n settings-tabs
-   .github/workflows/ci.yml`) and run it the same way. Then, from `backend/`, run
+   `node --test lib/settings-tabs.test.ts`. CI does not run it, so run it locally. CI pins the card
+   placement through `tests/test_frontend_settings_pages.py`. Then, from `backend/`, run
    `python3 -m pytest tests/test_frontend_settings_pages.py tests/ -k "frontend" -q -n auto --dist loadfile`.
    That covers the vocabulary, sentence-length and error-words ratchets.
 5. Commit `feat(resumes-folder): Settings › Tailoring › Resumes folder card`.
@@ -1249,8 +1287,9 @@ small inner component if it grows.
     serializeFlag)` (from `hooks/use-local-storage-state.ts`).
   - Text: `A copy is saved in ${data.folder_display}.`
   - Then a `ShowCopyButton` (link-sized), a **Change folder** link to Settings › Tailoring
-    (`anchorHref("settings", "resumes-folder")`, or whatever helper `docs/frontend-conventions.md:1412`
-    names), and a dismiss icon button (`aria-label="Dismiss"`).
+    (a `GuardedLink` from `components/guarded-link.tsx` to `anchorHref("/settings", "resumes-folder")`,
+    `lib/settings-tabs.ts:90`. Never use `next/link`, which `test_frontend_leave_guard.py` pins, and never
+    `Button nativeButton={false} render={<a>}`, SYSTEM.md §11 item 29), and a dismiss icon button (`aria-label="Dismiss"`).
   - It uses the same quiet surface as other inline notes in `application-panel.tsx`. Check for an
     existing info-note style before inventing one.
 
@@ -1304,6 +1343,12 @@ owner's screen.
 
 **Files:**
 
+- **First, groom SYSTEM.md** (Fable verify, blocker 1). `scripts/check_system_md.py` reports 992 of
+  1,000 lines, and §6 is about 246 of its 250-line budget. Free at least 10 lines before adding
+  anything: integrate or trim §12 (88 lines against a 69-line baseline) or §2 (46 against 36), or
+  extract reference to `docs/entities/`. The header forbids raising the cap without a failed grooming
+  pass. Keep the new §6 bullet to 3 lines or fewer, and the §5 and §7 additions to one clause each.
+  Run the gate before committing.
 - **`SYSTEM.md`:**
   - §5 step 7 (Output): one sentence on the visible copy and Show in Finder.
   - §6: a new bullet `**Resumes folder copies go one way.** {#inv-resumes-folder-one-way}`. It covers:
