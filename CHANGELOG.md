@@ -28,9 +28,79 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ## [Unreleased]
 
+Until now Maestro spoke two AI dialects, OpenAI and Gemini, so a Claude key
+could only watch from the side. This release adds Claude, talking to Anthropic
+directly, and OpenRouter, with zero data retention switched on for you. A Claude
+key alone now runs the whole app, the Assistant included. Your chats are saved in
+a format that belongs to no single provider, so you can change models halfway
+through a conversation and it still remembers what was said.
+
 ### Breaking changes
 
-None.
+- **A built-in Gemini model now always goes to Google, even with a Custom AI
+  server set.** Before, the Assistant sent a role set to `gemini-3.5-flash-lite`
+  or `gemini-3.7-flash` to the custom server; now it uses your Gemini key, or
+  says that no Gemini key is set. With a custom server and a Gemini key, any
+  `gemini-*` Assistant model also goes to Google. If you serve a local model
+  under one of those names, give it an id that is not in the built-in list
+  (for example `gemini-local`): ids Maestro does not list still go to your
+  server.
+
+### Added
+
+- **Claude as an AI provider.** Add a Claude API key in Settings › AI & models
+  (or `ANTHROPIC_API_KEY` in `.env` / `maestro.env`). Claude Haiku 5.5, Sonnet 5.5
+  and Opus 5.5 are listed in the model pickers, and **Find Claude models** lists
+  the rest; no role switches to Claude on its own. Calls go to Anthropic's own API
+  through the official `anthropic` SDK, not its OpenAI-compatible endpoint. The
+  Assistant caches its long system prompt and tool list between turns, and when a
+  Claude safety check declines a request on Opus 5.5 or Sonnet 5.5, Anthropic
+  retries it on another Claude model.
+- **OpenRouter as an AI provider.** Add an OpenRouter key in Settings › AI &
+  models (or `OPENROUTER_API_KEY`). Every request asks OpenRouter to use only
+  providers that keep no data and collect none, and this cannot be turned off.
+  **Find OpenRouter models** lists only models with such a provider. OpenRouter
+  itself may keep what you send; [PRIVACY.md](PRIVACY.md) says what goes where.
+- **Switch providers mid-conversation.** Assistant messages are saved in a
+  provider-neutral form. A chat started on one provider continues on another,
+  and each provider's private reasoning data is sent back only to that provider.
+- Settings › AI & models warns when a role's model belongs to a provider with no
+  key saved ("Fast model uses OpenAI, but no OpenAI key is saved").
+- Key checks for Claude (`sk-ant-`) and OpenRouter (`sk-or-`) keys, and a warning
+  when a Claude or OpenRouter key is pasted into the OpenAI field.
+- `backend/scripts/live_provider_check.py`, a manual check that runs the app's
+  own one-shot, tool-calling and provider-switch paths against real keys.
+
+### Changed
+
+- **Gemini in the Assistant uses Gemini's own API** instead of Google's
+  OpenAI-compatible endpoint, and keeps Gemini 3's thought signatures between
+  tool calls.
+- The pinned resume and selections for an Assistant message are saved with that
+  message instead of being rebuilt on every later turn.
+- The setup checklist's AI key step, and the Career KB's first-start seeding,
+  count a key for any of the four providers or a Custom AI server.
+- **Test** next to a model runs the same streaming, tool-calling request the
+  Assistant makes, for every provider.
+- New dependency: `anthropic` (1.13 or later, which brings `httpx2`). The Docker
+  lock also gains `psutil`, which 0.9.0 added to the package but not the lock.
+- `maestro.env`, `.env.example` and `docker-compose.yml` list `ANTHROPIC_API_KEY`
+  and `OPENROUTER_API_KEY`. Like the other keys, a key saved in the app wins over
+  one from the environment.
+- A database migration adds `parts`, `provider` and `model` to `chat_messages`
+  and fills `parts` from every existing message when the backend starts. The old
+  `tool_calls` and `tool_call_id` columns stay for one more release.
+
+### Fixed
+
+- GPT-5.4, GPT-5.5 and GPT-6 models (including `openai/…` ids on OpenRouter) can
+  call tools in the Assistant: Maestro now sends `reasoning_effort: "none"` for
+  them, which OpenAI requires on Chat Completions. Before, only GPT-5.6 got it.
+- Gemini 3 Assistant turns that need two tool steps in a row no longer lose the
+  thought signature Google requires on the second request.
+- A Claude account with no API credit reads "your account is out of credit"
+  instead of "The AI model didn't answer (error 400)", and the model test does
+  not record it as a failed model.
 
 ## [0.9.0] — 2026-10-10
 
