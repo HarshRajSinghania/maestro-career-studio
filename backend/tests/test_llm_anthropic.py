@@ -467,3 +467,33 @@ def test_mid_stream_error_event_maps_by_error_type_not_status_200(monkeypatch, k
         list(ap.AnthropicProvider().stream(_HI))
     assert words in str(exc.value) and "error 200" not in str(exc.value) and "refused your API key" not in str(exc.value)
     assert s.closed
+
+
+# Live check 2026-10-11: a key on an account with no API credit gets a 400, not a 429.
+def test_an_account_out_of_credit_says_so(monkeypatch):
+    import anthropic
+
+    from app.services import llm
+
+    exc = _status_error(anthropic.BadRequestError, 400,
+                        "Your credit balance is too low to access the Anthropic API. Please go to "
+                        "Plans & Billing to upgrade or purchase credits.")
+
+    class Client:
+        class beta:
+            class messages:
+                @staticmethod
+                def stream(**_):
+                    raise exc
+
+    monkeypatch.setattr(llm, "_get_anthropic_client", lambda: Client())
+    with pytest.raises(LLMProviderError, match="out of credit"):
+        ap.AnthropicProvider().generate(Request(model=REF, messages=[Message("user", [TextPart("hi")])]))
+
+
+def test_out_of_credit_is_not_a_verdict_on_the_model():
+    from app.services import llm_capabilities
+
+    err = LLMProviderError("x", provider_detail="Error code: 400 - Your credit balance is too low "
+                                                "to access the Anthropic API.")
+    assert llm_capabilities._never_reached_the_model(err)

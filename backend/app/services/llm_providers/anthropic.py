@@ -193,6 +193,9 @@ def _anthropic_reason(exc: Any) -> str:
     """A few words for an SDK status error. A mid-stream `event: error` is raised with the
     stream response's status (200), so below 400 the reason comes from the body's error type."""
     status = exc.status_code
+    # Anthropic answers an empty prepaid balance with a 400 invalid_request_error, not a 429.
+    if "credit balance is too low" in str(exc).lower():
+        return _status_reason(status, "insufficient_quota")
     if status >= 400:
         return _status_reason(status)
     body = getattr(exc, "body", None)

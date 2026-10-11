@@ -136,6 +136,7 @@ _UNREACHABLE_SIGNS = (
     "permission_error",
     "rate_limit_error",
     "overloaded_error",
+    "credit balance is too low",  # Anthropic's 400 for an account with no API credit
     "error code: 529",
     # Every no-key sentence, built from the constants so they cannot drift.
     *(m.split(".")[0].lower() for m in (
