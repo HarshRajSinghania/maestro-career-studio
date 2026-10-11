@@ -16,6 +16,7 @@ from app.services import tracing
 from app.services.llm_providers.errors import (  # noqa: F401 — re-exported; callers use llm.*
     _KEY_REFUSED,
     _TIMED_OUT,
+    NO_ANTHROPIC_KEY_MESSAGE,
     NO_GEMINI_KEY_MESSAGE,
     NO_KEY_MESSAGE,
     LLMProviderError,
@@ -99,6 +100,28 @@ def completion_extras(model: str) -> dict[str, Any]:
     if model.startswith("gpt-5.6"):
         return {"reasoning_effort": "none"}
     return {}
+
+
+ANTHROPIC_BASE_URL = "https://api.anthropic.com"  # explicit: never ANTHROPIC_BASE_URL from a shell
+
+_anthropic_clients: dict[str, Any] = {}
+
+
+def _get_anthropic_client():
+    """Built with an explicit key AND base URL. A zero-argument client would pick up a user's
+    ANTHROPIC_AUTH_TOKEN, `ant auth` profile or ANTHROPIC_BASE_URL from their shell (native
+    installs inherit it) and bill or route somewhere the user never chose."""
+    import anthropic  # lazy: keeps the SDK out of app startup
+
+    key = get_anthropic_key()
+    if not key:
+        raise LLMProviderError(NO_ANTHROPIC_KEY_MESSAGE)
+    client = _anthropic_clients.get(key)
+    if client is None:
+        client = anthropic.Anthropic(api_key=key, base_url=ANTHROPIC_BASE_URL)
+        _anthropic_clients.clear()
+        _anthropic_clients[key] = client
+    return client
 
 
 def _get_client() -> OpenAI:

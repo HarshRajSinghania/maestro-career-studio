@@ -2126,7 +2126,7 @@ two-tool scenario once with both tools requested in one step.
 |---|---|
 | Task 0 baseline (passed / skipped / wall) | cloud py3.12 venv: 11032 passed / 906 skipped / 68 failed + 34 errors (environmental: no pdflatex/typst, root perms, proxy env; list kept by controller), 361 s xdist; ruff clean; frontend tsc/lint/385 node tests/build green; check_system_md 1000/1000 |
 | Task 2 suite unchanged | cloud venv: 11042 passed / same 102 env failures as baseline; ruff clean |
-| Task 5 CI-venv suite, lock diff, import-time check | |
+| Task 5 CI-venv suite, lock diff, import-time check | cloud venv (anthropic 1.13.0): 11086 passed / 906 skipped / 68 failed + 34 errors = the same 102 baseline ids (diff empty), 289 s; ruff clean; `-X importtime -c "import app.main"` shows 0 anthropic lines; wheel built + check_wheel ok (METADATA `Requires-Dist: anthropic<2,>=1.13`), test_wheel_scripts 76 passed; uv smoke left to CI (needs network); pending local: lock regeneration in python:3.12-slim |
 | Task 11 upgrade/downgrade/upgrade | |
 | Task 14 live check (per provider: text/json/image/2-step tools/switch) | |
 | Task 16 final suite, lint, frontend, docs, slop | |
@@ -2146,3 +2146,8 @@ two-tool scenario once with both tools requested in one step.
 | 4 | Task 3 left `gemini.is_gemini_model` | Unused third copy of the prefix rule | Deleted; `registry.resolve` holds the routing rule (`llm._is_gemini_model` stays for `get_chat_client` until Task 8) | Principle: no duplicate code paths |
 | 4 | Owner context | Env keys stay a fallback for every provider; Settings shows source "env"; a shell `ANTHROPIC_API_KEY` is used via that fallback | No change to the rule; startup log names each provider's key source (`openai=settings, anthropic=env, ...`) | Owner ruling |
 | 4 | `set_models` returned a 4-tuple | Brief says `tuple[str, str]`; no caller used the keys | Returns `(fast, smart)` | Brief |
+| 5 | `anthropic>=1.13,<2` newest 1.x | Installed with `uv pip` into the cloud venv: anthropic 1.13.0 (fallbacks/cache_control/output_config are native `beta.messages.stream` kwargs, no extra_body needed) | pyproject pin as planned; `requirements.lock` NOT regenerated (needs Docker): pending local | Environment only |
+| 5 | `parts_from_message` dumps `model_dump(mode="json", exclude_none=True)` (ruling C1) | Real SDK `BetaFallbackBlock` names the field `from_` (alias `from`); a plain dump would store `from_` and the API would reject the replay | `by_alias=True`; test validates a real fallback payload through `BetaMessage.model_validate` and asserts `"from"` stored and round-trips | Principle: replay provider data verbatim |
+| 5 | Signature-400 retry strips every `ReasoningPart` (ruling C7) | That also removes the `fallback` block whose position validates surrounding thinking | `_strip_reasoning` drops only parts where `types.is_anthropic_thinking_part` (type `thinking`/`redacted_thinking`); the predicate lives in `types.py` for Task 11's persisted `drop_reasoning` | Principle: one shared predicate |
+| 5 | `_STATUS_WORDS[529]` (ruling C10) | Design header would word it differently | Kept the plan's "the provider is overloaded" | Wording only |
+| 5 | No explicit `thinking` param (ruling C13) | n/a | None sent; test asserts it; Task 14 (local) must confirm thinking appears | Answer quality only |

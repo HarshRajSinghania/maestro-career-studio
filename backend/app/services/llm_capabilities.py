@@ -149,6 +149,13 @@ _UNREACHABLE_SIGNS = (
     "timeout",
     "name or service not known",
     "temporary failure in name resolution",
+    # Anthropic's error vocabulary
+    "authentication_error",
+    "permission_error",
+    "rate_limit_error",
+    "overloaded_error",
+    "error code: 529",
+    "no claude api key",
 )
 
 

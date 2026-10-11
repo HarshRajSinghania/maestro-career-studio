@@ -89,7 +89,7 @@ backend/
                        artifacts, application_render, engines (the ONE probe),
                        pdf_render (dual-engine: pdflatex + typst), pdf_preview,
                        jd_extraction, resume_lint, health_*, career_kb,
-                       chat_agent + chat_tools, llm_providers/ (neutral LLM types, errors, registry (model id to provider), OpenAI-compatible and Gemini adapters), attachment_extract (bounded DOCX/PPTX + notes; decks are documents),
+                       chat_agent + chat_tools, llm_providers/ (neutral LLM types, errors, registry (model id to provider), OpenAI-compatible, Gemini and Claude adapters), attachment_extract (bounded DOCX/PPTX + notes; decks are documents),
                        autofill_choose + autofill_slots + jev (Companion fill),
                        automations (page catalog), agent_runs + inbox_readiness, …)
     automations/skills/  the agent prompts, one <name>/SKILL.md each: the Automations

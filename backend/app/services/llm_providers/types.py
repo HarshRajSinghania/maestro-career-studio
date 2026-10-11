@@ -62,6 +62,18 @@ class ReasoningPart:
     meta: ProviderMeta | None = None
 
 
+ANTHROPIC_THINKING_TYPES = frozenset({"thinking", "redacted_thinking"})
+
+
+def is_anthropic_thinking_part(part: object) -> bool:
+    """True for a Claude thinking / redacted_thinking block. The ONE predicate for "reasoning a retry
+    may drop": the `fallback` block is also an opaque anthropic ReasoningPart but must be KEPT (the API
+    uses its position to validate the surrounding thinking). Shared with the persisted drop_reasoning."""
+    meta = getattr(part, "meta", None)
+    return (isinstance(part, ReasoningPart) and meta is not None and meta.provider == "anthropic"
+            and meta.data.get("type") in ANTHROPIC_THINKING_TYPES)
+
+
 Part = Union[TextPart, ImagePart, ToolCallPart, ToolResultPart, ReasoningPart]
 
 

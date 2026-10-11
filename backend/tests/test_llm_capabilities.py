@@ -293,3 +293,11 @@ def test_a_real_capability_refusal_is_still_recorded(db_session, monkeypatch):
     assert report.reachable is True
     stored = llm_capabilities.load(db_session, "some-local-model")
     assert stored is not None and stored.tools is False
+
+
+def test_anthropic_error_vocabulary_is_unreachable_not_a_capability_no():
+    from app.services.llm_providers.errors import LLMProviderError
+    for sign in ("authentication_error", "permission_error", "rate_limit_error",
+                 "overloaded_error", "Error code: 529", "No Claude API key is set."):
+        exc = LLMProviderError("The AI model didn't answer.", provider_detail=sign)
+        assert llm_capabilities._never_reached_the_model(exc), sign

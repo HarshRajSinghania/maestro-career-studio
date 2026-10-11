@@ -34,6 +34,7 @@ NO_KEY_MESSAGE = (
     "on your computer instead, add its address in Settings › AI & models › Custom AI server."
 )
 NO_GEMINI_KEY_MESSAGE = "No Gemini API key is set. Add one in Settings › AI & models."
+NO_ANTHROPIC_KEY_MESSAGE = "No Claude API key is set. Add one in Settings › AI & models."
 
 
 _KEY_REFUSED = "your key was refused"
@@ -78,6 +79,7 @@ _STATUS_WORDS = {
     401: _KEY_REFUSED,
     404: "that model wasn't found",
     429: "too many requests",
+    529: "the provider is overloaded",
 }
 
 
