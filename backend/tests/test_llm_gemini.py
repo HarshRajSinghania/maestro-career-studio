@@ -1,5 +1,6 @@
 import base64
 import io
+from http.client import IncompleteRead
 import json
 import re
 from urllib.error import HTTPError, URLError
@@ -123,7 +124,7 @@ def test_current_turn_first_call_without_signature_gets_the_dummy():
     assert c[3]["parts"][0]["thoughtSignature"] == DUMMY  # each model step
 
 
-def test_earlier_turns_get_no_dummy_and_a_signature_from_another_model_is_dropped():
+def test_earlier_turn_call_without_signature_gets_no_dummy_and_other_model_is_dropped_in_current_turn():
     msgs = [Message("user", [TextPart("first")]),
             Message("assistant", [_call("a", "one")]),
             Message("tool", [ToolResultPart("a", "{}")]),
@@ -281,3 +282,30 @@ def test_stream_closes_the_response_on_early_stop(monkeypatch):
     assert isinstance(next(gen), TextDelta)
     gen.close()
     assert resp.closed
+
+
+def test_earlier_turn_call_with_another_models_signature_is_replayed_bare():
+    msgs = [Message("user", [TextPart("first")]),
+            Message("assistant", [_call("a", "one", sig="OLD", model="gemini-2.5-pro")]),
+            Message("tool", [ToolResultPart("a", "{}")]),
+            Message("assistant", [TextPart("done")]),
+            Message("user", [TextPart("second")])]
+    part = _chat(msgs)["contents"][1]["parts"][0]
+    assert "thoughtSignature" not in part
+
+
+def test_stream_incomplete_read_mid_stream_maps_and_closes(monkeypatch):
+    resp = _Resp(_HELLO[:1], fail=IncompleteRead(b""))
+    with pytest.raises(LLMProviderError, match="didn't answer"):
+        list(_provider(monkeypatch, lambda r, timeout=None: resp).stream(_hello_req()))
+    assert resp.closed
+
+
+def test_stream_error_event_raises():
+    with pytest.raises(LLMProviderError, match="didn't answer"):
+        list(gemini.parse_sse([b'data: {"error": {"message": "overloaded"}}\n'], REF))
+
+
+def test_stream_blocked_prompt_raises_with_the_reason():
+    with pytest.raises(LLMProviderError, match="prompt was blocked: SAFETY"):
+        list(gemini.parse_sse([b'data: {"promptFeedback": {"blockReason": "SAFETY"}}\n'], REF))

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import json
+from http.client import HTTPException
 from typing import Any, Iterable, Iterator
 from uuid import uuid4
 from urllib.error import HTTPError, URLError
@@ -217,6 +218,14 @@ def parse_sse(lines: Iterable[bytes | str], ref: ModelRef) -> Iterator[StreamEve
             continue
         if not isinstance(data, dict):
             continue
+        if data.get("error"):
+            err = data["error"]
+            msg = err.get("message") if isinstance(err, dict) else err
+            raise _no_answer("error", f"Gemini stream error: {msg}", provider="Gemini")
+        block = (data.get("promptFeedback") or {}).get("blockReason")
+        if block and not data.get("candidates"):
+            raise _no_answer(f"the prompt was blocked: {block}", f"Gemini blocked the prompt: {block}",
+                             provider="Gemini")
         usage = _usage(data) or usage
         candidate = (data.get("candidates") or [{}])[0]
         if isinstance(candidate.get("finishReason"), str):
@@ -294,7 +303,7 @@ class GeminiProvider:
             body = exc.read().decode("utf-8", errors="replace")
             raise _no_answer(_gemini_reason(exc.code, body),
                              f"Gemini API request failed: {exc.code} {body}", provider="Gemini") from exc
-        except (TimeoutError, URLError, OSError) as exc:
+        except (TimeoutError, URLError, OSError, HTTPException) as exc:
             timed_out = isinstance(exc, TimeoutError) or (
                 isinstance(exc, URLError) and isinstance(exc.reason, TimeoutError))
             raise _no_answer(_TIMED_OUT if timed_out else "no connection",
