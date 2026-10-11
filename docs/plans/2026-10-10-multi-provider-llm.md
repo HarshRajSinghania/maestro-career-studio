@@ -2124,7 +2124,7 @@ two-tool scenario once with both tools requested in one step.
 
 | Gate | Result |
 |---|---|
-| Task 0 baseline (passed / skipped / wall) | |
+| Task 0 baseline (passed / skipped / wall) | cloud py3.12 venv: 11032 passed / 906 skipped / 68 failed + 34 errors (environmental: no pdflatex/typst, root perms, proxy env; list kept by controller), 361 s xdist; ruff clean; frontend tsc/lint/385 node tests/build green; check_system_md 1000/1000 |
 | Task 2 suite unchanged | |
 | Task 5 CI-venv suite, lock diff, import-time check | |
 | Task 11 upgrade/downgrade/upgrade | |
@@ -2135,4 +2135,6 @@ two-tool scenario once with both tools requested in one step.
 
 | Task | Planned | Found | Change | Goal Card line |
 |---|---|---|---|---|
-| | | | | |
+| 1 | `FakeProvider` mirrors `Finish` as planned | A later task's test needs `Finish(..., reasoning_dropped=True)` (ruling C6) | `tests/fake_provider.py` only: `reasoning_dropped=` ctor option (all scripts) or per-script `(items, {"reasoning_dropped": True})`; `generate` passes it through. `types.py` unchanged | Principle: test-only seam, no interface change |
+| 0 | anaconda interpreter, no push (ruling C22) | Cloud container: `/home/user/venv312` (py3.12) with `uv pip`; branch `claude/anthropic-api-key-compat-8b5ded-rtsdmh`; owner asked for a push after each task | Use venv312 + uv pip; push after each task (no PR, no merge) | Environment only |
+| 0 | n/a (ruling C24) | The anthropic SDK reads `ANTHROPIC_CUSTOM_HEADERS` from the shell env even with explicit key/base_url | Not fixed (scope). Known limitation for the owner: shell-set custom headers reach api.anthropic.com | Out of scope; owner to decide |
