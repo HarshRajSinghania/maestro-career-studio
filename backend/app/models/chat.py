@@ -60,6 +60,11 @@ class ChatMessage(Base):
     tool_calls: Mapped[list | None] = mapped_column(JSONDoc)  # assistant tool_calls
     tool_call_id: Mapped[str | None] = mapped_column(Text)  # set on role="tool"
     meta_json: Mapped[dict | None] = mapped_column(JSONDoc)
+    # Neutral transcript (types.dump_parts, versioned); NULL = a pre-parts row, read via
+    # services/transcript.from_legacy. provider/model tag the assistant row's author.
+    parts: Mapped[dict | None] = mapped_column(JSONDoc)
+    provider: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(), default=utcnow, server_default=func.now(), nullable=False
     )
