@@ -90,6 +90,7 @@ def insert_rows(db):
 DOCKER_ENV = f"""# compose settings
 OPENAI_API_KEY={SECRET}
 GEMINI_API_KEY=
+ANTHROPIC_API_KEY={SECRET}
 FAST_MODEL=gpt-test
 SYNC_PUBLIC_HOST=mac.example.ts.net
 HTTPS_PROXY=http://proxy.example:3128
@@ -284,6 +285,12 @@ def test_env_keys_the_backend_understands_are_carried(imported):
     assert values["OPENAI_API_KEY"] == SECRET and values["FAST_MODEL"] == "gpt-test"
     assert values["SYNC_PUBLIC_HOST"] == "mac.example.ts.net" and values["HTTPS_PROXY"] == "http://proxy.example:3128"
     assert (imported.home / "maestro.env").read_text().startswith("# Read by `maestro start`")  # the template's comments stay
+
+
+def test_an_anthropic_key_line_in_the_docker_env_is_carried(imported):
+    values = home_mod.read_env_file(imported.home / "maestro.env")
+    assert values["ANTHROPIC_API_KEY"] == SECRET
+    assert SECRET not in imported.out
 
 
 def test_docker_only_env_keys_are_left_out(imported):

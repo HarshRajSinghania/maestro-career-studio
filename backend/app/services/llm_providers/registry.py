@@ -44,8 +44,15 @@ def _load_builtins() -> None:
 
 
 def resolve(model: str) -> ModelRef:
-    """Task 4 replaces this with the catalog rule. Until then: today's prefix rule."""
+    """1) catalog tag  2) claude-/gemini- prefix when that provider has a key  3) openai-compat."""
+    from app.services import llm, model_settings
+
+    tagged = model_settings.catalog_provider(model)
+    if tagged:
+        return ModelRef(tagged, model)
     name = model.removeprefix("models/")
-    if name.startswith("gemini-"):
+    if name.startswith("claude-") and llm.get_anthropic_key():
+        return ModelRef("anthropic", model)
+    if name.startswith("gemini-") and llm.get_gemini_key():
         return ModelRef("gemini", model)
     return ModelRef("openai", model)

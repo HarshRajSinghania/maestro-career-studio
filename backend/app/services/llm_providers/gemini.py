@@ -35,10 +35,6 @@ def model_name(model: str) -> str:
     return model.removeprefix("models/")
 
 
-def is_gemini_model(model: str) -> bool:
-    return model_name(model).startswith("gemini-")
-
-
 def _thinking_level(model: str) -> str | None:
     normalized = model_name(model)
     if not normalized.startswith("gemini-3"):

@@ -36,6 +36,13 @@ MODEL_OPTIONS = [
     # DEFAULT for every tier (same 2026-08 benchmark): the most complete
     # extraction measured and the cheapest per application; the slowest.
     ModelOption("gpt-5.6-luna", "OpenAI GPT-5.6 Luna", "openai", "smart"),
+    # Claude 5.5 family: listed so a Claude key has models to pick; never
+    # assigned to a role (no auto-pick). Fast Claude tier:
+    ModelOption("claude-haiku-5-5", "Claude Haiku 5.5", "anthropic", "fast"),
+    # Balanced Claude tier: listed for a Claude key, never a default.
+    ModelOption("claude-sonnet-5-5", "Claude Sonnet 5.5", "anthropic", "smart"),
+    # Most capable Claude tier: listed for a Claude key, never a default.
+    ModelOption("claude-opus-5-5", "Claude Opus 5.5", "anthropic", "smart"),
 ]
 
 VALID_MODEL_IDS = {option.id for option in MODEL_OPTIONS}
@@ -85,8 +92,14 @@ def get_chat_model(session: Session | None = None) -> str:
     return _get_value(session, CHAT_MODEL_KEY, settings.chat_model)
 
 
-OPENAI_API_KEY_KEY = "llm.openai_api_key"
-GEMINI_API_KEY_KEY = "llm.gemini_api_key"
+API_KEY_SETTINGS = {
+    "openai": "llm.openai_api_key",
+    "gemini": "llm.gemini_api_key",
+    "anthropic": "llm.anthropic_api_key",
+    "openrouter": "llm.openrouter_api_key",
+}
+OPENAI_API_KEY_KEY = API_KEY_SETTINGS["openai"]   # kept: imported elsewhere
+GEMINI_API_KEY_KEY = API_KEY_SETTINGS["gemini"]
 BASE_URL_KEY = "llm.base_url"
 # auto | on | off — see llm._json_mode_supported.
 JSON_MODE_KEY = "llm.json_mode"
@@ -116,18 +129,26 @@ def _set_raw_value(session: Session, key: str, value: str | None) -> str | None:
     return None
 
 
-def get_openai_api_key(session: Session | None = None) -> str | None:
+def get_api_key(provider: str, session: Session | None = None) -> str | None:
+    key = API_KEY_SETTINGS[provider]
     if session is None:
         with SessionLocal() as owned:
-            return _get_raw_value(owned, OPENAI_API_KEY_KEY)
-    return _get_raw_value(session, OPENAI_API_KEY_KEY)
+            return _get_raw_value(owned, key)
+    return _get_raw_value(session, key)
+
+
+def get_openai_api_key(session: Session | None = None) -> str | None:
+    return get_api_key("openai", session)
 
 
 def get_gemini_api_key(session: Session | None = None) -> str | None:
-    if session is None:
-        with SessionLocal() as owned:
-            return _get_raw_value(owned, GEMINI_API_KEY_KEY)
-    return _get_raw_value(session, GEMINI_API_KEY_KEY)
+    return get_api_key("gemini", session)
+
+
+def set_api_keys(session: Session, keys: dict[str, str | None]) -> None:
+    """Patch: only the providers named in `keys` change; None or "" removes that key."""
+    for provider, value in keys.items():
+        _set_raw_value(session, API_KEY_SETTINGS[provider], (value or "").strip() or None)
 
 
 def get_base_url(session: Session | None = None) -> str | None:
@@ -289,7 +310,7 @@ def _parse_extra_models(raw: str | None) -> list[ModelOption]:
             continue
         model_id = str(item.get("id") or "").strip()
         provider = str(item.get("provider") or "").strip()
-        if not model_id or provider not in {"openai", "gemini"}:
+        if not model_id or provider not in API_KEY_SETTINGS:
             continue
         label = str(item.get("label") or model_id).strip() or model_id
         tier = str(item.get("tier") or "extra").strip() or "extra"
@@ -315,10 +336,27 @@ def _save_extra_models(session: Session, extras: list[ModelOption]) -> None:
 def _provider_for(model_id: str) -> str:
     """Best-effort provider for an id nobody registered.
 
-    Gemini ids carry the prefix; everything else takes the OpenAI-compatible
-    path, which is also where a custom endpoint's models go.
+    A display label only; routing is `registry.resolve`'s. Claude and Gemini ids
+    carry their prefix; everything else is the OpenAI-compatible path, which is
+    also where a custom endpoint's models go.
     """
-    return "gemini" if model_id.removeprefix("models/").startswith("gemini-") else "openai"
+    name = model_id.removeprefix("models/")
+    if name.startswith("claude-"):
+        return "anthropic"
+    return "gemini" if name.startswith("gemini-") else "openai"
+
+
+def catalog_provider(model_id: str, session: Session | None = None) -> str | None:
+    """Provider tag of a seeded or user-added model; None when nobody registered the id."""
+    for opt in MODEL_OPTIONS:
+        if opt.id == model_id:
+            return opt.provider
+    if session is None:
+        with SessionLocal() as owned:
+            extras = get_extra_models(owned)
+    else:
+        extras = get_extra_models(session)
+    return next((opt.provider for opt in extras if opt.id == model_id), None)
 
 
 def configured_options(session: Session) -> list[ModelOption]:
@@ -396,7 +434,7 @@ def add_extra_model(
     cleaned_provider = (provider or "").strip()
     if not cleaned_id:
         raise ValueError("Model id must not be empty")
-    if cleaned_provider not in {"openai", "gemini"}:
+    if cleaned_provider not in API_KEY_SETTINGS:
         raise ValueError("provider must be openai or gemini")
     if cleaned_id in VALID_MODEL_IDS:
         raise ValueError(f"Model {cleaned_id} is already a built-in seed")
@@ -434,14 +472,14 @@ def remove_extra_model(session: Session, model_id: str) -> None:
     _save_extra_models(session, [opt for opt in extras if opt.id != cleaned_id])
 
 
-def set_models(
+def validate_models(
     fast_model: str,
     smart_model: str,
     session: Session,
     chat_model: str | None = None,
-    openai_api_key: str | None = None,
-    gemini_api_key: str | None = None,
-) -> tuple[str, str, str | None, str | None]:
+) -> None:
+    """Raise ValueError for a role value `set_models` would refuse. Writes nothing, so a
+    caller can validate BEFORE saving anything else (a rejected PUT stores no key)."""
     custom = using_custom_endpoint(session)
     allowed = usable_ids(session)
     for model in (fast_model, smart_model):
@@ -461,9 +499,17 @@ def set_models(
             raise ValueError(
                 "The Assistant model has to pass the tool test. Press Test next to it first."
             )
+
+
+def set_models(
+    fast_model: str,
+    smart_model: str,
+    session: Session,
+    chat_model: str | None = None,
+) -> tuple[str, str]:
+    validate_models(fast_model, smart_model, session, chat_model)
+    if chat_model is not None:
         _set_value(session, CHAT_MODEL_KEY, chat_model)
     fast = _set_value(session, FAST_MODEL_KEY, fast_model)
     smart = _set_value(session, SMART_MODEL_KEY, smart_model)
-    openai_key = _set_raw_value(session, OPENAI_API_KEY_KEY, openai_api_key)
-    gemini_key = _set_raw_value(session, GEMINI_API_KEY_KEY, gemini_api_key)
-    return fast, smart, openai_key, gemini_key
+    return fast, smart

@@ -37,7 +37,7 @@ if not os.environ.get("TEST_DATABASE_URL") or _MINTED_BY_CONTROLLER:
 # backend/ that finds the repo root's .env (from a worktree under .claude/worktrees/,
 # the main checkout's) and exports the developer's live keys, so tests that do not
 # stub the model make real, billed calls. An empty value wins over a .env line.
-for _secret in ("OPENAI_API_KEY", "GEMINI_API_KEY"):
+for _secret in ("OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"):
     os.environ[_secret] = ""
 
 # The same walk would bring a live laptop's sync setup into every test: with

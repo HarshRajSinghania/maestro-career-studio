@@ -138,6 +138,8 @@ jobs:
           SYNC_PUBLIC_HOST: ""
           OPENAI_API_KEY: ""
           GEMINI_API_KEY: ""
+          ANTHROPIC_API_KEY: ""
+          OPENROUTER_API_KEY: ""
           OPENAI_BASE_URL: ""
           JEV_API_KEY: ""
           LANGFUSE_PUBLIC_KEY: ""

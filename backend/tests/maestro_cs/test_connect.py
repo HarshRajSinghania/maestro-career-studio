@@ -792,7 +792,8 @@ def test_the_command_runs_in_a_fresh_process_without_the_developers_environment(
     user_home = tmp_path / "user"
     user_home.mkdir()
     env = {k: v for k, v in os.environ.items()
-           if k.upper() not in {"MAESTRO_HOME", "DATABASE_URL", "OPENAI_API_KEY", "GEMINI_API_KEY"}}
+           if k.upper() not in {"MAESTRO_HOME", "DATABASE_URL", "OPENAI_API_KEY", "GEMINI_API_KEY",
+                              "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"}}
     env.update({"MAESTRO_HOME": str(home), "HOME": str(user_home), "USERPROFILE": str(user_home),
                 "MAESTRO_PORT": "18911", "MAESTRO_WEB_PORT": "18912", "XDG_CONFIG_HOME": str(user_home / "c"),
                 "PATH": "/nonexistent"})

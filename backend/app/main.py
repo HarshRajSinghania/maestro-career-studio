@@ -91,19 +91,25 @@ def _log_llm_config() -> None:
     from app import config
     from app.services import llm, model_settings
 
-    key_source = (
-        "settings" if model_settings.get_openai_api_key() else
-        "env" if app_settings.openai_api_key else "NONE"
-    )
+    sources = {
+        provider: (
+            "settings" if model_settings.get_api_key(provider) else
+            "env" if getattr(app_settings, f"{provider}_api_key") else "NONE"
+        )
+        for provider in model_settings.API_KEY_SETTINGS
+    }
     endpoint = llm.get_base_url() or "https://api.openai.com/v1 (default)"
-    if key_source == "NONE" and not llm.get_base_url():
+    if not llm.any_model_key_configured():
         logger.warning(
-            "No OpenAI API key configured — every LLM feature will fail. Add one "
-            "in Settings › AI & models in the web app, or set OPENAI_API_KEY in "
-            ".env and restart."
+            "No model API key configured — every LLM feature will fail. Add one "
+            "in Settings › AI & models in the web app, or set OPENAI_API_KEY, "
+            "GEMINI_API_KEY, ANTHROPIC_API_KEY or OPENROUTER_API_KEY in .env and restart."
         )
     else:
-        logger.info("LLM endpoint %s, api key from %s", endpoint, key_source)
+        logger.info(
+            "LLM endpoint %s, api keys from: %s", endpoint,
+            ", ".join(f"{provider}={source}" for provider, source in sources.items()),
+        )
     if app_settings.llm_log_content:
         # Loud on purpose. This writes resumes, job descriptions, work-auth
         # answers and generated screening answers to disk in cleartext, and the

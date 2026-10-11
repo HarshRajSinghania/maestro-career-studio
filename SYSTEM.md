@@ -89,7 +89,7 @@ backend/
                        artifacts, application_render, engines (the ONE probe),
                        pdf_render (dual-engine: pdflatex + typst), pdf_preview,
                        jd_extraction, resume_lint, health_*, career_kb,
-                       chat_agent + chat_tools, llm_providers/ (neutral LLM types, errors, registry, OpenAI-compatible and Gemini adapters), attachment_extract (bounded DOCX/PPTX + notes; decks are documents),
+                       chat_agent + chat_tools, llm_providers/ (neutral LLM types, errors, registry (model id to provider), OpenAI-compatible and Gemini adapters), attachment_extract (bounded DOCX/PPTX + notes; decks are documents),
                        autofill_choose + autofill_slots + jev (Companion fill),
                        automations (page catalog), agent_runs + inbox_readiness, …)
     automations/skills/  the agent prompts, one <name>/SKILL.md each: the Automations
@@ -664,7 +664,7 @@ with the failure mode that bought it. Code citing "§8" lands here.
 - Backend tests: `pytest tests/ mcp_server/tests/ -q -n auto --dist loadfile` from `backend/`; bare `tests/` skips MCP.
   CI cold-installs `.[mcp]`, checks six stdio profiles and `/mcp` + `/mcp/hunt` over HTTP. xdist (~15 → ~3.5 min)
   uses `loadfile` to keep browser tests per file. conftest makes a SQLite file per process/worker (`TEST_DATABASE_URL` may name another,
-  never under `data/` or with `-n`) and blanks `OPENAI_API_KEY`/`GEMINI_API_KEY`: a worker's `load_dotenv()` finds the
+  never under `data/` or with `-n`) and blanks the four provider keys (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`): a worker's `load_dotenv()` finds the
   nearest `.env`, so unstubbed tests made billed calls. Parity tests (`tests/node_ts.py`) need node 24: skip locally, FAIL in `CI`.
 - **Deploying a local change = rebuilding BOTH images** (MAINTAINER path, MAIN checkout):
   `docker build -t maestro-career-studio-backend backend/` AND `…-frontend frontend/`, then

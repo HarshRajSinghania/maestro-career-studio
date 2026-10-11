@@ -69,7 +69,8 @@ def _home_env(root, key_file):
         env[f"{name.upper()}_DIR"] = str(directory)
     env.update(DATABASE_URL=f"sqlite:///{root / 'data' / 'home.sqlite3'}",
                SYNC_KEY_FILE=str(key_file), SYNC_REMOTE_URL="",
-               OPENAI_API_KEY="", GEMINI_API_KEY="", LANGFUSE_PUBLIC_KEY="",
+               OPENAI_API_KEY="", GEMINI_API_KEY="", ANTHROPIC_API_KEY="", OPENROUTER_API_KEY="",
+               LANGFUSE_PUBLIC_KEY="",
                LANGFUSE_SECRET_KEY="", LANGFUSE_HOST="", ALLOWED_HOSTS="127.0.0.1,localhost")
     return env
 

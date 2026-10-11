@@ -30,7 +30,6 @@ from app.services import (
     engines,
     job_preferences,
     market_settings,
-    model_settings,
     persona,
     role_categories,
 )
@@ -173,14 +172,9 @@ def build_status(db: Session) -> SetupStatus:
     # difference between "the app cannot run" and "a model might refuse".
     # It lives on /settings, not /profile — readiness already spans surfaces
     # (import → /career, template → /templates).
-    from app.config import settings as app_settings
+    from app.services import llm
 
-    key_configured = bool(
-        model_settings.get_openai_api_key(db)
-        or app_settings.openai_api_key
-        or model_settings.get_gemini_api_key(db)
-        or app_settings.gemini_api_key
-    )
+    key_configured = llm.any_model_key_configured()
     probed = engines.probe()
     default_engine_available = (
         default_tpl is None or default_tpl.engine != "latex" or probed.pdflatex.available

@@ -31,7 +31,8 @@ _STRIPPED = (
 # Never given to the web server, even when the user's shell exports them: it needs no secret.
 # Covers every secret-bearing field of app.config.Settings (a test walks the model).
 _WEB_STRIPPED = _STRIPPED + (
-    "OPENAI_API_KEY", "GEMINI_API_KEY", "OPENAI_BASE_URL", "LANGFUSE_PUBLIC_KEY",
+    "OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "LANGFUSE_PUBLIC_KEY",
     "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST", "SYNC_REMOTE_URL", "SYNC_KEY_FILE",
     # frontend/lib/api.ts reads INTERNAL_API_URL before API_PROXY_BACKEND; only ours may apply.
     "INTERNAL_API_URL", "BACKEND_URL",

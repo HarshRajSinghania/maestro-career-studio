@@ -364,3 +364,30 @@ def test_status_reports_engines_and_default_engine_availability(
     # The seeded default is LaTeX Classic, so its engine is the missing one.
     assert body["template"]["detail"]["default_engine_available"] is False
     assert body["template"]["done"] is False  # engines never change completeness
+
+
+def _no_keys(monkeypatch):
+    from app.config import settings as app_settings
+
+    for name in ("openai_api_key", "gemini_api_key", "anthropic_api_key",
+                 "openrouter_api_key", "openai_base_url"):
+        monkeypatch.setattr(app_settings, name, "")
+
+
+def test_model_key_step_is_pending_with_no_key_and_no_endpoint(client, monkeypatch):
+    _no_keys(monkeypatch)
+    assert _status(client)["model_key"]["done"] is False
+
+
+def test_model_key_step_done_with_a_claude_key_alone(client, db_session, monkeypatch):
+    _no_keys(monkeypatch)
+    db_session.add(Setting(key="llm.anthropic_api_key", value="sk-ant-x"))
+    db_session.commit()
+    assert _status(client)["model_key"]["done"] is True
+
+
+def test_model_key_step_done_with_a_custom_endpoint_alone(client, db_session, monkeypatch):
+    _no_keys(monkeypatch)
+    db_session.add(Setting(key="llm.base_url", value="http://localhost:11434/v1"))
+    db_session.commit()
+    assert _status(client)["model_key"]["done"] is True

@@ -392,7 +392,7 @@ def test_native_scripts_never_enable_xtrace():
 
 def test_env_example_comments_keys_and_names_the_local_secret_store():
     text = (NATIVE / "maestro.env.example").read_text()
-    for key in ("OPENAI_API_KEY", "GEMINI_API_KEY"):
+    for key in ("OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"):
         assert re.search(rf"^#\s*{key}=", text, re.MULTILINE)
         assert not re.search(rf"^\s*{key}=", text, re.MULTILINE)
     assert "secret store" in text and "never" in text and "chat" in text
@@ -1582,6 +1582,8 @@ def test_full_setup_start_health_stop_with_real_venv(tmp_path):
         PYTHON=sys.executable,
         OPENAI_API_KEY="",
         GEMINI_API_KEY="",
+        ANTHROPIC_API_KEY="",
+        OPENROUTER_API_KEY="",
     )
     try:
         setup = run_script("setup.sh", env, timeout=600)

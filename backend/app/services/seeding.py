@@ -161,7 +161,7 @@ def seed_career_kb(session: Session) -> None:
         session.commit()
         return
 
-    if not llm.get_openai_key() and not llm.get_gemini_key():
+    if not llm.any_model_key_configured():
         logger.warning("KB seed deferred: no LLM key configured")
         return  # flag left unset -> retried once a key is configured
 

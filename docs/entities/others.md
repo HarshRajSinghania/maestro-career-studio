@@ -207,7 +207,11 @@
 - **Model settings** (`services/model_settings.py`, `services/llm_capabilities.py`; on screen Settings ›
   AI & models, roles Fast, Smart and Assistant): the catalog is seeds ∪ extras (`MODEL_OPTIONS` ∪
   `llm.extra_models`); `GET /api/settings/openai` returns the merge, and deleting an id a role still uses is
-  400. Capabilities are probed on Test and stored per model; `require()` blocks only on a stored No, so an
+  400. Four provider keys (`API_KEY_SETTINGS`: openai, gemini, anthropic, openrouter) are patched per provider
+  by PUT (`set_api_keys`, only the ones sent; role ids are validated first, so a 400 saves no key); an env
+  key stays a fallback for each, shown as source "env". `registry.resolve` routes a model id: catalog tag,
+  then `claude-`/`gemini-` prefix when that provider has a key, else the OpenAI-compatible client.
+  Capabilities are probed on Test and stored per model; `require()` blocks only on a stored No, so an
   unprobed model passes (the Assistant is gated on tools this way). JSON mode is capability-gated:
   `response_format=json_object` goes out only when `llm._json_mode_supported()` (other servers may hard-400
   on the field), and `llm._extract_json_object` salvages fenced JSON.
@@ -249,8 +253,8 @@
   tabs, `template` → `/templates` (the template step's detail names the default
   as `default_template_name`); a link into Settings or Profile goes through
   `lib/settings-tabs.ts` `anchorHref`, which picks the tab that holds the anchor;
-  readiness is app-wide, not Profile-scoped. `model_key` is `bool(stored key or
-  env key)` for either provider: whether a key WORKS is what the capability
+  readiness is app-wide, not Profile-scoped. `model_key` is `llm.any_model_key_configured()` (a stored
+  or env key for any of the four providers, or a custom server): whether a key WORKS is what the capability
   probe answers, and storing that verdict would break the derived-only rule. Autofill readiness spans the
   required personal, work-auth, EEO, and preferences groups and means
   **answerable**, not merely filled: `decline` is an answer, optional fields

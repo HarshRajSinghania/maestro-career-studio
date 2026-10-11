@@ -61,7 +61,8 @@ def build_env(home: Path) -> dict[str, str]:
         ALLOWED_HOSTS="localhost,127.0.0.1", LLM_LOG_CONTENT="false",
     )
     # Explicit blanks override .env too; do not give this synthetic run provider credentials.
-    for name in ("OPENAI_API_KEY", "GEMINI_API_KEY", "OPENAI_BASE_URL",
+    for name in ("OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY",
+                 "OPENAI_BASE_URL",
                  "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST"):
         env[name] = ""
     return env

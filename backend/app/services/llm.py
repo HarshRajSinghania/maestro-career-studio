@@ -67,6 +67,23 @@ def get_gemini_key() -> str | None:
     return model_settings.get_gemini_api_key() or settings.gemini_api_key or None
 
 
+def get_anthropic_key() -> str | None:
+    from app.services import model_settings
+    return model_settings.get_api_key("anthropic") or settings.anthropic_api_key or None
+
+
+def get_openrouter_key() -> str | None:
+    from app.services import model_settings
+    return model_settings.get_api_key("openrouter") or settings.openrouter_api_key or None
+
+
+def any_model_key_configured() -> bool:
+    """Some provider can be called: any of the four keys, or a custom server (which needs none,
+    see `_get_client`). The ONE definition for setup status, KB seeding and the startup log."""
+    return bool(get_base_url() or get_openai_key() or get_gemini_key()
+                or get_anthropic_key() or get_openrouter_key())
+
+
 def completion_extras(model: str) -> dict[str, Any]:
     """Per-model kwargs for chat.completions.create, for every caller of it.
 

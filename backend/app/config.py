@@ -47,6 +47,8 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""
     gemini_api_key: str = ""
+    anthropic_api_key: str = ""
+    openrouter_api_key: str = ""
     # Point the OpenAI-compatible client at something other than api.openai.com:
     # Ollama (http://host.docker.internal:11434/v1), LM Studio, vLLM, LiteLLM,
     # OpenRouter. Setting this is what makes the local-first claim literally
