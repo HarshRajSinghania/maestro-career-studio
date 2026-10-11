@@ -135,7 +135,7 @@ def test_an_unsupported_file_type_is_a_422(client):
     r = client.post("/api/base-resumes/import",
                     files=_upload("resume.xyz", b"\x00\x01", "application/octet-stream"))
     assert r.status_code == 422
-    assert "Use a PDF, Word, text or image file." in r.json()["detail"]
+    assert "Use a PDF, Word, PowerPoint, text or image file." in r.json()["detail"]
 
 
 def test_a_file_that_fails_for_a_developer_reason_is_reported_in_words(client):

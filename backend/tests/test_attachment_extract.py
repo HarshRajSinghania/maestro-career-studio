@@ -80,7 +80,7 @@ def test_extract_tex():
 
 
 def test_unsupported_type_raises():
-    with pytest.raises(ValueError, match="Use a PDF, Word, text or image file."):
+    with pytest.raises(ValueError, match="Use a PDF, Word, PowerPoint, text or image file."):
         extract_text("archive.zip", "application/zip", b"PK\x03\x04")
 
 

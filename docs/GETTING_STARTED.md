@@ -237,7 +237,7 @@ Docker route.
 Five steps from nothing to a PDF:
 
 1. **Import your resumes.** Follow the setup screen, or go to **Career history**
-   and click **Import resumes and documents**. You can add up to 10 files at a time (PDF, DOCX, Markdown or
+   and click **Import resumes and documents**. You can add up to 10 files at a time (PDF, DOCX, PPTX, Markdown or
    text). Add old versions too — they all hold useful experience.
 2. **Review and approve bullets in your career history.** Imported bullets arrive as
    drafts under **Drafts to review**. Only *approved* bullets ever appear on a resume. Merge duplicates

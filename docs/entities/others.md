@@ -284,7 +284,10 @@
   one (new entities default status `completed`), stores the document via the
   shared `kb_ingest.store_document` helper, and mints draft points in the same
   call. 422 when no text extracts (no orphan rows), 400 bad LLM output, 502
-  provider outage. UI: the Quick capture card is dual-intake. **Vision fallback
+  provider outage. Imports read PDF, DOCX, PPTX, Markdown, text and images. PPTX uses stdlib ZIP/XML:
+  presentation order (numeric fallback), slide text/tables and linked speaker notes, with a 50 MiB XML cap;
+  empty slides are skipped, images get no OCR, and binary PPT requires saving as PPTX or PDF.
+  UI: the Quick capture card is dual-intake. **Vision fallback
   for image-based documents**: certificate PDFs are often one full-page raster
   whose only text layer is the recipient's name (which once minted an
   `experience` entity titled with the user's name).

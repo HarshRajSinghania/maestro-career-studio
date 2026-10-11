@@ -26,7 +26,7 @@ def _list(name: str) -> list[str]:
 
 
 def _backend_suffixes() -> set[str]:
-    return {".pdf", ".docx", *ax._TEXT_SUFFIXES, *ax._IMAGE_SUFFIXES}
+    return {".pdf", ".docx", ".pptx", *ax._TEXT_SUFFIXES, *ax._IMAGE_SUFFIXES}
 
 
 def test_every_extension_offered_is_one_the_extractor_reads():
@@ -47,6 +47,14 @@ def test_docx_is_offered_by_extension_and_by_mime_type():
     assert docx_mime in ax.extract_text.__code__.co_consts or docx_mime in (
         (ROOT / "backend" / "app" / "services" / "attachment_extract.py").read_text()
     )
+
+
+def test_pptx_is_offered_by_extension_and_by_mime_type():
+    mime = re.search(r'PPTX_MIME =\s*"([^"]+)"', ACCEPT_TS).group(1)
+    assert mime == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    assert ".pptx" in _list("DOCUMENT_EXTS")
+    assert "PPTX_MIME" in re.search(r"const DOCUMENT_MIMES = \[(.*?)\];", ACCEPT_TS, re.S).group(1)
+    assert mime in ax.extract_text.__code__.co_consts
 
 
 def test_every_file_picker_reads_the_shared_list():

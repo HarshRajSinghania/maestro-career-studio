@@ -149,7 +149,7 @@ export function DocumentsPanel({
             <Upload className="text-muted-foreground size-4" aria-hidden="true" />
           </span>
           <p className="mt-2 text-title-small">Drop a file here</p>
-          <p className="text-muted-foreground mt-1 text-body-small">PDF, Word, image or text, up to 10 MB</p>
+          <p className="text-muted-foreground mt-1 text-body-small">PDF, Word, PowerPoint (.pptx), image or text, up to 10 MB</p>
           <Button
             className="mt-3"
             size="sm"

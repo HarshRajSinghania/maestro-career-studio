@@ -34,6 +34,7 @@ None.
 
 ### Added
 
+- Career history imports PowerPoint decks (.pptx), including speaker notes.
 - **`maestro import-docker CHECKOUT`** moves a Docker install's data into the uv
   install, once: the database (with stored file locations rewritten), resumes,
   applications, knowledge-base files, settings, the sync key and the settings in

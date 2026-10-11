@@ -394,7 +394,8 @@ history**: your verified record in one place.
 This step pays off every time. Everything later is built from approved bullets,
 so its quality is the ceiling on everything else. Add certifications,
 project write-ups and performance-review notes too — anything true about your
-work can become evidence later.
+work can become evidence later. Import PDF, DOCX, PowerPoint (.pptx, including
+speaker notes), Markdown or text files.
 
 > **Review your drafts before tailoring.** Bullets taken unchanged from your files
 > are approved on import; anything merged across resumes, or written by AI,
