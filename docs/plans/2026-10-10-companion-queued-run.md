@@ -23,7 +23,7 @@ buttons, park less and Part 8 added 2026-10-11). Read it first.
 tasks (19, 20, 20a) render the run states into C's single Next card; ask the planner for the canvas
 mockups before starting them.
 
-**Task order:** 1 → 2–10 → 10a → 11 → 12–16 → 17 → 18 → 18a → 19 → 20 → 20a → 20b → (21) → 22 → 23. Where this plan and the design differ, this plan says so under "Adjustments" and why.
+**Task order:** 1 → 1a → 2–10 → 10a → 11 → 12–16 → 17 → 18 → 18a → 19 → 20 → 20a → 20b → (21) → 22 → 23. Where this plan and the design differ, this plan says so under "Adjustments" and why.
 
 ---
 
@@ -213,6 +213,46 @@ rule:
 Task 19 reads this section.
 
 **Step 4: Commit** `chore(spike): measure Companion fill time in background tabs`.
+
+### Task 1a: The fill engine works in hidden tabs
+
+Owner decision (B), 2026-10-11, after the spike. Today a background (hidden, or covered-window) tab
+runs text and date fills about 6.5× slower and fails every dropdown ("could not explore Degree").
+The engine already bounds its animation-frame waits with a timer (`content/fill-core.js` `frame()`,
+`content/fill-ops.js` inventory peek), so diagnose before fixing.
+
+**Files:** `extension/content/fill-core.js`, `extension/content/fill-ops.js`, `extension/content/fill-base.js`
+(whichever the diagnosis names); `backend/scripts/spike_background_fill.py` (harness fix);
+`backend/tests/browser/` (new tests).
+
+**Step 1: Diagnose.** Run the spike with an extra in-page trace (a debug flag in the driver, not
+shipped behavior) that logs each fill-core/fill-ops wait in the listbox fill: which wait, asked ms,
+actual ms. Name the wait(s) that blow a budget or never resolve in a hidden tab: a throttled
+`setTimeout` (≥1 s per wait while hidden, about 1/min for chained timers after 5 min), the fixture
+app's own rendering, or a budget (`ITEM_MS`, `FIELD_MS`) exceeded by stretched waits. Record the
+finding in the commit body.
+
+**Step 2: Failing tests.** In `tests/browser/`, a test page that simulates a hidden tab:
+`add_init_script` sets `document.hidden = true`, `visibilityState = "hidden"`, makes
+`requestAnimationFrame` never fire, and wraps `setTimeout` so any delay is at least 1000 ms (the
+hidden-tab clamp). On `workday_listbox.html` the listbox `choose` must commit (oracle), and text and
+date writes must commit, each within its field budget. Expected now: the listbox test FAILS.
+
+**Step 3: Implement** the smallest engine change that passes, for example a wait helper in
+`fill-base.js` that, while `document.hidden`, waits on wall-clock time through `MessageChannel`
+messages (not throttled like timers) instead of `setTimeout`, and is used by the waits Step 1
+named. Keep visible-tab behavior byte-for-byte: every existing browser test must pass unchanged.
+
+**Step 4: Harness fix.** Make the spike's 6-minute case reliable (a lone fixture tab must stay
+behind the holder tab: re-activate the holder after the last `/json/new`, and verify before the
+scheduled start). Then run the full spike (about 35 min) and append the new table under "Spike
+result" as "After Task 1a".
+
+**Acceptance:** background (immediate AND after 6 min) shows 5/5 on all three fixtures, with
+medians within 2× of the front tab. If the 6-minute case can't get within 2×, record the numbers and
+stop for the planner: parallel stays at 1.
+
+**Step 5: Commit** `fix(fill): the engine fills hidden tabs (queued-run parallel runs)`.
 
 ---
 
@@ -1144,7 +1184,7 @@ fill-loop):
 `onUpdate(record)`, `now()`, `sleep(ms)`, `random()`, `cancelled(record)`.
 
 **Exports:** `ns.queueRun = { drive(record, deps), next(records, limits), LIMITS }`, where `LIMITS =
-{ parallel: 3, waitingMax: 10, stepMax: 15, changeMs: 15000, paceMs: [2000, 6000] }`.
+{ parallel: 1, waitingMax: 10, stepMax: 15, changeMs: 15000, paceMs: [2000, 6000] }` (parallel 1: the spike result; see "Spike result").
 
 **`drive(record, deps)`, the per-tab loop:**
 1. `opening`: `tabId = openTab(openUrl)`.
@@ -1285,7 +1325,7 @@ Parallel runs and the user's own Autofill must not share a changed budget.
   bindings), `extension/panel/panel.html` (after `actions/track.js`)
 - Modify: `extension/panel/panel.js`:
   - new `card` fields `view: "page" | "queue"`, `queue: null`, `runs: []`, `runWindowId: null`,
-    `runParallel: 3`;
+    `runParallel: 1` (3 once Task 1a passed);
   - `render()` draws the **This page | Queue (N)** switch at the top (a tablist; N = queued count)
     and either today's rail (`page`) or the Queue view (`queue`, Task 20's `panel/runs.js`);
   - fresh-open view rule: `view = "queue"` when a run is active or the active tab has neither a
@@ -1348,9 +1388,12 @@ Parallel runs and the user's own Autofill must not share a changed budget.
   - `save`: `chrome.storage.session.set({queueRun: records})`. On panel boot, read it and show the
     records (status only; a reopened panel does not resume driving, per the design).
   - `cancelled`: `record.stopRequested || card.runStopAll`.
-- **Spike result (Task 1):** if it says "take turns", `fill` first calls
-  `chrome.tabs.update(record.tabId, {active: true})` inside the run window and the scheduler keeps
-  `parallel` at 1. Follow the recorded rule.
+- **Spike result (Task 1): take turns.** `fill` first calls `chrome.tabs.update(record.tabId,
+  {active: true})` inside the run window, and the scheduler keeps `parallel` at 1. `parallel` above 1
+  (the 1 to 5 control) is shown only when Task 1a's acceptance passed (a constant in
+  `shared/queue-run.js`, `HIDDEN_TABS_OK`, set true by Task 1a's final commit). While filling, if the
+  run tab reports `document.hidden` (the window is covered) and `HIDDEN_TABS_OK` is false, the run
+  pauses that tab with "Keep the run window visible" and resumes when it is visible again.
 - **stopRun / stopAll:** set flags, send `fill_cancel` to the record's tab.
 
 **Step 1: Failing panel-harness tests.** Extend the stub with `windows.create`, `tabs.create`,
@@ -1623,4 +1666,26 @@ run log). Then decide on Task 21.
 
 ## Spike result
 
-(Task 1 appends the measured table and the chosen rule here.)
+Measured 2026-10-11 on the owner's Mac (Playwright's Chromium, launched standalone with no automation
+attached; tabs switched over the DevTools HTTP endpoints; 5 attempts per cell; median of successes).
+
+| Fixture | Front tab | Background tab (immediate) |
+|---|---|---|
+| workday_text.html | 5/5, 309 ms | 5/5, 2000 ms (6.5×) |
+| workday_listbox.html | 5/5, 1681 ms | **0/5**: "could not explore Degree"; requestAnimationFrame never fired within 1 s |
+| workday_date.html | 5/5, 619 ms | 5/5, 4001 ms (6.5×) |
+
+The 6-minute case (Chrome's intensive throttling) did not complete: a harness quirk left a lone
+fixture tab in front. Task 1a fixes the harness and measures it.
+
+Findings that change the design:
+- **Any Playwright attachment makes every tab report `visible`** (launch or `connect_over_cdp`, with
+  focus emulation off and no viewport). Background-tab measurements must run unattached, as
+  `scripts/spike_background_fill.py` does. Worth a §12 gotcha (Task 22).
+- **A covered window hides every tab in it** (macOS occlusion), the active one included, so a run
+  window behind another app behaves like a background tab.
+- **Rule outcome: take turns.** Background is far over 1.5×, and dropdowns fail outright. The runner
+  fills ONE tab at a time, made active in the run window (`chrome.tabs.update(tabId, {active: true})`
+  inside the run window only); others wait or sit at Ready to submit. `LIMITS.parallel` defaults to
+  1. Owner decision (B): Task 1a makes the engine work in hidden and covered tabs; only once Task
+  1a's acceptance passes may `parallel` go above 1 (Task 19 reads `ns.queueRun.LIMITS.parallel`).
