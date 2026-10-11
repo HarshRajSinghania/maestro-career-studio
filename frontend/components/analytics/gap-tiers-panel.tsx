@@ -230,7 +230,7 @@ function WordingFootnote({ rows }: { rows: BuildAreaRow[] }) {
         <span className="text-foreground font-medium">Wording only:</span>{" "}
         {rows.length} {rows.length === 1 ? "skill" : "skills"} your resume
         already covers. Using the job&apos;s exact words won&apos;t change your
-        ATS score. Quick tailor adds them when “Use the job description&apos;s wording when your experience backs it up” is on.
+        match score. Quick tailor adds them when “Use the job description&apos;s wording when your experience backs it up” is on.
       </summary>
       <ul className="mt-2 grid gap-1">
         {rows.map((row) => (

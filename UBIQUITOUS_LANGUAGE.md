@@ -52,8 +52,8 @@ and the screen speaks plainly ("item", "bullet", "Career history"). Do not
 
 | Term | Definition | On screen | Aliases to avoid in code and prose |
 | --- | --- | --- | --- |
-| **ATS Score** | The engine's rating of one resume against one job | ATS score (spelled out once per surface as our estimate) | score, match score, fit score |
-| **Composite** | The single headline number an ATS score rolls up to | ATS score (the headline number) | overall, total, final score |
+| **Match score** | Maestro's own fixed-rules score of one resume against one job | Match score | score, fit score, ATS score (implies an employer's applicant tracking system computed it) |
+| **Composite** | The single headline number a match score rolls up to | Match score (the headline number) | overall, total, final score |
 | **Gap** | A job requirement the resume does not evidence | gap | miss, weakness, hole |
 | **Health Report** | The deterministic quality check on a resume, independent of any job | Health report; Check health, Check again | lint report, health check, audit |
 | **Evidence Level** | How directly a bullet supports a claim — direct, analogue, or weaker | — | strength, confidence, tier |
@@ -113,8 +113,8 @@ and the screen speaks plainly ("item", "bullet", "Career history"). Do not
 - One **Job** may have many **Applications**; each **Application** targets exactly one **Job**
 - An **Application** is produced from one **Base Resume**, optionally via a **Tailoring Session**
 - Each edit to a resume records one **Resume Version**
-- An **ATS Score** rates one resume against one **Job**; a **Health Report** rates a resume alone
-- An **ATS Score** yields one **Composite** and zero or more **Gaps**
+- A **Match score** rates one resume against one **Job**; a **Health Report** rates a resume alone
+- A **Match score** yields one **Composite** and zero or more **Gaps**
 - A **Deprecation Ledger** row names exactly one **Removal Trigger** — a row without one is a design bug, not a migration
 
 ## Example dialogue
@@ -129,12 +129,12 @@ and the screen speaks plainly ("item", "bullet", "Career history"). Do not
 
 > **Dev:** "And once they pick a **Job**, the tailoring happens in a **Tailoring Session**?"
 
-> **Domain expert:** "Unless they use **Quick Tailor**, which plans the resolutions from their saved profile and lands straight on the **Application** — a **Tailoring Session** still runs underneath, they just never see the checkpoint. Either way the **Application** owns the **Artifacts** — the actual PDFs — and the **ATS Score** rates the tailored resume against that one job. Don't confuse it with the **Health Report**: that one never looks at a job at all."
+> **Domain expert:** "Unless they use **Quick Tailor**, which plans the resolutions from their saved profile and lands straight on the **Application** — a **Tailoring Session** still runs underneath, they just never see the checkpoint. Either way the **Application** owns the **Artifacts** — the actual PDFs — and the **Match score** rates the tailored resume against that one job. Don't confuse it with the **Health Report**: that one never looks at a job at all."
 
 ## Flagged ambiguities
 
 - **"Preview" means two unrelated things.** A *Template Preview* is a sample-resume PDF produced by template validation; an *Application Preview* is a raster of a real application's output. Today's work found the first sitting in a directory everyone assumed held assets. Always qualify which.
-- **"Score" is overloaded.** An *ATS Score* needs a job; a *Health Report* score does not. Saying "the score dropped" without qualifying is the single most confusing sentence in this domain. Never use bare "score".
+- **"Score" is overloaded.** A *Match score* needs a job; a *Health Report* score does not. Saying "the score dropped" without qualifying is the single most confusing sentence in this domain. Never use bare "score".
 - **"Session" is overloaded three ways** — a *Tailoring Session* (a domain entity), a chat session, and an agent working session. Only the first is domain vocabulary; qualify the others or avoid the word.
 - **"Variant" is a rejected term.** It named a feature that was designed and then cut on evidence. Do not reintroduce it: for an alternative resume say *duplicate*, and for history say *Resume Version*.
 - **"Master" is dead.** It was a reserved base-resume slug, superseded by the Career KB. It still appears in reserved-slug guards. Never use it for the KB, the profile, or a resume.

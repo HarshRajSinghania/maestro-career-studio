@@ -222,12 +222,12 @@
     return attach(node("div", "appick"), label, select);
   }
 
-  /** What an ATS score IS, said once in the panel where the numbers first
-   * appear, as the app's own estimate (docs/frontend-conventions.md, the
-   * glossary's ATS score). The web app's Score and tailor tab says the same
+  /** What a match score is, said once in the panel where the numbers first
+   * appear, as the app's own fixed-rules match (docs/frontend-conventions.md, the
+   * glossary's match score). The web app's Score and tailor tab says the same
    * sentence (`ATS_SCORE_LEAD`, frontend/lib/ats-words.ts). */
-  const ATS_SCORE_LEAD = "An ATS score (0 to 100) is our estimate of how an "
-    + "applicant tracking system would rate each resume for this job.";
+  const ATS_SCORE_LEAD = "A match score (0 to 100) uses fixed rules to compare each resume "
+    + "with this job's description.";
 
   /** The one line under the ranked list: how much of it is real. */
   function rankingNote({ facts, build }, ranked) {

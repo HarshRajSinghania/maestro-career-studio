@@ -99,6 +99,14 @@ def parse_resume_json(blob: bytes) -> dict:
         raise UnreadableFile(NOT_RESUME_JSON) from exc
 
 
+def require_resume_file(filename: str, mime: str | None) -> None:
+    """Decks feed career-history drafts through the documents lane, never base resumes."""
+    if Path(filename).suffix.lower() == ".pptx" or (mime or "").lower().split(";")[0].strip() == (
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    ):
+        raise UnreadableFile("Import PowerPoint decks as documents in Career history.")
+
+
 def _is_json(filename: str, mime: str | None) -> bool:
     return (
         Path(filename).suffix.lower() in _JSON_SUFFIXES
@@ -222,6 +230,7 @@ def import_resumes(
             if len(blob) > MAX_BYTES:
                 raise UnreadableFile("This file is over 10 MB.")
 
+            require_resume_file(safe, mime)
             parse_warnings: list[str] = []
             if _is_json(safe, mime):
                 # The README's own file-drop format. No extraction, no LLM call.

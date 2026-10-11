@@ -191,10 +191,13 @@
   (400, the same as any invalid override) so a typo cannot be saved. Extras keep
   their documented anchor as a *default* position; `section_order` moves the
   whole extras run, `move_extra_section` orders them among themselves.
-  The four live user templates are bundled at
-  `app/templates/user/`; `scripts/apply_template_sources` is their update
-  path, and seed-time `SUPERSEDED_SEED_DIGESTS` is what reaches installed
-  rows.
+  Fresh installs seed Classic, Typst Classic, and all four designs bundled at
+  `app/templates/user/` (including Harshibar). `THIRD_PARTY_NOTICES.md` inventories
+  their provenance and licenses; derived sources carry attribution headers.
+  `scripts/apply_template_sources` is the maintainer update path; seed-time
+  `SUPERSEDED_SEED_DIGESTS` reaches untouched installed rows for either engine,
+  including Classic whether selected as default or not; only seed-origin rows
+  matching a known shipped source digest change. User edits and formatting stay.
   **Pre-change template sources are frozen per migration** at
   `tests/fixtures/templates_pre_section_order/`: reconstructing old bytes from
   the LIVE templates (what the date-resync test did) breaks on the next template
@@ -281,7 +284,14 @@
   one (new entities default status `completed`), stores the document via the
   shared `kb_ingest.store_document` helper, and mints draft points in the same
   call. 422 when no text extracts (no orphan rows), 400 bad LLM output, 502
-  provider outage. UI: the Quick capture card is dual-intake. **Vision fallback
+  provider outage. Document imports read PDF, DOCX, PPTX, Markdown, text and images. PPTX uses stdlib ZIP/XML:
+  presentation order (numeric fallback), slide text/tables and linked speaker notes, with a 50 MiB XML cap,
+  at most 1,000 unique slides and 200,000 collected characters. Slide and notes parts are read once;
+  only the first alternate choice is read, slide numbers and note furniture are skipped, and empty slides
+  are skipped. Images get no OCR; binary PPT requires saving as PPTX or PDF. Unreadable DOCX/PPTX files
+  return a plain file-type sentence (chat 400, document import 422). Decks belong in the documents lane;
+  `kb_import.require_resume_file` refuses them in both base-resume import paths before parsing.
+  UI: the Quick capture card is dual-intake. **Vision fallback
   for image-based documents**: certificate PDFs are often one full-page raster
   whose only text layer is the recipient's name (which once minted an
   `experience` entity titled with the user's name).
@@ -793,3 +803,62 @@
   show **Last ran** or **Not run yet** after data arrives; a read that never produced data
   shows no line, while a failed background refetch keeps the cached line ([agent-runs.md](agent-runs.md)). A
   ran card also wears its newest run's outcome chip; until a card has run, the connect-your-agent note is a callout.
+
+- **The uv install** (`backend/maestro_cs/`, command `maestro`; route summary in SYSTEM.md §9, folder in §6 inv-one-home).
+  - **The wheel** is `backend/` renamed `maestro-career-studio` (version = `backend/pyproject.toml`), `py3-none-any`: `scripts/build_wheel.py`
+    stages `git ls-files` (no tests, no host scripts), adds `maestro_cs/web/` (Next standalone + `.next/static` + `public`, with every
+    frontend `.env*` dropped) and `maestro_cs/data/example.json`; `scripts/check_wheel.py` refuses a wheel missing a required file or
+    carrying a forbidden one. Staging also copies root `LICENSE`, `NOTICE` when present, and `THIRD_PARTY_NOTICES.md`, and
+    replaces the staged project's empty `license-files` list with these names. Setuptools >=77 uses the `Apache-2.0` SPDX
+    expression and places the files in `*.dist-info/licenses/`; the checker requires all three plus the bundled template
+    MIT license. The checkout keeps `license-files = []` because its legal files are outside `backend/` and Docker installs
+    before copying sources; editable/Docker installs need no missing-file patterns or tracked copies inside `backend/`.
+    Node comes from `nodejs-wheel-binaries` (a core dependency, left out of `requirements.lock`).
+  - **The folder** (`home.default_home`; `MAESTRO_HOME` wins) holds `data/`, `applications/`, `settings/`, `base_resumes/`,
+    `kb_documents/`, `logs/`, `exports/`, `fastembed_cache/`, `uploads/`, `backups/`, `run/` (process records, `stop.request`), `sync-key`
+    when sync is on, and `maestro.env`. A symlinked folder or `maestro.env` is refused. Ports: process environment, then `maestro.env`,
+    then 8001/3000 (`MAESTRO_PORT`, `MAESTRO_WEB_PORT`; for side-by-side copies only).
+  - **Environment** (`home.backend_env`, `web_env`): the backend gets the shell, then `maestro.env` (a name set there wins in any
+    capitalisation), then the enforced paths and `ALLOWED_HOSTS=localhost,127.0.0.1`; `DATABASE_URL` and other foreign data pointers are
+    stripped. The web process gets the shell minus `_WEB_STRIPPED`, `HOSTNAME=127.0.0.1`, `NEXT_TELEMETRY_DISABLED=1`, and
+    `FRONTEND_ALLOWED_HOSTS` from the file. Every Windows child environment keeps `SYSTEMROOT`, `WINDIR`, `COMSPEC`
+    and `PATHEXT` when present; `home.child_env` recovers missing names from the process environment without copying secrets.
+  - **Run and stop**: `maestro start` preflights both ports, seeds the demo resume, downloads the scoring model into an empty
+    `fastembed_cache/` (skip: `--skip-model`), detaches `maestro run` (on Windows with `CREATE_BREAKAWAY_FROM_JOB` first, without it when the job forbids that: `detach.popen_windows`) and waits for both health URLs. `maestro stop` writes
+    `run/stop.request`; the supervisor stops each child (SIGTERM to its session on POSIX, `CTRL_BREAK_EVENT` on Windows), then a tree kill after 10 s.
+    Backend startup validates seed templates before rendering bases, so a first start without TeX uses ready Typst;
+    seed-render failures persist `render_error`. The smoke checks the demo's committed timestamp and PDF download after health,
+    without a second render poll: startup rendering is synchronous.
+  - **Update**: `maestro update` checks PyPI, prints the changelog's `### Breaking changes`, asks, writes a verified snapshot
+    (`backups/db-*.sqlite3.gz`, newest five kept), stops, runs `uv tool install --force --python 3.12 maestro-career-studio==NEW` (or the WHEEL for
+    `--source`; `--force` clears a rollback pin), starts, and compares versions. On Windows the running executables are locked: `update` first refuses (nothing changed) while any other
+    process runs from the venv (Claude Desktop's `maestro mcp`, `maestro logs -f`; `update.find_venv_processes`), then a detached `cmd` script
+    (`logs/update.cmd`, log `logs/update.log`) waits for this process to exit and does the upgrade.
+  - **Connect and bridge**: `maestro connect` reuses `app.services.connect.build`, the connect card's own strings. Claude Desktop's
+    config gets `{"command": <absolute shim>, "args": ["mcp"]}` (plus `"env": {"MAESTRO_HOME": …}` for a non-default folder); when Desktop
+    runs, a detached waiter writes after it quits. The `claude`/`codex` runners and the browser opener get the parent environment, never
+    maestro.env's keys. `maestro mcp` is a stdio-to-HTTP bridge (dials `127.0.0.1`, one total deadline per request, session replay) that
+    imports no `app` module.
+  - **Import from Docker** (`maestro_cs/importer.py`, `maestro import-docker CHECKOUT [--replace] [--dry-run]`): refuses (one sentence,
+    nothing changed) when the checkout lacks `data/maestro_cs.sqlite3` or `docker-compose.yml`, any uv process runs, a port answers
+    (the uv ports and the checkout `.env`'s `BACKEND_HOST_PORT`/`FRONTEND_HOST_PORT`), its alembic revision is not this code's head, or the
+    uv home holds a job/application/base resume other than `example` (without `--replace`). The checkout is never opened: its database
+    (+ `-wal`/`-shm`) is byte-copied to a temp folder, because even a `mode=ro` connection creates `-wal`/`-shm` beside a WAL file; a file that
+    changes mid-copy aborts. Then: snapshot of the uv DB (`Maintenance.snapshot`, the undo point); `app.tools.backup_db.snapshot` of the copy
+    into `data/.importing/`; rewrite of every TEXT column value that STARTS with `/app/<dir>/` (dir in applications, base_resumes,
+    kb_documents, exports, settings, data; native separators on Windows) in one transaction, any other `/app/` start aborts; row counts
+    compared; journal mode set to DELETE (the backend sets WAL at first start). Files of the five folders merge in (Docker wins,
+    symlinks never followed, owner-only modes; `settings/secrets/sync-key` goes to `<home>/sync-key` only). The staged DB replaces the
+    old one last (old `db`, `-wal`, `-shm` move aside first and come back on ANY later failure). `.env` keys that are `app.config.Settings`
+    fields (plus proxy names) and not path/host/port/journal entries are appended to `maestro.env`; keys already set there are kept;
+    values are never printed (a carried value naming `host.docker.internal` gets a note). Verification: revision == head, equal row counts,
+    sample of rewritten paths exist. JSON columns and longer text are only COUNTED and reported when they mention `/app/`. Undo: `_Undo` copies every
+    uv file about to be replaced (sync-key, the five folders, `maestro.env`) to `data/.before-import/` and remembers files/dirs it adds; a failure
+    restores all of it plus the DB; success moves the copies to `backups/import-replaced-files-<time>/`. Leftover `data/*.before-import`,
+    `.importing/` or `.before-import/` make the next import refuse; `control.stale_database_problem` makes `start`/`run` refuse when the DB
+    file is missing but `.before-import` or `-wal` exists.
+  - **Autostart**: launchd agent (macOS), systemd user unit (Linux), Task Scheduler logon task from XML for the current user (Windows).
+  - **CI**: `maestro-cli` (`tests/maestro_cs` on the three OSes, plus `systemd-analyze --user verify` of the rendered unit on Linux and a
+    schtasks create/query/delete of the rendered XML on Windows, admin runner), `uv-wheel`, `uv-smoke` (`scripts/smoke_uv_install.py`: install, start, score over
+    `/mcp`, backup, loopback and Host/Origin checks, stop), `uv-upgrade` (`scripts/upgrade_check.py`: old wheel to new via `update --source`);
+    `pypi.yml` repeats build and smoke on a tag, then publishes through PyPI trusted publishing.

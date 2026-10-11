@@ -80,7 +80,7 @@ def test_the_warning_is_a_plain_sentence_with_agreeing_articles():
     assert _degree_warnings(result) == [
         "The job asks for a bachelor's degree and your resume shows an associate's. "
         "Employers usually ask this on the application form. Answer honestly. It "
-        "doesn't change your ATS score."
+        "doesn't change your match score."
     ]
 
 

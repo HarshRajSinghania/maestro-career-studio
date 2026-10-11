@@ -9,13 +9,14 @@ test("a rejected file hears the types its own picker takes", () => {
   // Document pickers: images too (the extractor reads a screenshot).
   assert.equal(
     acceptedTypesLabel(DOCUMENT_ACCEPT),
-    "PDF, Word, Markdown, text, LaTeX or an image (PNG, JPG or WebP)",
+    "PDF, Word, PowerPoint (.pptx), Markdown, text, LaTeX or an image (PNG, JPG or WebP)",
   );
 });
 
 test("a short or unknown list still reads as words", () => {
   assert.equal(acceptedTypesLabel(".pdf"), "PDF");
   assert.equal(acceptedTypesLabel(".PDF, .docx"), "PDF or Word");
+  assert.equal(acceptedTypesLabel(".pptx"), "PowerPoint (.pptx)");
   assert.equal(acceptedTypesLabel(".png,image/png"), "an image (PNG)");
   assert.equal(acceptedTypesLabel("application/x-thing"), "a different file");
 });
@@ -25,6 +26,14 @@ test("a picker's hint leads with the files people have, then names the rest", ()
     acceptedFilesHint(RESUME_FILE_ACCEPT),
     "PDF, Word or text files. Also Markdown, LaTeX or a Maestro CS JSON file.",
   );
-  assert.equal(acceptedFilesHint(DOCUMENT_ACCEPT), "PDF, Word or text files, or an image. Also Markdown or LaTeX.");
+  assert.equal(acceptedFilesHint(DOCUMENT_ACCEPT), "PDF, Word, PowerPoint (.pptx) or text files, or an image. Also Markdown or LaTeX.");
   assert.equal(acceptedFilesHint(".pdf"), "PDF files.");
+});
+
+
+test("decks belong only to the documents lane by extension and MIME", () => {
+  for (const type of [".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"]) {
+    assert.ok(DOCUMENT_ACCEPT.split(",").includes(type));
+    assert.ok(!RESUME_FILE_ACCEPT.split(",").includes(type));
+  }
 });

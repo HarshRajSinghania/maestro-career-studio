@@ -30,6 +30,17 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ### Breaking changes
 
+None.
+
+## [0.9.0] — 2026-10-10
+
+This release is about getting Maestro out of its box. AI agents now reach it by
+URL instead of reaching into a container, and the whole app installs with two
+commands and no Docker at all. If you already run the Docker version,
+`maestro import-docker` brings your data across in one go.
+
+### Breaking changes
+
 - **Claude Code and Codex plugins now connect to `http://localhost:8001/mcp`**
   instead of running `docker exec`. They need v0.9.0 images: earlier images
   have no `/mcp` endpoint. If you changed `BACKEND_HOST_PORT`, use Settings ›
@@ -41,9 +52,36 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
   Use the `MAESTRO_CS_*` names. Leaving these set without their replacements
   means an unpacked Companion id loses API write access, the MCP profile falls back
   to `full`, and PDFs/uploads go to the default folders.
+- **Nothing in the uv install work needs an action from a Docker install.** The
+  Docker images, `docker-compose.yml`, `.env`, ports and `scripts/update.sh` work as
+  before (the Changed list below says what moved inside the images).
 
 ### Added
 
+- Career history imports PowerPoint decks (.pptx), including speaker notes.
+- **`maestro import-docker CHECKOUT`** moves a Docker install's data into the uv
+  install, once: the database (with stored file locations rewritten), resumes,
+  applications, knowledge-base files, settings, the sync key and the settings in
+  its `.env` that Maestro understands. It reads the Docker folder and changes
+  nothing in it, saves a snapshot of the uv database first, and puts back the
+  database, sync key, settings and `maestro.env` if anything fails. `--dry-run` shows the plan. See `docs/UPDATING.md`.
+- **A Docker-free install with uv, and the `maestro` command.**
+  `uv tool install --python 3.12 maestro-career-studio` installs Maestro (published
+  to PyPI on every release tag, with the web app and Node inside the package) on
+  macOS, Linux and Windows x64. `maestro start`, `stop`, `restart`, `status`,
+  `logs`, `open`, `update`, `backup`, `migrate`, `check`, `autostart on|off|status`,
+  `connect` and `mcp` run it from one per-user folder with one settings file,
+  `maestro.env`. `maestro update` saves a verified snapshot of your data before it
+  changes anything and prints the changelog's breaking changes first. See the
+  README, `docs/GETTING_STARTED.md` and `docs/UPDATING.md`.
+- **`maestro connect`** adds Maestro to Claude Desktop (waiting until you quit it,
+  because it rewrites its settings while running), Claude Code, Codex, Cursor and
+  VS Code. `maestro mcp` is the stdio bridge it points Claude Desktop at; on a uv
+  install the connect card's Claude Desktop row shows the command instead of the
+  bundle download.
+- CI builds the wheel, installs it with uv on macOS, Ubuntu and Windows, smoke-tests
+  it, and upgrade-tests one version to the next (`docs/RELEASING.md` has the
+  one-time PyPI setup).
 - **HTTP MCP inside the backend** at `/mcp`, with `full`, `hunt`, `apply`,
   `explore`, `templates` and `career` tool profiles on the same port and
   Host/Origin boundary as REST.
@@ -62,6 +100,27 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ### Changed
 
+- The app calls its score the match score (it was labelled ATS score).
+- README rewritten: shorter top screen, the uv install leads the Quickstart; the manual moved to `docs/USING_MAESTRO.md` and `docs/SETUP_REFERENCE.md`.
+- **The backend's Python distribution is renamed** `maestro-career-studio-backend`
+  to `maestro-career-studio` (it is the PyPI name). The setup scripts uninstall the
+  old name; nothing to do. `pyproject.toml` is also the PyPI version.
+- **The frontend image runs `node server.js`** from Next's standalone output
+  instead of `next start`, with image optimization off (nothing uses it) and no
+  `sharp`. `npm start` does the same outside Docker. Same ports, same behavior.
+- **Any venv that installs the backend now also pulls Node 24** through
+  `nodejs-wheel-binaries` (about 200 MB installed): the native always-on scripts,
+  the stdio MCP server, and `pip install -e backend` for development.
+- `/health/memory` and the sync file reads work on Windows. On Windows, a sync file
+  read no longer refuses a symlink at open (there is no `O_NOFOLLOW`); the
+  regular-file check and the packer's symlink check still apply.
+- The Claude Code command on the connect card and in the docs is
+  `claude mcp add --scope user …`, so Maestro shows up in every folder, not only
+  the one you ran it in.
+- `PRIVACY.md` names the scoring model's first download (Hugging Face) and the
+  `maestro` command's PyPI and changelog requests; both are only made when you run
+  them or on first start. Contributors: CI installs now also download
+  `nodejs-wheel-binaries` (about 60 MB); `requirements.lock` leaves it out.
 - The Claude Desktop **`.mcpb` bundle is a Node stdio-to-HTTP bridge**.
   Reinstall it if you used the older Docker-based bundle. Claude needs no
   Docker or Python on its side; the bundle supports macOS, Windows and Linux.
@@ -87,8 +146,18 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
   are removed in v0.10.0. Existing `maestro-career-studio-mcp` connections keep
   working as a compatibility fallback.
 
+### Security
+
+- Typst renders can no longer download packages, including through a computed import path. LaTeX compiles each run in its own temporary folder, so a template cannot read or overwrite another resume's source.
+
 ### Fixed
 
+- PyPI wheels include the project license and notices; untouched Classic templates receive the complete attribution header on upgrade.
+- Bundled resume templates carry complete MIT attribution, including Harshibar;
+  third-party notices list all six seeded designs and both cover-letter sources.
+- The glossary and package description use match score; the social preview restores Inter Medium.
+- First starts without TeX render the demo resume with Typst; a failed seed render shows its reason.
+- Windows child processes keep the system environment needed for networking, including backup and update commands.
 - Failed startup base-resume renders and artifact file deletions log warnings
   with tracebacks; missing files and folder-pruning failures stay quiet.
 - Prompt reads that open their own session use the file default without writing

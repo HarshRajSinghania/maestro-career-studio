@@ -133,7 +133,6 @@ jobs:
           MAESTRO_CS_MCP_PROFILE: "full"
           ALLOWED_HOSTS: "127.0.0.1,localhost"
           NO_PROXY: "127.0.0.1,localhost"
-          no_proxy: "127.0.0.1,localhost"
           SYNC_KEY_FILE: ""
           SYNC_REMOTE_URL: ""
           SYNC_PUBLIC_HOST: ""
@@ -146,6 +145,8 @@ jobs:
           LANGFUSE_HOST: ""
         run: |
           set -euo pipefail
+          # GitHub env keys are case-insensitive, so the lower-case twin is set here.
+          export no_proxy="$NO_PROXY"
           cd backend
           export DATA_DIR="$RUNNER_TEMP/mcp-http/data"
           export DATABASE_URL="sqlite:///$DATA_DIR/maestro_cs.sqlite3"
@@ -342,3 +343,278 @@ jobs:
       # Dev-only advisories do not ship to users, so they do not block a merge.
       - name: Audit npm dependencies
         run: cd frontend && npm audit --omit=dev --audit-level=high
+
+  # The `maestro` command (backend/maestro_cs): process supervision, update, autostart, connect.
+  # Unit tests only (injected runners, tmp_path); the supervisor and psutil paths differ per OS,
+  # so all three run them and the Windows-only tests run on Windows.
+  maestro-cli:
+    name: maestro command tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "backend/pyproject.toml"
+
+      # The backend now depends on nodejs-wheel-binaries (about 60 MB wheel, 200 MB installed), so
+      # every `pip install -e backend[...]` in this file downloads it; accepted.
+      - name: Install the backend with dev extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "backend[dev]"
+
+      - name: Run the maestro command tests
+        run: cd backend && pytest tests/maestro_cs -q
+
+      # The unit tests above inject the system tools. These two steps hand the rendered files to
+      # the real ones once: the unit must pass `systemd-analyze --user verify` (skipped, with a
+      # notice, where that tool is missing) and the task XML must create, query and delete.
+      - name: Verify the rendered systemd unit (Linux)
+        if: runner.os == 'Linux'
+        shell: python
+        run: |
+          import os
+          import shutil
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          from maestro_cs import autostart
+
+          tool = shutil.which("systemd-analyze")
+          if tool is None:
+              print("::notice::systemd-analyze is not installed here; the unit was not verified")
+              sys.exit(0)
+          with tempfile.TemporaryDirectory() as tmp:
+              env = dict(os.environ)
+              if not env.get("XDG_RUNTIME_DIR"):  # a runner has no login session to provide one
+                  runtime = Path(tmp) / "runtime"
+                  runtime.mkdir(mode=0o700)
+                  env["XDG_RUNTIME_DIR"] = str(runtime)
+              unit = Path(tmp) / autostart.UNIT_NAME
+              # sys.executable stands in for the shim: verify checks that ExecStart exists
+              unit.write_text(autostart.render_unit(sys.executable, Path(tmp) / "Maestro Home"),
+                              encoding="utf-8")
+              print(unit.read_text(encoding="utf-8"))
+              help_text = subprocess.run([tool, "--help"], capture_output=True, text=True).stdout
+              command = [tool, "--user", "--man=no"]
+              if "--recursive-errors" in help_text:  # newer systemd only; keep other units' errors out
+                  command.append("--recursive-errors=no")
+              done = subprocess.run([*command, "verify", str(unit)], env=env,
+                                    capture_output=True, text=True)
+              output = (done.stdout or "") + (done.stderr or "")
+              print(output)
+              ours = [line for line in output.splitlines() if autostart.UNIT_NAME in line]
+              if ours:
+                  print("::error::systemd-analyze reports problems with the rendered unit:")
+                  print("\n".join(ours))
+                  sys.exit(1)
+              if done.returncode != 0:  # the manager or the bus would not start; not the unit's fault
+                  print(f"::warning::systemd-analyze exited {done.returncode} without naming the "
+                        "unit (no user manager on this runner?); the unit was not verified")
+
+      # The runner is an administrator, so this proves the XML is accepted and the task can be
+      # created, found and removed, NOT that a standard (non-admin) user can create it: that is
+      # the owner's check (plan gate G6).
+      - name: Create, query and delete the logon task from the rendered XML (Windows, admin runner)
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import getpass
+          import os
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          from maestro_cs import autostart
+
+          name = "Maestro CI Test"
+          domain = os.environ.get("USERDOMAIN", "")
+          user = f"{domain}\\{os.environ.get('USERNAME') or getpass.getuser()}" if domain else getpass.getuser()
+          with tempfile.TemporaryDirectory() as tmp:
+              xml = Path(tmp) / autostart.TASK_FILE
+              # UTF-16 LE with a BOM, exactly as `maestro autostart on` writes it
+              xml.write_bytes(("\ufeff" + autostart.render_task_xml(sys.executable, user)).encode("utf-16-le"))
+              try:
+                  subprocess.run(["schtasks", "/Create", "/TN", name, "/XML", str(xml), "/F"], check=True)
+                  subprocess.run(["schtasks", "/Query", "/TN", name], check=True)
+              finally:
+                  subprocess.run(["schtasks", "/Delete", "/TN", name, "/F"], check=False)
+
+  # Builds the wheel once (Next standalone bundle inside it) for the smoke and upgrade jobs.
+  # 0.0.0.dev1 is a throwaway version: it never collides with a release and sorts below all.
+  uv-wheel:
+    name: Build the wheel
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: false
+
+      - name: Build and check the wheel
+        run: python scripts/build_wheel.py --version 0.0.0.dev1 --out dist
+
+      - name: Upload the wheel
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: uv-wheel
+          path: dist/*.whl
+          if-no-files-found: error
+          retention-days: 1
+
+  # `uv tool install` the built wheel and run it, on each OS a user has. The scoring model
+  # (BAAI/bge-small-en-v1.5, ~100 MB) is cached so a run does not download it; the smoke copies it
+  # in before start and, on a miss, back into the cache folder after a green run.
+  uv-smoke:
+    name: uv install smoke (${{ matrix.os }})
+    needs: uv-wheel
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: false
+
+      - name: Download the wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: uv-wheel
+          path: dist
+
+      - name: Cache the scoring model
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/maestro-smoke-model
+          key: maestro-smoke-model-BAAI-bge-small-en-v1.5-v1
+
+      # A native path for the smoke (`~` and /c/... mean nothing to python.exe).
+      - name: Point the smoke at the model cache
+        shell: python
+        run: |
+          import os, pathlib
+          folder = pathlib.Path.home() / ".cache" / "maestro-smoke-model"
+          folder.mkdir(parents=True, exist_ok=True)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"FASTEMBED_CACHE_PATH={folder}\n")
+
+      - name: Install the wheel and run it
+        run: python scripts/smoke_uv_install.py --wheel dist/*.whl --expect-version 0.0.0.dev1
+
+  # `maestro update --source` from one wheel to the next, with data in the database. Windows runs
+  # the upgrade in a detached batch file (the running maestro.exe is locked), so the script polls
+  # `maestro status --json` instead of trusting the exit code. The second wheel reuses the first
+  # wheel's web bundle (--web-from), so the frontend build inside it is still the dev1 one.
+  uv-upgrade:
+    name: uv update (${{ matrix.os }})
+    needs: uv-wheel
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: false
+
+      - name: Download the first wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: uv-wheel
+          path: dist1
+
+      - name: Build the second wheel from the first one's web bundle
+        run: python scripts/build_wheel.py --version 0.0.0.dev2 --web-from dist1/*.whl --out dist2
+
+      - name: Restore the scoring model cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/maestro-smoke-model
+          key: maestro-smoke-model-BAAI-bge-small-en-v1.5-v1
+
+      - name: Point the check at the model cache
+        shell: python
+        run: |
+          import os, pathlib
+          folder = pathlib.Path.home() / ".cache" / "maestro-smoke-model"
+          folder.mkdir(parents=True, exist_ok=True)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"FASTEMBED_CACHE_PATH={folder}\n")
+
+      - name: Install dev1, update to dev2, check the data
+        run: |
+          python scripts/upgrade_check.py \
+            --old dist1/*.whl --old-version 0.0.0.dev1 \
+            --new dist2/*.whl --new-version 0.0.0.dev2 \
+            --wait 120

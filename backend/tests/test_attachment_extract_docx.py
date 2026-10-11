@@ -29,14 +29,14 @@ def _missing_document_bytes():
 
 
 @pytest.mark.parametrize(
-    "data,error",
-    [(b"not a zip file", zipfile.BadZipFile), (_missing_document_bytes(), KeyError)],
+    "data",
+    [b"not a zip file", _missing_document_bytes()],
     ids=["non-zip", "missing-document"],
 )
-def test_unreadable_docx_keeps_the_parser_error_and_import_message(data, error):
-    with pytest.raises(error) as caught:
+def test_unreadable_docx_uses_the_word_sentence(data):
+    with pytest.raises(attachment_extract.UnreadableFile) as caught:
         attachment_extract.extract_text("broken.docx", None, data)
-    assert attachment_extract.plain_read_error(caught.value) == "Couldn't read this file."
+    assert attachment_extract.plain_read_error(caught.value) == "This file isn't a readable Word document."
 
 
 def _repack_fixture(name, replacements, renames=None):
@@ -153,3 +153,10 @@ def test_docx_main_part_size_is_checked_before_reading(declared_size):
             attachment_extract.extract_text("large.docx", None, bytes(data))
     else:
         assert attachment_extract.extract_text("small.docx", None, bytes(data)) == "Small document"
+
+
+def test_malformed_docx_document_uses_the_word_sentence():
+    data = _repack_fixture('paragraphs.docx', {'word/document.xml': '<broken'})
+    with pytest.raises(attachment_extract.UnreadableFile) as caught:
+        attachment_extract.extract_text('broken.docx', None, data)
+    assert str(caught.value) == "This file isn't a readable Word document."

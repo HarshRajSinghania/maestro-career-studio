@@ -1590,3 +1590,20 @@ def test_full_setup_start_health_stop_with_real_venv(tmp_path):
     finally:
         assert run_script("stop.sh", env).returncode == 0
     assert run_script("health.sh", env).returncode == 1
+
+
+def test_setup_removes_the_old_distribution_before_installing(native_home):
+    # `maestro-career-studio-backend` was renamed `maestro-career-studio`; both would own
+    # bin/maestro-career-studio-mcp in a reused venv, and uninstalling the old one deletes it.
+    ctx = native_home
+    log = ctx.records / "pip-calls.log"
+    (ctx.records.parent / "modules" / "pip.py").write_text(
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "with (Path(os.environ['NATIVE_TEST_RECORDS']) / 'pip-calls.log').open('a') as out:\n"
+        "    out.write(' '.join(sys.argv[1:]) + '\\n')\n"
+    )
+    setup_home(ctx)
+    calls = log.read_text().splitlines()
+    assert calls[0] == "uninstall -y maestro-career-studio-backend"
+    assert calls[1].startswith("install -e ")

@@ -20,17 +20,17 @@ ACCEPT_TS = (FRONTEND / "lib" / "upload-accept.ts").read_text(encoding="utf-8")
 
 
 def _list(name: str) -> list[str]:
-    match = re.search(rf"const {name} = \[(.*?)\];", ACCEPT_TS, re.S)
+    match = re.search(rf"const {name} = \[(.*?)\]", ACCEPT_TS, re.S)
     assert match, name
     return re.findall(r'"([^"]+)"', match.group(1))
 
 
 def _backend_suffixes() -> set[str]:
-    return {".pdf", ".docx", *ax._TEXT_SUFFIXES, *ax._IMAGE_SUFFIXES}
+    return {".pdf", ".docx", ".pptx", *ax._TEXT_SUFFIXES, *ax._IMAGE_SUFFIXES}
 
 
 def test_every_extension_offered_is_one_the_extractor_reads():
-    offered = set(_list("DOCUMENT_EXTS")) | set(_list("IMAGE_EXTS"))
+    offered = set(_list("DOCUMENT_EXTS")) | set(_list("IMAGE_EXTS")) | set(_list("DOCUMENT_ACCEPT"))
     assert offered <= _backend_suffixes(), offered - _backend_suffixes()
     # …and the reverse: a format the backend learned to read must reach the
     # pickers, or it is a capability nobody can use from the browser.
@@ -47,6 +47,16 @@ def test_docx_is_offered_by_extension_and_by_mime_type():
     assert docx_mime in ax.extract_text.__code__.co_consts or docx_mime in (
         (ROOT / "backend" / "app" / "services" / "attachment_extract.py").read_text()
     )
+
+
+def test_pptx_is_offered_by_extension_and_by_mime_type():
+    mime = re.search(r'PPTX_MIME =\s*"([^"]+)"', ACCEPT_TS).group(1)
+    assert mime == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    assert ".pptx" in _list("DOCUMENT_ACCEPT")
+    assert "PPTX_MIME" in re.search(r"const DOCUMENT_ACCEPT = \[(.*?)\].join", ACCEPT_TS, re.S).group(1)
+    from tests.test_attachment_extract_pptx import _deck_parts, _zip
+
+    assert "Project overview" in ax.extract_text("upload", mime, _zip(_deck_parts()))
 
 
 def test_every_file_picker_reads_the_shared_list():

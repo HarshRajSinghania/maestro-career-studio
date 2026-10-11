@@ -161,7 +161,7 @@ def test_tailored_save_chain_fires_no_success_toasts():
     assert "rescoreOnce({ announce: false })" in render
     rescore = _mutation(_TAILORED, "rescore")
     assert rescore.count("toast.success(") == 1
-    assert 'if (opts?.announce) toast.success("ATS score updated");' in rescore
+    assert 'if (opts?.announce) toast.success("Match score updated");' in rescore
     assert "rescoreOnce({ announce: true })" in _TAILORED
 
 

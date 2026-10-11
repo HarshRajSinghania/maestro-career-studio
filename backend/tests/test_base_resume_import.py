@@ -41,7 +41,7 @@ def client(db_session, monkeypatch, tmp_path):
     monkeypatch.setattr(kb_consolidation, "prefetch_prompts", lambda s: None)
     app.dependency_overrides[get_db] = lambda: (yield db_session)
     try:
-        yield TestClient(app)
+        yield TestClient(app, raise_server_exceptions=False)
     finally:
         app.dependency_overrides.clear()
 
@@ -135,7 +135,7 @@ def test_an_unsupported_file_type_is_a_422(client):
     r = client.post("/api/base-resumes/import",
                     files=_upload("resume.xyz", b"\x00\x01", "application/octet-stream"))
     assert r.status_code == 422
-    assert "Use a PDF, Word, text or image file." in r.json()["detail"]
+    assert "Use a PDF, Word, PowerPoint, text or image file." in r.json()["detail"]
 
 
 def test_a_file_that_fails_for_a_developer_reason_is_reported_in_words(client):
@@ -171,3 +171,29 @@ def test_the_size_cap_is_a_413(client):
     r = client.post("/api/base-resumes/import",
                     files=_upload("r.txt", b"x" * (router_module.IMPORT_MAX_BYTES + 1)))
     assert r.status_code == 413
+
+
+@pytest.mark.parametrize('upload_type', [
+    ('deck.PPTX', 'application/octet-stream'),
+    ('upload', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'),
+])
+@pytest.mark.parametrize('broken', [False, True])
+def test_decks_cannot_become_base_resumes(client, db_session, monkeypatch, upload_type, broken):
+    from tests.test_attachment_extract_pptx import _deck_parts, _zip
+
+    def no_parse(*args):
+        pytest.fail('A deck must not reach the resume parser')
+
+    monkeypatch.setattr(kb_consolidation, 'parse_resume_text', no_parse)
+    filename, mime = upload_type
+    data = b'not a zip' if broken else _zip(_deck_parts())
+    resp = client.post('/api/base-resumes/import', files=_upload(filename, data, mime))
+    assert resp.status_code == 422
+    assert resp.json()['detail'] == 'Import PowerPoint decks as documents in Career history.'
+    assert db_session.query(BaseResume).count() == 0
+
+
+def test_broken_word_import_returns_a_422(client):
+    resp = client.post('/api/base-resumes/import', files=_upload('broken.docx', b'not a zip'))
+    assert resp.status_code == 422
+    assert resp.json()['detail'] == "This file isn't a readable Word document."

@@ -40,7 +40,7 @@ The plugin connects by URL to `http://localhost:8001/mcp`, independently of
 container names. `COMPOSE_PROJECT_NAME` still overrides the name for a second
 stack side by side. Give that stack different host ports and use the URL shown
 in Settings › Connected agents › **Connect an agent app**, or
-`claude mcp add --transport http maestro-career-studio <that-stack-url>`.
+`claude mcp add --scope user --transport http maestro-career-studio <that-stack-url>`.
 
 ---
 
@@ -74,6 +74,10 @@ They must agree, and most of them will keep lying silently if you forget:
 The published image tag is the version **without** the `v` (`X.Y.Z`) — the
 workflow strips it. Anything documented as `IMAGE_TAG=vX.Y.Z` is wrong and 404s.
 
+`backend/pyproject.toml` is also the PyPI version: the wheel is that project, so
+there is no ninth row. `.github/workflows/pypi.yml` fails when the tag differs
+from it.
+
 ### 3. Changelog and gates
 
 - Rename `## [Unreleased]` to `## [X.Y.Z] — YYYY-MM-DD` and start a fresh
@@ -86,6 +90,13 @@ workflow strips it. Anything documented as `IMAGE_TAG=vX.Y.Z` is wrong and 404s.
   python3 scripts/check_system_md.py
   ```
 - Confirm `SYSTEM.md` describes what is about to ship (its header contract).
+- `backend/requirements.lock` must match `pyproject.toml`. The distribution was
+  renamed, and `psutil`, `python-dotenv` and `nodejs-wheel-binaries` were added, so
+  regenerate it in `python:3.12-slim` (the recipe in `backend/Dockerfile`, plus
+  `--unsafe-package nodejs-wheel-binaries`: containers never run Node). Until it is
+  regenerated, `psutil` and `python-dotenv` are not in the lock, and
+  `nodejs-wheel-binaries` never is, so `dependency-audit` does not cover them
+  (for Node, audit the wheel's pinned version by hand).
 
 ### 4. Tag and push
 
@@ -95,7 +106,17 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The tag push is what fires `.github/workflows/images.yml`. Nothing else does.
+The tag push fires `.github/workflows/images.yml` (the images) and
+`.github/workflows/pypi.yml` (the wheel). `pypi.yml` builds the wheel, installs it
+with uv on macOS, Ubuntu and Windows, runs it, and only then publishes to PyPI
+(trusted publishing, no token). Nothing else fires either.
+
+**Owner, once, before the first tag:** on PyPI, add a *pending trusted publisher*
+for the project `maestro-career-studio` (owner `seinun-ai`, repository
+`maestro-career-studio`, workflow `pypi.yml`, environment `pypi`), and create the
+GitHub environment `pypi` on the repository. Without both, the `publish` job fails
+after the smoke passes. A manual run of `pypi.yml` (workflow_dispatch) builds and
+tests but never publishes.
 
 ### 5. Verify the images before announcing anything
 
@@ -110,6 +131,23 @@ docker buildx imagetools inspect ghcr.io/seinun-ai/maestro-career-studio-fronten
 Expect `linux/amd64` **and** `linux/arm64` in each manifest. A single-arch
 manifest means the merge job took the wrong path — fix it and cut the next
 patch; do not move the tag.
+
+### 5b. Verify the PyPI release
+
+Confirm the `pypi` workflow's `publish` job is green and
+<https://pypi.org/project/maestro-career-studio/> shows `X.Y.Z`. Then, on a machine
+that has never had Maestro (or with `UV_TOOL_DIR`, `UV_TOOL_BIN_DIR` and
+`MAESTRO_HOME` pointed at empty scratch folders):
+
+```bash
+uv tool install --python 3.12 maestro-career-studio==X.Y.Z
+maestro start --no-browser
+maestro status          # backend and web both report X.Y.Z
+maestro stop
+```
+
+PyPI never lets a version be re-uploaded: a bad release is yanked and superseded
+by the next number, like a tag.
 
 ### 6. Create the GitHub Release from the tag
 
@@ -211,6 +249,11 @@ non-default `*_HOST_PORT`s:
 ./scripts/update.sh --check     # reports the new tag as available
 ./scripts/update.sh             # backup → ff-to-tag → pull → healthy
 ```
+
+Then the uv path, on a machine with the *previous* release installed
+(`uv tool install --python 3.12 maestro-career-studio==<previous>`, `maestro start`):
+`maestro update --yes`, then `maestro status`. It must show the new version, and
+`backups/` in the Maestro folder must hold a new snapshot.
 
 Confirm the backup file in `backups/` is non-empty, the checkout lands on the
 new tag, and the stack comes back healthy. This is the step that catches a

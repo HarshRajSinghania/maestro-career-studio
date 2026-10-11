@@ -87,19 +87,19 @@ whatever your access rules give your devices.
    tailscale funnel --https=443 --set-path=/api/sync off
    ```
 
-3. In the laptop's `.env`, set the public name and restart. Docker Compose
-   forwards `SYNC_PUBLIC_HOST` to the backend. Set it on the laptop only: on
-   the always-on copy it would turn the copy's own sync round into the empty 404.
+3. On the laptop, set the public name and restart. Set it on the laptop only:
+   on the always-on copy it would turn the copy's own sync round into the empty 404.
 
    ```bash
    SYNC_PUBLIC_HOST=<mac>.<tailnet>.ts.net
    ```
 
-   From the repository root:
-
-   ```bash
-   docker compose up -d
-   ```
+   - **uv install:** put it in `maestro.env` in your Maestro folder (on a Mac,
+     `~/Library/Application Support/Maestro Career Studio/maestro.env`), then
+     run `maestro restart`.
+   - **Docker install:** put it in the repository's `.env` (Docker Compose
+     forwards it to the backend), then from the repository root run
+     `docker compose up -d`.
 
    Write `<mac>.<tailnet>.ts.net`, the machine's MagicDNS name. Do not add a
    path or a port.
@@ -429,15 +429,21 @@ each one up to a folder your cloud drive already syncs.
   Your drive's client or `rclone` carries that folder to the cloud. To rebuild,
   stop Maestro, run `litestream restore -o <database path> /home/agent/synced-folder/maestro-bot`,
   start it, and run `sync.sh`.
-- **The laptop.** Maestro's database sits in a folder Docker mounts, and that
-  mount does not promise the shared memory a live WAL file needs. Do not run
-  Litestream on it. Take an online snapshot instead:
+- **The laptop.** Do not run Litestream on it (in Docker the database sits in
+  a mounted folder that does not promise the shared memory a live WAL file
+  needs). Take an online snapshot instead. On a uv install:
+
+  ```bash
+  maestro backup --out ~/synced-folder/maestro-laptop-$(date +%F).sqlite3.gz
+  ```
+
+  On a Docker install, from the repository root:
 
   ```bash
   docker compose exec -T backend python -m app.tools.backup_db --stdout | gzip > ~/synced-folder/maestro-laptop-$(date +%F).sqlite3.gz
   ```
 
-  This is the same snapshot `scripts/update.sh` takes.
+  These are the same snapshots `maestro update` and `scripts/update.sh` take.
 
 Either machine can be rebuilt from its backup plus one sync round.
 
@@ -500,6 +506,7 @@ Either machine can be rebuilt from its backup plus one sync round.
 - **"Work on it here" is refused.** The bot has approved the job or is unsure
   whether a submit went through. Wait for its run to finish and ask again.
 - **The platform that hosts the always-on copy is suspect.** Delete the key
-  file on both machines and pair again. On the laptop that is
-  `settings/secrets/sync-key`. On the always-on copy it is
+  file on both machines and pair again. On the laptop that is `sync-key` in
+  your Maestro folder (uv install) or `settings/secrets/sync-key` (Docker). On
+  the always-on copy it is
   `$MAESTRO_HOME/sync-key`. Show a new pairing code. Prefer `--code -`.

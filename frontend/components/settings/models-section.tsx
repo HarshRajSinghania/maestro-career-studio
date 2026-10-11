@@ -357,7 +357,7 @@ function ModelProfileNote() {
       {open && (
         // Words, not figures: prices move faster than a release, so the
         // providers' own pages carry them. The comparison is README's
-        // measured table (Choose your models deliberately).
+        // measured table (docs/USING_MAESTRO.md, Choose your models deliberately).
         <p className="text-muted-foreground max-w-prose">
           GPT-5.6 Luna gives the most thorough results and cost less per
           application in our tests, but it is slower. Gemini 3.7 Flash is the

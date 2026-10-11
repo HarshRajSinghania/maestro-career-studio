@@ -18,6 +18,8 @@
 
 export const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+export const PPTX_MIME =
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 const DOCUMENT_EXTS = [".pdf", ".docx", ".md", ".markdown", ".txt", ".tex"];
 const DOCUMENT_MIMES = ["application/pdf", DOCX_MIME, "text/markdown", "text/plain"];
@@ -29,14 +31,15 @@ const IMAGE_MIMES = ["image/png", "image/jpeg", "image/webp"];
  *  quick capture, chat attachments, onboarding documents. */
 export const DOCUMENT_ACCEPT = [
   ...DOCUMENT_EXTS,
+  ".pptx",
   ...IMAGE_EXTS,
   ...DOCUMENT_MIMES,
+  PPTX_MIME,
   ...IMAGE_MIMES,
 ].join(",");
 
 /** A resume file for import: the app's own JSON plus the text documents.
- *  No images — a screenshot is not a resume the parser should mint a base
- *  from. */
+ *  No images or decks — those belong in the documents lane. */
 export const RESUME_FILE_ACCEPT = [
   ".json",
   ...DOCUMENT_EXTS,
@@ -48,6 +51,7 @@ export const RESUME_FILE_ACCEPT = [
 const TYPE_NAMES: readonly (readonly [string, string])[] = [
   [".pdf", "PDF"],
   [".docx", "Word"],
+  [".pptx", "PowerPoint (.pptx)"],
   [".md", "Markdown"],
   [".markdown", "Markdown"],
   [".txt", "text"],
@@ -66,7 +70,7 @@ function orList(items: string[]): string {
   return items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} or ${items.at(-1)}`;
 }
 
-/** The file types an `accept` list takes, in words: "PDF, Word, Markdown, text, LaTeX or JSON".
+/** The file types an `accept` list takes, in words, including PowerPoint decks.
  *  Read from the picker's own list, so a rejection names what THAT picker takes. */
 export function acceptedTypesLabel(accept: string): string {
   const entries = new Set(accept.split(",").map((entry) => entry.trim().toLowerCase()));
@@ -79,13 +83,13 @@ export function acceptedTypesLabel(accept: string): string {
 }
 
 /**
- * A picker's hint in plain words: the files most people have first ("PDF, Word or text files"), then
+ * A picker's hint in plain words: the files most people have first, then
  * the rest, named once ("Also Markdown, LaTeX or a Maestro CS JSON file."). `acceptedTypesLabel`
  * stays the rejection's list; this is the hint above the drop zone.
  */
 export function acceptedFilesHint(accept: string): string {
   const entries = new Set(accept.split(",").map((entry) => entry.trim().toLowerCase()));
-  const common = ([[".pdf", "PDF"], [".docx", "Word"], [".txt", "text"]] as const)
+  const common = ([[".pdf", "PDF"], [".docx", "Word"], [".pptx", "PowerPoint (.pptx)"], [".txt", "text"]] as const)
     .filter(([ext]) => entries.has(ext))
     .map(([, name]) => name);
   const image = IMAGE_NAMES.some(([ext]) => entries.has(ext));

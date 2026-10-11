@@ -1,3 +1,9 @@
+// Full MIT license: LICENSE-resume-templates.txt in bundled app/templates/.
+// Template layout adapted from "Jake's Resume": https://github.com/jakegut/resume
+// Copyright (c) 2020 Jake Gutierrez - MIT License
+// Based on https://github.com/sb2nov/resume
+// Copyright (c) 2015 Sourabh Bajaj - MIT License
+// Full license texts: THIRD_PARTY_NOTICES.md at the repository root.
 // cover_letter.typ: the bundled cover letter for the Typst engine — the
 // counterpart of cover_letter.tex.j2 + _header.tex.j2, self-contained because a
 // Typst compile is root-scoped to one staged file (typst_compiler) and cannot

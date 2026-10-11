@@ -80,7 +80,7 @@ def test_extract_tex():
 
 
 def test_unsupported_type_raises():
-    with pytest.raises(ValueError, match="Use a PDF, Word, text or image file."):
+    with pytest.raises(ValueError, match="Use a PDF, Word, PowerPoint, text or image file."):
         extract_text("archive.zip", "application/zip", b"PK\x03\x04")
 
 
@@ -181,3 +181,15 @@ def test_corrupt_image_raises_value_error(monkeypatch):
     _mock_vision(monkeypatch, "should never be called")
     with pytest.raises(ValueError):
         extract_text("x.png", "image/png", b"\x89PNG")
+
+
+@pytest.mark.parametrize('filename,data', [
+    ('deck.pptx', None), ('document.docx', _make_docx_bytes(['Readable Word'])),
+    ('document.pdf', _make_pdf_bytes('Readable PDF')),
+    ('notes.txt', b'Readable text'),
+], ids=['pptx', 'docx', 'pdf', 'text'])
+def test_supported_suffix_wins_over_legacy_powerpoint_mime(filename, data):
+    if data is None:
+        from tests.test_attachment_extract_pptx import _deck_parts, _zip
+        data = _zip(_deck_parts())
+    assert extract_text(filename, 'application/vnd.ms-powerpoint', data)

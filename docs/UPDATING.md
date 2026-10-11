@@ -1,17 +1,160 @@
 # Updating Maestro CS
 
 The short version is in the [README](../README.md#updating): run
-`./scripts/update.sh` from the folder you cloned. This page is the detail —
-what the script does, how to do it by hand, what happens to your data, and how
-to roll back.
+`maestro update` if you installed with uv, or `./scripts/update.sh` from the
+folder you cloned if you use Docker. This page is the detail — what each does,
+how to update a Docker install by hand, what happens to your data, and how to
+roll back. Everything below the uv sections is the Docker route.
 
-**Contents:** [What the script does](#what-the-script-does) ·
+**A Docker install and a uv install are separate copies.** Each has its own data
+and its own updates, and both use ports 8001 and 3000, so don't run both at once.
+Updating one never touches the other. To move a Docker install's data into a uv
+install once, see [Move from Docker to the uv install](#move-from-docker-to-the-uv-install).
+
+**Contents:** [Updating a uv install](#updating-a-uv-install) ·
+[Rolling back a uv install](#rolling-back-a-uv-install) ·
+[Move from Docker to the uv install](#move-from-docker-to-the-uv-install) ·
+[What the script does](#what-the-script-does) ·
 [Updating by hand](#updating-by-hand) ·
 [What happens to your data](#what-happens-to-your-data) ·
 [Coming from v0.3.0 or older](#coming-from-v030-or-older) ·
 [Rolling back](#rolling-back) ·
 [After updating](#after-updating) ·
 [Freeing disk space](#freeing-disk-space)
+
+## Updating a uv install
+
+```bash
+maestro update
+```
+
+In order:
+
+1. **Checks for a newer version.** One request to `pypi.org`. If yours is the
+   newest, it says so and stops.
+2. **Shows what breaks.** One request to `raw.githubusercontent.com` for the
+   changelog, then every `### Breaking changes` entry between your version and
+   the new one. If it can't read the changelog it prints the link and carries on.
+3. **Asks** `Update from X to Y? [y/N]`. `maestro update --yes` skips the question
+   (needed when no one is at the keyboard).
+4. **Saves a verified snapshot** of your database to `backups/` in your Maestro
+   folder, as `db-<timestamp>.sqlite3.gz`, and keeps the newest five. If the
+   snapshot fails, nothing is stopped or changed.
+5. **Stops Maestro**, runs `uv tool install --force --python 3.12
+   maestro-career-studio==Y` (exactly the version whose changelog it showed; the
+   `--force` also clears a version pin left by a rollback), and **starts it
+   again** if it was running. Then it asks the running server for its version and
+   compares it with the one it installed.
+
+Your data folder is never moved or edited by the update, and the database upgrades
+itself on the first start (which can take a little longer). If `uv` can't be found,
+the command prints what to run by hand and changes nothing. If the new version
+fails to start, or reports a different version, it prints where the snapshot is and
+the rollback line below.
+
+**On Windows**, a running `maestro.exe` can't be replaced. Claude Desktop keeps
+`maestro mcp` running while it is open, and so does any other `maestro` command
+(`maestro logs -f`), so `maestro update` first refuses, changing nothing, until
+you quit Claude Desktop and stop them. After the snapshot and the stop, `maestro update` hands the upgrade to a background step and returns.
+It finishes in about a minute. Don't run `maestro` commands meanwhile: files are
+still being replaced. Watch `logs\update.log` in your Maestro folder (path in the
+README) until its last line says `finished`, then run `maestro status`.
+
+`maestro update --source PATH/TO/file.whl` installs a wheel file you already have
+instead of the newest release. It makes no network request.
+
+After an update, do the same two manual steps as on Docker:
+[reload the extension and restart your assistant](#after-updating).
+
+## Rolling back a uv install
+
+Migrations only run forward, so an older version can't always open a database a
+newer one changed. That is what the snapshot is for. Stop Maestro, put the old
+version back, then put the old database back:
+
+```bash
+maestro stop
+uv tool install --force --python 3.12 maestro-career-studio==0.9.0     # the version you were on
+# in your Maestro folder (see the README: "Where your data lives"):
+gunzip -c backups/db-<timestamp>.sqlite3.gz > data/maestro_cs.sqlite3
+rm -f data/maestro_cs.sqlite3-wal data/maestro_cs.sqlite3-shm
+maestro start
+```
+
+The `uv tool install` line is the one `maestro update` prints when something
+goes wrong, with your version filled in. On Windows there is no `gunzip`; unpack
+the snapshot with 7-Zip, or run
+`uv run --python 3.12 python -c "import gzip, shutil; shutil.copyfileobj(gzip.open(r'backups\db-<timestamp>.sqlite3.gz'), open(r'data\maestro_cs.sqlite3', 'wb'))"`
+from the Maestro folder. Delete the two helper files as shown: they belong to
+the database you just replaced. Never copy the database file while Maestro is
+running; `maestro backup` is safe on a running copy.
+
+## Move from Docker to the uv install
+
+A new uv install starts empty, while your real history still sits in the Docker
+folder. `maestro import-docker` copies it across, once. Think of it as a
+photocopy: the Docker folder is only read, and nothing in it is changed, moved
+or deleted, so the original is still there if you ever want to go back.
+
+1. Update the Docker install to the same version as the uv one (`./scripts/update.sh`,
+   then `maestro --version` to compare). A database from an older or newer
+   release is refused with the version to update to.
+2. Stop it: `docker compose down` in the Docker folder. Stop the uv copy too
+   (`maestro stop`).
+3. Look first: `maestro import-docker /path/to/maestro-career-studio --dry-run`
+   prints what it would copy, rewrite and carry over, and changes nothing.
+4. Run it without `--dry-run`, then `maestro start`.
+
+What it does, in order:
+
+- Refuses, in one sentence and changing nothing, if either install is running,
+  the Docker database is not at this version's schema, or the uv install already
+  holds your jobs, applications or resumes (add `--replace` to overwrite them).
+- Saves a verified snapshot of the uv install's current database
+  (`backups/db-*.sqlite3.gz`, the undo point) and prints its path.
+- Builds the new database from a copy of the Docker one using SQLite's online
+  backup, rewrites the stored file locations (`/app/applications/...` becomes
+  your Maestro folder) in one transaction, and checks every table has the same
+  row count. Values that merely mention `/app/` inside longer text or JSON
+  (for example a saved tailoring result) are counted, listed by column and left
+  as written.
+- Copies `applications/`, `base_resumes/`, `kb_documents/`, `exports/` and
+  `settings/` (the Docker files win when a name exists in both), never following
+  a symlink. Old snapshots (`data/backups/`) and `data/handoff/` stay behind.
+- Places the sync key where the uv install reads it.
+- Adds the settings Maestro understands from the Docker `.env` (API keys, models,
+  proxy, sync host) to `maestro.env`, keeping any you already set there. Ports,
+  paths and other Docker-only entries are left out. Only names are printed. A
+  value that points at `host.docker.internal` gets a note: it only works inside
+  Docker, so change it to `localhost` in `maestro.env`.
+- Keeps a copy of every file of the uv install that it replaces (your old
+  `sync-key`, settings, resumes, `maestro.env`) while it runs. If anything fails,
+  those files, the database and `maestro.env` are all put back and the files it
+  added are removed, so the earlier install is exactly as it was. If it succeeds,
+  the copies stay in `backups/import-replaced-files-<time>/`, next to the snapshot.
+
+**Undoing a finished import** (only needed if you want your earlier uv data
+back): `maestro stop`, delete the three files `data/maestro_cs.sqlite3*`, unpack
+the snapshot it printed over `data/maestro_cs.sqlite3` (macOS and Linux:
+`gunzip -c backups/db-<time>.sqlite3.gz > data/maestro_cs.sqlite3`), copy the
+contents of `backups/import-replaced-files-<time>/` back over the same names in
+your Maestro folder, and `maestro start`. If the folder had no `sync-key` before
+the import, also delete `sync-key` there; otherwise sync stays on with the Docker
+install's key. The other files the import added are harmless and can stay.
+
+**If the import is interrupted** (power loss, the terminal killed mid-run), the
+next `maestro import-docker` refuses, and so does `maestro start` when the
+database file is missing, naming the leftovers in `data/`
+(`maestro_cs.sqlite3.before-import`, `maestro_cs.sqlite3-wal.before-import`, `.importing/`,
+`.before-import/`). **First** copy what is in `data/.before-import/` back over the
+same names in your Maestro folder: those are the only copies of your old sync key,
+settings and `maestro.env`, and only then delete that folder. Put each
+`*.before-import` database file back under its name without the suffix (or
+restore the snapshot), delete `data/.importing/`, and run it again.
+
+Afterwards, **don't start the Docker install again alongside this one**: both
+would share one sync identity. The Docker folder is still yours; delete it when
+you are sure.
 
 ## What the script does
 
@@ -139,7 +282,7 @@ the v0.4.0 copy of this page covers that.)
 
 ## After updating
 
-Docker can't update these two:
+Neither Docker nor `maestro update` can update these two:
 
 1. **Reload the browser extension** — `chrome://extensions` → **Reload** on the
    Maestro CS card, then reload any job tab that was already open (otherwise it

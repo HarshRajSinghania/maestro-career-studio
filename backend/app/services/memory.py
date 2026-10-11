@@ -1,8 +1,18 @@
 """Resident memory of this process, for /health/memory (docs/plans/2026-10-06-slim-pilot.md)."""
 
-import resource
 import sys
 from pathlib import Path
+
+try:
+    import resource
+except ImportError:  # Windows has no `resource`; psutil (a core dependency) reads the working set instead
+    resource = None
+
+
+def _psutil_rss_mb() -> float:
+    import psutil
+
+    return round(psutil.Process().memory_info().rss / (1024 * 1024), 1)
 
 
 def rss_mb() -> float:
@@ -15,6 +25,8 @@ def rss_mb() -> float:
 
 
 def peak_mb() -> float:
+    if resource is None:
+        return _psutil_rss_mb()  # no peak counter without `resource`; the current RSS stands in
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return round(peak / (1024 * 1024) if sys.platform == "darwin" else peak / 1024, 1)
 

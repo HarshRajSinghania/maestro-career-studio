@@ -423,7 +423,7 @@ export function AtsScorePanel({
     // skeleton hands straight to the cards with no empty-state frame.
     onSuccess: async (_result, manual) => {
       await qc.invalidateQueries({ queryKey: ["ats-scores", jobId] });
-      if (manual === "manual") toast.success("ATS scores updated");
+      if (manual === "manual") toast.success("Match scores updated");
     },
     onError: (err: Error) => toast.error(couldnt("score your resumes", err)),
   });
@@ -552,7 +552,7 @@ export function AtsScorePanel({
     if (isLoadFailure(scores)) {
       return (
         <LoadErrorState
-          title="Couldn't load ATS scores."
+          title="Couldn't load match scores."
           detail={loadErrorDetail(scores.error)}
           retrying={scores.isFetching}
           onRetry={() => void scores.refetch()}
@@ -606,7 +606,7 @@ export function AtsScorePanel({
       return (
         <div className="flex flex-col items-center gap-3 py-8 text-center">
           {!unscorable && <AtsScoreLead />}
-          <p className="text-muted-foreground text-body-medium">{unscorable ?? "No ATS scores yet."}</p>
+          <p className="text-muted-foreground text-body-medium">{unscorable ?? "No match scores yet."}</p>
           {!unscorable && (
             <Button
               size="sm"

@@ -14,6 +14,7 @@ from __future__ import annotations
 import glob
 import importlib.metadata
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -47,6 +48,8 @@ class EngineStatus:
     version: str | None = None
     path: str | None = None
     reason: str | None = None
+    # Available, but with a known defect worth fixing on this host.
+    warning: str | None = None
 
 
 @dataclass(frozen=True)
@@ -153,6 +156,32 @@ def _pdflatex_version(path: str) -> tuple[str | None, str | None]:
     return lines[0], None
 
 
+# pdfTeX 1.40.27 — TeX Live 2025 as released, so an un-updated MacTeX/BasicTeX
+# 2025 — mispositions the space glyph `pdf_render` asks for with
+# \pdfinterwordspaceon when the font's own encoding has /space at slot 32 —
+# many Type 1 fonts (Helvetica/Times via 8r, Charter, Crimson, EB Garamond,
+# Merriweather, Fira, Source Sans Pro, BaskervilleF all reproduce it; Computer
+# Modern and XCharter do not): the TJ kern after each
+# space is ~9 space-widths too large, so every following word is drawn about
+# 2 em LEFT, on top of the previous one. Extraction still reads in order, so
+# the parse gate passes it; template validation checks the PDF itself
+# (`template_validation.text_overprints`). Fixed in 1.40.28 (pdfTeX NEWS: "fix
+# overlapping text in ptmr8r and other fonts", 2025-05). The banner's last
+# component is the pdfTeX version: "pdfTeX 3.141592653-2.6-1.40.27 (TeX Live 2025)".
+_PDFTEX_OVERPRINT_BUILD = re.compile(r"-1\.40\.27(?!\d)")
+PDFTEX_1_40_27_WARNING = (
+    "pdfTeX 1.40.27 draws words on top of each other with many Type 1 fonts "
+    "(e.g. Helvetica, Charter, Garamond, Fira); update to pdfTeX 1.40.28+ "
+    "(MacTeX 2026, or TeX Live 2025's final updates)"
+)
+
+
+def _version_warning(version: str) -> str | None:
+    if _PDFTEX_OVERPRINT_BUILD.search(version):
+        return PDFTEX_1_40_27_WARNING
+    return None
+
+
 def probe_pdflatex() -> EngineStatus:
     path, reason = find_pdflatex()
     if path is None:
@@ -160,7 +189,9 @@ def probe_pdflatex() -> EngineStatus:
     version, reason = _pdflatex_version(path)
     if version is None:
         return EngineStatus("pdflatex", False, path=path, reason=reason)
-    return EngineStatus("pdflatex", True, version=version, path=path)
+    return EngineStatus(
+        "pdflatex", True, version=version, path=path, warning=_version_warning(version)
+    )
 
 
 def pdflatex_available() -> bool:

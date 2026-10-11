@@ -479,7 +479,7 @@ main() {
 
   # A ZIP unpack cannot update: there is no history to fast-forward.
   # -e, not -d: a worktree's .git is a file.
-  [ -e "$REPO/.git" ] || die "this directory is not a git clone (no .git). ZIP unpacks cannot update — clone from GitHub instead (see the README Quickstart)."
+  [ -e "$REPO/.git" ] || die "this directory is not a git clone (no .git). ZIP unpacks cannot update — clone from GitHub instead (see the README, \"Alternative: run with Docker\")."
 
   warn_if_fork
 

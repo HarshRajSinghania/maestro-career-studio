@@ -30,7 +30,7 @@ def test_connect_composes_every_client_for_the_full_profile(client, monkeypatch)
         "claude-code", "codex", "codex-app", "cursor", "vscode", "claude-desktop", "other",
     }
     assert by_id["claude-code"]["value"] == (
-        f"claude mcp add --transport http maestro-career-studio {url}"
+        f"claude mcp add --scope user --transport http maestro-career-studio {url}"
     )
     assert by_id["codex"]["value"] == f"codex mcp add maestro-career-studio --url {url}"
     cursor = urllib.parse.urlparse(by_id["cursor"]["value"])
@@ -118,3 +118,34 @@ def test_a_directory_is_not_an_available_bundle(client, tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "mcpb_bundle_path", tmp_path)
     assert client.get("/api/setup/connect").json()["bundle_available"] is False
     assert client.get("/api/setup/connect/bundle").status_code == 404
+
+
+def test_a_uv_install_shows_the_connect_command_for_claude_desktop(client, monkeypatch):
+    monkeypatch.setattr(settings, "maestro_install", "uv")
+    body = client.get("/api/setup/connect").json()
+    desktop = next(c for c in body["clients"] if c["id"] == "claude-desktop")
+    assert desktop == {
+        "id": "claude-desktop", "label": "Claude Desktop", "kind": "command",
+        "value": "maestro connect claude-desktop",
+    }
+    others = {c["id"]: c for c in body["clients"] if c["id"] != "claude-desktop"}
+    assert others["claude-code"]["value"].startswith("claude mcp add --scope user --transport http ")
+    assert others["cursor"]["kind"] == "deeplink"
+
+
+@pytest.mark.parametrize("install", ["", "docker", "UV "])
+def test_any_other_install_keeps_the_claude_desktop_bundle_download(client, monkeypatch, install):
+    monkeypatch.setattr(settings, "maestro_install", install)
+    body = client.get("/api/setup/connect").json()
+    desktop = next(c for c in body["clients"] if c["id"] == "claude-desktop")
+    assert desktop["kind"] == "download"
+    assert desktop["value"] == "/api/setup/connect/bundle"
+
+
+def test_the_claude_code_command_carries_the_user_scope_in_every_profile(client):
+    for profile in ("full", "hunt"):
+        body = client.get("/api/setup/connect", params={"profile": profile}).json()
+        row = next(c for c in body["clients"] if c["id"] == "claude-code")
+        assert row["value"] == (
+            f"claude mcp add --scope user --transport http maestro-career-studio {body['mcp_url']}"
+        )

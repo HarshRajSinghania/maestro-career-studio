@@ -146,3 +146,29 @@ def test_backup_refuses_a_missing_file(tmp_path, capsys):
 
     assert capsys.readouterr().err.startswith(f"error: no database file at {missing}")
     assert not out.exists()
+
+
+def test_backup_output_is_opened_binary_where_the_os_has_that_flag(tmp_path, monkeypatch):
+    """Windows' O_BINARY keeps a text-mode fd from turning LF into CRLF inside the gzip bytes."""
+    marker = 0x8000
+    monkeypatch.setattr(os, "O_BINARY", marker, raising=False)
+    real_open = os.open
+    seen = []
+
+    def spy(path, flags, *args, **kwargs):
+        seen.append((str(path), flags))
+        return real_open(path, flags & ~marker, *args, **kwargs)  # the marker is not a real flag here
+
+    monkeypatch.setattr(os, "open", spy)
+    src = _db_with_rows(tmp_path / "live.sqlite3")
+    out = tmp_path / "backup.sqlite3.gz"
+
+    assert backup_db.main(["--source", str(src), "--out", str(out)]) == 0
+
+    flags = [flags for path, flags in seen if path == str(out)]
+    assert len(flags) == 1 and flags[0] & marker
+    restored = tmp_path / "restored.sqlite3"
+    restored.write_bytes(gzip.decompress(out.read_bytes()))
+    with sqlite3.connect(restored) as conn:
+        assert conn.execute("SELECT count(*) FROM t").fetchone()[0] == 3
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"

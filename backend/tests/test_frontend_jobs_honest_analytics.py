@@ -102,7 +102,7 @@ def test_resume_fit_words():
     cards = _read("components/analytics/base-summary-cards.tsx")
     assert "Health not checked yet" in cards and "No health check" not in cards
     fit = _read("app/analytics/page.tsx")
-    assert "Weekly average ATS score.\n" in fit
+    assert "Weekly average match score.\n" in fit
     assert "(how an applicant tracking system" not in fit
 
 

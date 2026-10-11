@@ -67,7 +67,7 @@ REPO="$HOME/maestro-career-studio"          # your clone
   machine can reach it.
 - **`MALLOC_ARENA_MAX=2`.** Linux's default memory allocator keeps many arenas
   and holds on to freed memory. Two arenas cut resident memory by up to about 10% in our runs.
-- **`EMBEDDINGS_OUT_OF_PROCESS=1`.** ATS scoring uses a small language model. Loaded
+- **`EMBEDDINGS_OUT_OF_PROCESS=1`.** Match scoring uses a small language model. Loaded
   inside the backend, it stays in memory for good (about 260 MB). With this
   setting, each score starts a helper process that loads the model, embeds the
   text and exits. Scores are identical either way. The cost is time, not

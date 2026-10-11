@@ -33,6 +33,12 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  // One way to run the UI: Docker and the uv install both run .next/standalone/server.js.
+  output: "standalone",
+  // Nothing uses next/image; without the optimizer the bundle carries no native sharp/libvips,
+  // so one build runs on every OS (docs/plans/2026-10-10-desktop-step3-uv-install.md).
+  images: { unoptimized: true },
+  outputFileTracingExcludes: { "*": ["node_modules/sharp/**", "node_modules/@img/**"] },
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },

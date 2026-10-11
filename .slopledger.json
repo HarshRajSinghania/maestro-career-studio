@@ -4,7 +4,7 @@
     {
       "id": "mcp-stdio-venv",
       "status": "new-is-default",
-      "hand_check": "The release after /mcp ships (v0.10.0): delete scripts/setup-mcp.sh, the host-venv paragraphs in README.md, GETTING_STARTED.md and backend/mcp_server/README.md, and every docker exec mcp_server.server example. Keep maestro-career-studio-mcp as the maestro mcp fallback until B\u2032. Machine predicates require the script absent and zero source matches; the release and prose removals are verified by hand.",
+      "hand_check": "The release after /mcp ships (v0.10.0): delete scripts/setup-mcp.sh, the host-venv paragraphs in docs/USING_MAESTRO.md, GETTING_STARTED.md and backend/mcp_server/README.md, and every docker exec mcp_server.server example. Keep maestro-career-studio-mcp as the maestro mcp fallback until B\u2032. Machine predicates require the script absent and zero source matches; the release and prose removals are verified by hand.",
       "triggers": [
         {
           "kind": "command",
@@ -83,6 +83,36 @@
       "id": "health-rewrite-cache",
       "status": "new-is-default",
       "hand_check": "Migration 85a1bb628e28. Cut when bullet_rewrites or health_ask_answers is dropped, or GET /api/resume-lint/{kind}/{key}/answers goes away. Miss path is fallback, not a competing product."
+    },
+    {
+      "id": "native-scripts-to-maestro",
+      "status": "both-live",
+      "hand_check": "The always-on bot runs on the maestro command for one release (verify by hand). Then delete backend/scripts/native/, docs/native-install.md and tests/test_native_scripts.py. Machine predicate: the scripts folder is gone.",
+      "triggers": [
+        {
+          "kind": "command",
+          "cmd": "test ! -e backend/scripts/native"
+        }
+      ]
+    },
+    {
+      "id": "lock-wheel-deps",
+      "status": "both-live",
+      "hand_check": "Regenerate backend/requirements.lock in python:3.12-slim with --unsafe-package nodejs-wheel-binaries (recipe in backend/Dockerfile). Until then the lock names maestro-career-studio-backend and lacks psutil; the image installs the project with --no-deps -e .",
+      "triggers": [
+        {
+          "kind": "command",
+          "cmd": "grep -q '^psutil==' backend/requirements.lock"
+        },
+        {
+          "kind": "command",
+          "cmd": "! grep -q '^nodejs-wheel-binaries' backend/requirements.lock"
+        },
+        {
+          "kind": "command",
+          "cmd": "! grep -q 'maestro-career-studio-backend' backend/requirements.lock"
+        }
+      ]
     }
   ],
   "system_md_baselines": {

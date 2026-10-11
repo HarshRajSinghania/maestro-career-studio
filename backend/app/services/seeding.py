@@ -40,9 +40,16 @@ KB_SEEDED_FLAG = "kb.seeded"
 DEMO_SLUG = "example"
 
 
+def migrations_dir() -> Path:
+    # No alembic.ini: in a wheel this file sits in site-packages/app/services/, so parents[2] is
+    # site-packages, where the `migrations` package is installed; in a checkout it is backend/.
+    return Path(__file__).resolve().parents[2] / "migrations"
+
+
 def run_migrations() -> None:
-    alembic_ini = Path(__file__).resolve().parents[2] / "alembic.ini"
-    command.upgrade(Config(str(alembic_ini)), "head")
+    cfg = Config()
+    cfg.set_main_option("script_location", str(migrations_dir()))
+    command.upgrade(cfg, "head")
 
 
 def _display_name(slug: str) -> str:
@@ -81,10 +88,11 @@ def seed_base_resumes(session: Session) -> list[str]:
     for slug in seeded:
         try:
             base_resume_render.render_base_resume(slug, session)
-        except Exception:
+        except Exception as exc:
             # Best effort: a seeded base without a PDF still works and renders on
             # its first save. Say so instead of hiding it.
             logger.warning("Seed render failed for base resume %s", slug, exc_info=True)
+            base_resume_render.record_render_error(session, slug, str(exc))
 
     return seeded
 
@@ -174,7 +182,8 @@ def seed_career_kb(session: Session) -> None:
 
 
 def seed_startup_data(session: Session) -> None:
-    for seed in (seed_base_resumes, seed_prompts, seed_templates, ensure_persona):
+    # The no-TeX fallback requires a validated, ready Typst template before any base renders.
+    for seed in (seed_templates, seed_base_resumes, seed_prompts, ensure_persona):
         if not status.enabled():
             seed(session)
             continue

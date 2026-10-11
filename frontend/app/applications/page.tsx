@@ -735,7 +735,7 @@ function ApplicationsContent() {
               <TableRow className="hover:bg-transparent dark:hover:bg-transparent">
                 {header("role", "Role", "w-[34%]")}
                 <TableHead className="w-[14%]">Resume</TableHead>
-                {header("ats", "ATS", "w-[12%]")}
+                {header("ats", "Match score", "w-[12%]")}
                 {header("status", "Status", "w-[14%]")}
                 {header("applied_at", "Applied", "w-[11%]")}
                 {header("created_at", "Added", "w-[11%]")}
@@ -826,7 +826,7 @@ function ApplicationsContent() {
                         ) : (
                           <ScoreBar
                             value={score}
-                            label={r.kind === "saved" ? "Best ATS score" : "ATS score"}
+                            label={r.kind === "saved" ? "Best match score" : "Match score"}
                             valueText={score.toFixed(1)}
                             width="w-10"
                           />

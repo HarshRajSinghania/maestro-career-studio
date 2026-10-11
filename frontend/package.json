@@ -9,7 +9,7 @@
     "lint": "eslint",
     "prebuild": "node scripts/vendor-monaco.mjs",
     "predev": "node scripts/vendor-monaco.mjs",
-    "start": "next start"
+    "start": "node scripts/start-standalone.mjs"
   },
   "overrides": {
     "dompurify": "^3.4.13"

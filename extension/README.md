@@ -24,7 +24,7 @@ icon works from Chrome 114).
 
 ## Install
 
-1. Start the app (`docker compose up`: backend on `:8001`, app on `:3000`).
+1. Start the app — `maestro start` (uv install) or `docker compose up` (Docker): backend on `:8001`, app on `:3000`.
 2. Open `chrome://extensions` and turn on **Developer mode**.
 3. Click **Load unpacked** and choose the repo's `extension/` folder.
 4. Pin the extension, then click its icon on a job posting or application form.

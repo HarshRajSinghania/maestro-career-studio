@@ -15,7 +15,8 @@ the premise.
 
 **What "local-first, single-user, no authentication" defends against:** a remote
 attacker with network access. Nothing listens on a routable interface — every
-port Compose publishes binds `127.0.0.1`. There is also no account system to
+port Compose publishes binds `127.0.0.1`, and a uv install (`maestro start`)
+runs its backend (8001) and web server (3000) on `127.0.0.1` only. There is also no account system to
 compromise, no shared tenancy, and no server of ours holding your data.
 
 **What it does not defend against, on its own:** the browser you are already
@@ -114,7 +115,16 @@ compiler is allowed to read. `-no-shell-escape` does not touch them — it block
 The compiler therefore runs under kpathsea's paranoid mode (`openin_any=p`,
 `openout_any=p`, with `TEXMFOUTPUT` pinned to the per-render staging directory),
 which refuses dotfiles, parent-directory traversal, and absolute paths outside
-that directory.
+that directory. Each compile runs in its own fresh temporary folder holding only
+that compile's source, so another resume's source in the shared output folder can
+be neither read nor overwritten by name or by path; only the PDF and the log are
+copied back.
+
+Typst templates are plain source, not Jinja. A literal `@preview/...` import is
+refused up front, but that check reads string literals and a computed import
+path gets past it, so the Typst compile child also runs with its proxy variables
+pointed at an address nothing can listen on (loopback port 0). A package
+download fails and nothing is fetched or run from the network.
 
 **This bounds the damage; it is not isolation.** A render worker that holds no
 secrets, no PII mounts and no network is the real answer, and it is not built
@@ -131,7 +141,8 @@ checked to resolve inside the preview directory, so an id like
 
 ### PDF compilation cannot run shell commands
 
-`pdflatex` is always invoked with `-no-shell-escape`, with no opt-out, so no
+`pdflatex` is always invoked with `-no-shell-escape` (and `shell_escape=f` in its
+environment), with no opt-out, so no
 document — including one built from model-generated text — can use `\write18` to
 run host commands.
 
@@ -305,6 +316,44 @@ until you remove it (docs/UPDATING.md). Never commit any of it.
     does not return it. An existing key file is never overwritten. A loopback
     address ignores the proxy environment. Any other address must be `https://`
     with no path and no query.
+
+### A uv install (`maestro start`)
+
+The command keeps everything in one per-user folder (macOS
+`~/Library/Application Support/Maestro Career Studio`, Windows
+`%APPDATA%\Maestro Career Studio`, Linux
+`$XDG_DATA_HOME/maestro-career-studio`), and the rules above hold unchanged.
+
+- **Both servers bind `127.0.0.1`,** and the Host check of §3 runs on both. The
+  Origin gate and CORS run on the backend only (the web server has no Origin gate).
+  The two ports are fixed at 8001 and 3000 for the Companion; changing
+  them (`MAESTRO_PORT`, `MAESTRO_WEB_PORT` in `maestro.env`) is for side-by-side
+  copies, and never makes either server listen beyond this computer.
+- **`maestro.env` is the only settings file for secrets** (API keys). It is created
+  mode 0600 inside a 0700 folder on macOS and Linux; Maestro refuses to use a
+  folder or file that is a symlink. Values you export in your shell for the
+  `maestro` command are read too, but the file is the supported place. Other
+  secrets are not in that file: keys you save in Settings › AI & models live in
+  the database (§5), and the job-site login and the sync key are files in the
+  Maestro folder (`settings/secrets/job-site-login.json`, `sync-key`).
+- **The web server process gets no API keys.** It is started with your
+  environment minus every secret setting the backend reads (the AI keys, tracing
+  keys, sync settings and key file), and none of the secrets above reaches it; no value from `maestro.env` reaches it
+  except `FRONTEND_ALLOWED_HOSTS`. A test
+  walks the backend's settings and fails when a new secret-bearing field is not
+  on that list. The backend gets `maestro.env`, your environment, and its own
+  data paths.
+- **On Windows, file modes are not enforced.** The 0600 and 0700 modes above do
+  nothing there. Protection is the folder's inherited per-user ACL under
+  `%APPDATA%`, which by default admits only you, administrators and the system.
+  Maestro does not read or change that ACL, and no test checks it, so a folder you
+  moved elsewhere with `MAESTRO_HOME` has whatever access its parent grants.
+- **On Windows, sync's file reads lose one guard.** The open-time refusal of a
+  symlink (`O_NOFOLLOW`) does not exist there. The check that a sync file is a
+  regular file and the packer's refusal of any symlink in a packed tree still apply.
+- **Install and update** fetch code from PyPI; `maestro update` saves a verified
+  snapshot of your database first. [`PRIVACY.md`](PRIVACY.md#what-the-maestro-command-and-first-start-download)
+  lists every address the command contacts.
 
 ---
 

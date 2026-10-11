@@ -429,7 +429,7 @@ def test_profile_and_agent_limits_speak_plainly():
         ("components/settings/auto-apply-section.tsx",
          "hint: `${ATS_SCORE_LEAD_ALL_JOBS} Below this, connected agents ask you which base resume to use.`,"),
         ("components/settings/auto-apply-section.tsx",
-         "Connected agents pick a base resume on their own only when its ATS score leads the next one by this many points."),
+         "Connected agents pick a base resume on their own only when its match score leads the next one by this many points."),
     ):
         assert words in _flat(_read(rel)), (rel, words)
     assert "Proposals per hunt" not in _read("components/settings/auto-apply-section.tsx")
@@ -470,14 +470,21 @@ def test_errors_and_setup_speak_plainly():
     for words in (
         'title: "Add your answers for job forms",',
         'title: "Describe yourself as a candidate (persona)",',
-        '"PDF creation is ready."',
-        '"PDF creation is ready. A few templates need extra software to look their best."',
+        "detail: pdfOutputDetail(status.engines.pdflatex),",
         '`${count(bases, "base resume", "base resumes")}, ${count(items, "item", "items")} in your career history`',
     ):
         assert words in steps, words
+    # The PDF row's words live in lib/pdf-output.ts (lib/pdf-output.test.ts has the cases).
+    pdf_output = _read("lib/pdf-output.ts")
+    for words in (
+        '"PDF creation is ready."',
+        '"PDF creation is ready. A few templates need extra software to look their best."',
+        "`PDF creation is ready, but your TeX needs an update: ${pdflatex.warning}.`",
+    ):
+        assert words in pdf_output, words
     card = _read("components/setup/getting-started-card.tsx")
-    # A PDF step with nothing to do is not a step.
-    assert '!(row.id === "engines" && row.done && status.engines.pdflatex.available)' in card
+    # A PDF step with nothing to do is not a step; a TeX that needs an update is.
+    assert '!(row.id === "engines" && row.done && pdflatex.available && !pdflatex.warning)' in card
     strip = _flat(_read("components/setup/setup-status-strip.tsx"))
     assert '<span className="text-muted-foreground text-label-medium">Setup steps:</span>' in strip
     assert '<Check aria-hidden="true" className="size-3" />' in strip
@@ -628,8 +635,8 @@ def test_a_saved_key_is_checked_on_first_use():
 
 
 def test_no_screen_says_an_ats_rates_the_resume():
-    """Task 24 found two: an ATS score is our estimate of how a system WOULD rate it
-    (ATS_SCORE_LEAD in lib/ats-words.ts), never a reading from an employer's system."""
+    """The match score compares resumes with jobs using fixed rules
+    (ATS_SCORE_LEAD in lib/ats-words.ts), never an employer's reading."""
     root = Path(__file__).resolve().parents[2] / "frontend"
     hits = [
         p.relative_to(root).as_posix()

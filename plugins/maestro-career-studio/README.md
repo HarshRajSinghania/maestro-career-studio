@@ -49,9 +49,12 @@ For a direct URL connection in Claude Code or Codex CLI, open Maestro's
 Settings › Connected agents › **Connect an agent app**, or run:
 
 ```bash
-claude mcp add --transport http maestro-career-studio http://localhost:8001/mcp
+claude mcp add --scope user --transport http maestro-career-studio http://localhost:8001/mcp
 codex mcp add maestro-career-studio --url http://localhost:8001/mcp
 ```
+
+On a uv install (`uv tool install --python 3.12 maestro-career-studio`), `maestro connect`
+runs these for you, and `maestro connect claude-desktop` sets up Claude Desktop.
 
 Choose one connection route per client. The Codex plugin's approval prompts
 below apply to the plugin route.

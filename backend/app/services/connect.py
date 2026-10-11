@@ -30,6 +30,17 @@ def build(profile: str = "full") -> ConnectInfo:
         safe="",
     )
 
+    if settings.maestro_install == "uv":  # the .mcpb is not in the wheel (R10)
+        desktop = ConnectClient(
+            id="claude-desktop", label="Claude Desktop", kind="command",
+            value="maestro connect claude-desktop",
+        )
+    else:
+        desktop = ConnectClient(
+            id="claude-desktop", label="Claude Desktop", kind="download",
+            value="/api/setup/connect/bundle",
+        )
+
     return ConnectInfo(
         backend_url=backend_url,
         mcp_url=mcp_url,
@@ -41,7 +52,8 @@ def build(profile: str = "full") -> ConnectInfo:
         clients=[
             ConnectClient(
                 id="claude-code", label="Claude Code", kind="command",
-                value=f"claude mcp add --transport http {name} {mcp_url}",
+                # --scope user: the CLI's default (local) is private to the folder it runs in.
+                value=f"claude mcp add --scope user --transport http {name} {mcp_url}",
             ),
             ConnectClient(
                 id="codex", label="Codex CLI", kind="command",
@@ -56,10 +68,7 @@ def build(profile: str = "full") -> ConnectInfo:
                 id="vscode", label="VS Code", kind="deeplink",
                 value=f"vscode:mcp/install?{vscode_config}",
             ),
-            ConnectClient(
-                id="claude-desktop", label="Claude Desktop", kind="download",
-                value="/api/setup/connect/bundle",
-            ),
+            desktop,
             ConnectClient(id="other", label="Any MCP agent", kind="url", value=mcp_url),
         ],
     )

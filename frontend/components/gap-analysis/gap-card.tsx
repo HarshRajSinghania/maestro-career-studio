@@ -694,8 +694,8 @@ export function GapCard({
           {gap.score_effect && (
             <p className="text-muted-foreground text-body-small">
               {gap.score_effect === "hygiene"
-                ? "Uses the job's exact words. Helps recruiter searches, but won't change your ATS score."
-                : "Your resume says this differently. Using the job's exact words raises your ATS score."}
+                ? "Uses the job's exact words. Helps recruiter searches, but won't change your match score."
+                : "Your resume says this differently. Using the job's exact words raises your match score."}
             </p>
           )}
           <ActionSegment actions={gap.actions} value={action} onSelect={selectAction} />

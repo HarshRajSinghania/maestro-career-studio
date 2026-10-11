@@ -21,7 +21,7 @@ Three steps: [install it](#1-what-you-need) → [add your resumes](#3-your-first
 - **Career history** — one organized record of your work, built from your resumes. Each job, project or school in it is an **item**; each line is a **bullet**.
 - **Base resume** — your main resume for one kind of role, such as Data Scientist.
 - **Tailoring** — adjusting a base resume to one job, using only things you actually did.
-- **Match score** — Maestro's comparison of your resume with a saved job description. It is not an employer's score or a prediction of an interview. The app labels it **ATS score**.
+- **Match score** — Maestro's comparison of your resume with a saved job description. It is not an employer's score or a prediction of an interview.
 - **AI service** — OpenAI or Gemini, whichever you choose; you add its key in Settings › AI & models.
 - **Companion** — the Maestro CS browser extension, a side panel in Chrome.
 - **Assistant** — the chat inside the app. **Connected agents** are AI assistants outside it (Claude, Codex, ChatGPT desktop) that use the app over MCP.
@@ -32,6 +32,10 @@ them at any time: the **Companion**, a browser extension for saving and filling 
 assistant** ([§5](#5-connect-your-ai-assistant-optional)).
 
 ## 1. What you need
+
+> **Comfortable in a terminal and want no Docker?** Skip this list and use the
+> [uv route](#or-install-with-uv-no-docker-no-git) in step 2. It needs only
+> [uv](https://docs.astral.sh/uv/), which installs Python for you.
 
 - **Docker.** Docker is a free program that runs Maestro in a self-contained
   box on your computer, so you don't install anything else. On macOS or
@@ -50,11 +54,11 @@ assistant** ([§5](#5-connect-your-ai-assistant-optional)).
   ([below](#on-windows-use-wsl)). On Linux, use your
   package manager.
 - **Disk space.** About a 1 GB download, which takes roughly 3–4 GB once
-  unpacked ([details](../README.md#prerequisites)).
+  unpacked ([details](SETUP_REFERENCE.md#prerequisites)).
 - **An AI key — optional for now.** OpenAI or Gemini (or a local
   OpenAI-compatible server). You add it inside the app after it starts.
   Without one, scoring, PDFs and tracking still work
-  ([No-Key Mode](../README.md#do-you-need-an-api-key)).
+  ([No-Key Mode](SETUP_REFERENCE.md#do-you-need-an-api-key)).
 
 You do **not** need Python or Node.
 
@@ -120,7 +124,7 @@ Want to build the app from source instead? See [CONTRIBUTING.md](../CONTRIBUTING
 | You see | It means | Do |
 | --- | --- | --- |
 | `Cannot connect to the Docker daemon` | Docker isn't running | Start Docker Desktop, wait until it says running, run the command again |
-| `port is already allocated` | Another program uses a port the app needs | Change the `*_HOST_PORT` values in `.env` ([details](../README.md#troubleshooting--common-questions)) |
+| `port is already allocated` | Another program uses a port the app needs | Change the `*_HOST_PORT` values in `.env` ([details](SETUP_REFERENCE.md#troubleshooting--common-questions)) |
 | The page loads but everything shows errors | The app is still starting | Wait a minute. It is ready when <http://localhost:8001/health> shows `{"status":"ok"}` |
 | You added a key to `.env` after starting | Keys are read at start | Run `docker compose restart backend` |
 | AI features fail although Settings says "Configured" | An old key is being used | Enter the key again in Settings › AI & models and press **Test** |
@@ -147,13 +151,95 @@ anywhere else.
   rm -rf data/*
   ```
 
+### Or install with uv (no Docker, no Git)
+
+uv installs Maestro as a command, and Python 3.12 with it. The package carries the
+web app and its own Node, so there is nothing else to install. It runs on macOS,
+Linux and Windows (x64), natively; on Windows you do not need WSL for this route.
+
+1. **Install uv, once.** On macOS or Linux:
+
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+   On Windows, in PowerShell:
+
+   ```powershell
+   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
+
+   Then **open a new terminal** so the `uv` command is found.
+2. **Install Maestro and start it:**
+
+   ```bash
+   uv tool install --python 3.12 maestro-career-studio
+   maestro start
+   ```
+
+   `maestro start` runs Maestro in the background and opens
+   **<http://localhost:3000>**. Closing the terminal does not stop it. The first
+   start downloads the scoring model (about 100 MB, once) from Hugging Face,
+   so give it a minute or two. If the terminal says `maestro` is not found, run
+   `uv tool update-shell` and open another new terminal.
+
+   Best effort, untested: on **Windows ARM64** the PDF engine (typst) has no ARM64 wheel, so use
+   `uv tool install --python cpython-3.12-windows-x86_64-none maestro-career-studio`
+   (x64 Python under emulation). **Alpine and other musl Linux** are not supported; use a glibc distro or Docker.
+
+Then carry on with step 3. The commands you will use:
+
+| Command | What it does |
+| --- | --- |
+| `maestro status` | Tells you whether Maestro is running and which version (`--offline` skips the check for a newer release) |
+| `maestro stop` / `maestro restart` | Stop it; stop and start it again (needed after you edit `maestro.env`) |
+| `maestro open` | Opens the app in your browser |
+| `maestro logs` | Shows the end of the backend log (`maestro logs web`, `supervisor` or `update` for the others; `-f` follows) |
+| `maestro autostart on` | Starts Maestro every time you log in (`off` and `status` too) |
+| `maestro backup` | Saves a snapshot of your data now |
+| `maestro update` | Saves a snapshot, updates and restarts ([step 7](#7-keeping-it-up-to-date)) |
+| `maestro connect` | Adds Maestro to your AI assistant ([step 5](#5-connect-your-ai-assistant-optional)) |
+
+**Your data** sits in one folder, not in a project folder:
+
+| System | Folder |
+| --- | --- |
+| macOS | `~/Library/Application Support/Maestro Career Studio` |
+| Windows | `%APPDATA%\Maestro Career Studio` |
+| Linux | `$XDG_DATA_HOME/maestro-career-studio` (default `~/.local/share/maestro-career-studio`) |
+
+It holds the database, your resumes and settings, `backups/`, `logs/` and
+`maestro.env`, the one settings file (API keys and, if ever needed, port
+overrides; `maestro restart` after editing it). To uninstall, run
+`maestro autostart off` and `maestro stop` first (otherwise the login item keeps
+retrying a launcher that is gone), then `uv tool uninstall maestro-career-studio`.
+That leaves the folder; deleting the folder deletes your data. Add your AI key in the app (Settings › AI & models), as in the
+Docker route.
+
+- **Don't run a Docker install and a uv install at the same time.** They are
+  separate copies with separate data, and both use ports 8001 and 3000. Coming
+  from Docker? `maestro import-docker` moves your data over once
+  ([steps](UPDATING.md#move-from-docker-to-the-uv-install)).
+- **The Companion needs no changes**: it expects the same ports. Load it from
+  the repository's `extension` folder ([step 4](#4-the-companion-browser-extension-optional)).
+- **PDFs** render with the Typst engine that ships inside. LaTeX templates need
+  TeX on your computer; without it Maestro builds them through Typst and says so.
+  TeX Live 2025 needs its pdfTeX update (1.40.28 or later): on 1.40.27 a
+  template whose words would print on top of each other is refused. Install
+  MacTeX 2026, or update TeX Live 2025 from its final repository:
+  `sudo tlmgr option repository https://ftp.math.utah.edu/pub/tex/historic/systems/texlive/2025/tlnet-final && sudo tlmgr update --self --all`
+- **Something wrong?** `maestro status` and `maestro logs` come first. A port in
+  use is named in the message. `maestro check` prints the install's facts as JSON
+  to paste into an issue; it makes no network call.
+
 ## 3. Your first tailored resume
 
 Five steps from nothing to a PDF:
 
 1. **Import your resumes.** Follow the setup screen, or go to **Career history**
    and click **Import resumes and documents**. You can add up to 10 files at a time (PDF, DOCX, Markdown or
-   text). Add old versions too — they all hold useful experience.
+   text). Add old versions too — they all hold useful experience. Use the **Other documents** tab for
+   PowerPoint decks (.pptx), certificates and reports; these add draft bullets to career history.
 2. **Review and approve bullets in your career history.** Imported bullets arrive as
    drafts under **Drafts to review**. Only *approved* bullets ever appear on a resume. Merge duplicates
    while you're there.
@@ -185,7 +271,7 @@ Five steps from nothing to a PDF:
 - **Track your applications** — mark them applied and record outcomes. After
   about 10 saved jobs, **Analytics** shows what employers keep asking for.
 - **Choose your models** — see
-  [choosing models](../README.md#5-choose-your-models-deliberately).
+  [choosing models](USING_MAESTRO.md#5-choose-your-models-deliberately).
 
 ## 4. The Companion browser extension (optional)
 
@@ -205,6 +291,12 @@ folder to your `C:` drive from the Ubuntu window and load the copy instead:
 `cp -r extension /mnt/c/Users/<your-windows-user>/maestro-extension`. The copy
 doesn't update itself, so repeat that command after every update.
 
+On a uv install there is no project folder, because the package does not carry the
+extension: run `maestro --version`, then on GitHub open Releases › that version
+(`vX.Y.Z`) › **Source code** and download it. Unpack it and load its `extension`
+folder, so the Companion matches the Maestro you run. It then works unchanged
+against Maestro on the default ports.
+
 There is nothing to set up if you kept the default ports. If you changed the
 ports in `.env`, open `chrome://extensions` → **Details** on the Maestro CS
 Companion card → **Extension options**. Set **Backend address** and **App address**,
@@ -215,7 +307,7 @@ computer. There is no on/off switch in the panel: to turn it off, set
 `telemetryEnabled` to `false` in the extension's stored settings
 (`chrome.storage.sync`). **Analytics → Autofill coverage → Clear data** deletes
 what was collected. Full detail: [`extension/README.md`](../extension/README.md)
-and the [README's Companion section](../README.md#the-companion-browser-extension).
+and the [Companion section of Using Maestro CS](USING_MAESTRO.md#the-companion-browser-extension).
 
 ## 5. Connect your AI assistant (optional)
 
@@ -226,9 +318,31 @@ connectors are outside this setup.
 Open Settings › Connected agents › **Connect an agent app**. Its **Tool set**
 selector defaults to `full` (all 88 tools). Choose one set per chat.
 
+### On a uv install: `maestro connect`
+
+If you installed with uv, one command per app does the setup, and it needs
+Maestro's folder and nothing else:
+
+```bash
+maestro connect                    # lists the apps and which already have Maestro
+maestro connect claude-desktop
+maestro connect claude-code        # also: codex, cursor, vscode, other
+```
+
+`claude-code` and `codex` run that app's own `mcp add` command for you (with
+`--scope user` for Claude Code, so Maestro shows up in every folder); `cursor` and
+`vscode` open the install link; `other` prints the URL. `claude-desktop` edits
+Claude Desktop's settings file with the **full path** to the `maestro` command
+(Desktop does not see your terminal's PATH) and keeps a `.bak` copy of the old
+file. Desktop rewrites that file while it runs, so if it is open the command waits
+in the background and writes after you quit Desktop; `--now` writes at once, and
+`--print` shows the entry without changing anything. Add `--profile hunt` (or
+`apply`, `explore`, `templates`, `career`) for a smaller tool set. Restart the
+app afterwards so it sees the tools.
+
 ### Claude Desktop
 
-Download `maestro-career-studio.mcpb` from the card or the
+On a Docker install, download `maestro-career-studio.mcpb` from the card or the
 [release](https://github.com/seinun-ai/maestro-career-studio/releases), then
 double-click it to install in Claude Desktop. You can also use Settings →
 **Extensions** → **Install Extension** and select the downloaded file.
@@ -246,11 +360,12 @@ for Cursor or VS Code, and copies the URL for any other HTTP MCP client. With
 the default Docker install, the commands are:
 
 ```bash
-claude mcp add --transport http maestro-career-studio http://localhost:8001/mcp
+claude mcp add --scope user --transport http maestro-career-studio http://localhost:8001/mcp
 codex mcp add maestro-career-studio --url http://localhost:8001/mcp
 ```
 
 Use `/mcp` exactly — no trailing slash (`POST /mcp/` redirects with 307).
+`--scope user` makes Maestro available in every folder; without it, Claude Code adds it to the current project only.
 Scoped tool sets use `/mcp/hunt`, `/mcp/apply`, `/mcp/explore`, `/mcp/templates`
 or `/mcp/career`. If you changed the backend port, copy the card's values.
 
@@ -351,7 +466,14 @@ To keep that work going while your laptop is off, see
 
 ## 7. Keeping it up to date
 
-From the project folder:
+**Installed with uv?** Run `maestro update`. It checks PyPI, shows any breaking
+changes from the changelog, saves a snapshot of your data to `backups/` in your
+Maestro folder, and only then stops Maestro, updates it and starts it again
+(on Windows, quit Claude Desktop first, since it keeps `maestro mcp` running; the update finishes in the background in about a minute: watch
+`logs\update.log` in your Maestro folder for `finished`, then run `maestro status`). The reload-the-extension and restart-your-assistant steps below
+apply here too. [UPDATING.md](UPDATING.md#updating-a-uv-install) has the detail.
+
+**On Docker**, from the project folder:
 
 ```bash
 ./scripts/update.sh
@@ -372,6 +494,6 @@ there is anything new, run `./scripts/update.sh --check` — it changes nothing.
   Claude Desktop bundle once if yours is the older Docker-based one. The script
   reminds you of these steps.
 
-Updating from an older version? Read [UPDATING.md](UPDATING.md) first. The
-[README's Updating section](../README.md#updating) covers the manual steps,
-choosing a specific version, and rolling back.
+Updating from an older version? Read [UPDATING.md](UPDATING.md) first. It covers
+the manual steps, choosing a specific version, and rolling back. The README's
+[Updating section](../README.md#updating) has the short version.

@@ -8,15 +8,15 @@
  */
 
 /**
- * "ATS score" spelled out once per surface, where it first shows (conventions: Canonical terms). It is
- * the app's own estimate, not a reading from an employer's system: `services/ats` scores the resume.
+ * "Match score" explained once per surface, where it first shows (conventions: Canonical terms). It is
+ * the app's own fixed-rules match with a job's description: `services/ats` scores the resume.
  */
 export const ATS_SCORE_LEAD =
-  "An ATS score (0 to 100) is our estimate of how an applicant tracking system would rate each resume for this job.";
+  "A match score (0 to 100) uses fixed rules to compare each resume with this job's description.";
 
 /** The same, where a surface shows scores across many jobs (Analytics › Resume fit). */
 export const ATS_SCORE_LEAD_ALL_JOBS =
-  "An ATS score (0 to 100) is our estimate of how an applicant tracking system would rate a resume for a job.";
+  "A match score (0 to 100) uses fixed rules to compare a resume with a job's description.";
 
 /**
  * The Score tab's banner when EVERY resume draws the engine's low-coverage warning (`ats/engine.py`:

@@ -154,7 +154,7 @@ it armed. Three rules hold the shape up:
 
 Above the rail sits the panel's whole header, and it is one block: the job's
 identity and the match chip ("Not saved yet" for a job Maestro CS does not
-have, "Saved", or the application's status), the Base → Tailored ATS rings
+have, "Saved", or the application's status), the Base → Tailored match score rings
 under them (read from stored scores, never computed here; with one ring, "Base
 resume score" and "Tailoring can raise it."; with none, "Not scored yet."), and
 one deep link on the last line, right-aligned, with **Refresh** at that line's
@@ -231,7 +231,7 @@ asking permission of itself.
   the DOM of pages that carry no form yet, and the form verdict at bind time is
   false anyway on a late SPA render, so requiring a form would refuse exactly
   the flow the picker exists for.
-- **The base resumes are RANKED by this job's own ATS scores**, best first, each
+- **The base resumes are RANKED by this job's own match scores**, best first, each
   row showing its number — the same per-base scores the Score and tailor tab is
   built on, so the choice (and the number Quick tailor reports afterwards) is not
   blind. **Saving the job scores the bases in the same press** (`addJob` then
@@ -241,9 +241,9 @@ asking permission of itself.
   never loops and a tab round trip never re-asks; Refresh asks again. The cost is the deterministic ATS engine, one local pass
   per base resume and no model call; the web app's Score and tailor tab spends
   it the same way on a first visit. Scores are otherwise READ (cheap, computes
-  nothing). The base list is also where the panel says, once, what an ATS score
-  is: the web app's `ATS_SCORE_LEAD` sentence, our estimate and not an
-  employer's reading. A resume with no score says "not scored" rather than zero
+  nothing). The base list is also where the panel says, once, what a match score
+  is: the web app's `ATS_SCORE_LEAD` sentence, a fixed-rules comparison with the
+  job description. A resume with no score says "not scored" rather than zero
   and sorts last, the scored best is preselected until you pick another, and a
   pick made by hand wins over the ranking permanently. For a saved job with no
   application the scores are a stage input, so `loadContext` reads them before

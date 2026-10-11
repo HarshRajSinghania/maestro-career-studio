@@ -1383,7 +1383,7 @@ def explore_role_mix_over_time() -> Any:
 @mcp.tool(**_read("Resume Fit Distribution"))
 @_guard
 def explore_fit_distribution() -> Any:
-    """How each base resume's ATS composites (deterministic engine) are
+    """How each base resume's match scores (deterministic engine) are
     distributed across jobs. Each row's `display_name` is the resume's own name
     (null for a slug with no row); the slug is an internal identifier."""
     return _client.explore_fit_distribution()
@@ -1398,8 +1398,8 @@ def explore_gap_frequency(
     limit: int | None = None,
 ) -> Any:
     """Skills that recur as gaps across saved JDs (best-scoring base resume vs JD,
-    before tailoring), ranked by how many jobs want them and their ATS point
-    headroom. This is RECURRING DEMAND, not a "you lack this" or learn-next list:
+    before tailoring), ranked by how many jobs want them and their potential match score
+    gain. This is RECURRING DEMAND, not a "you lack this" or learn-next list:
     a skill can recur because the evidence lives on a different base resume, is
     stale, or is merely mis-placed on this one. The learn-vs-move
     distinction is the per-skill `tier` on build_areas (`build` = no resume
@@ -1422,14 +1422,14 @@ def explore_gap_frequency(
     )
 
 
-@mcp.tool(**_read("ATS Score Trend"))
+@mcp.tool(**_read("Match Score Trend"))
 @_guard
 def explore_ats_over_time(
     role_category: str | None = None,
     level: str | None = None,
     employment_type: str | None = None,
 ) -> Any:
-    """Average ATS composite over time (weekly), split by phase (base vs tailored)
+    """Average match score over time (weekly), split by phase (base vs tailored)
     and role category. Optionally filtered by role/level/type."""
     return _client.explore_ats_over_time(
         role_category=role_category, level=level, employment_type=employment_type
@@ -1443,7 +1443,7 @@ def explore_tailoring_lift(
     level: str | None = None,
     employment_type: str | None = None,
 ) -> Any:
-    """How much tailoring lifts the ATS score (base->tailored), averaged per role
+    """How much tailoring lifts the match score (base->tailored), averaged per role
     category, plus an overall row. Optionally filtered by role/level/type."""
     return _client.explore_tailoring_lift(
         role_category=role_category, level=level, employment_type=employment_type
@@ -1476,7 +1476,7 @@ def score_ats(
     brief: bool = False,
     include_other_countries: bool = False,
 ) -> Any:
-    """Deterministic hybrid ATS score (no LLM): deterministic lexical layers +
+    """Deterministic hybrid match score (no LLM): deterministic lexical layers +
     anchored pinned-model semantic matching + section-level semantic_fit. Omit
     target to score ALL base resumes (fast).
 
@@ -1549,10 +1549,10 @@ def score_ats(
     }
 
 
-@mcp.tool(**_read("Compare ATS Scores"))
+@mcp.tool(**_read("Compare Match Scores"))
 @_guard
 def compare_ats(application_id: str) -> Any:
-    """Before/after ATS comparison for an application: composite and per-layer deltas
+    """Before/after match score comparison for an application: composite and per-layer deltas
     plus a per-skill diff (absent→matched, skills-list-only→dual, decayed→recent).
     Computes any missing phase row on demand."""
     return _client.compare_ats(application_id)
@@ -1756,7 +1756,7 @@ def tailor_session(
 
     Optional user_prompt adds free-form tailoring guidance. Creates the application
     from the base resume plus the ops, scores the result, and returns
-    {session, compare, compare_error, next}. compare holds the before/after ATS
+    {session, compare, compare_error, next}. compare holds the before/after match score
     deltas; it may be null with compare_error set if the scores weren't comparable
     — the tailor still succeeded in that case and the application exists, so no
     retry is needed. `kb_writeback_skips` derives from each user_input
@@ -1894,7 +1894,7 @@ def resume_proposal(proposal_id: str) -> Any:
 @mcp.tool(**_read("Get Final Review"))
 @_guard
 def get_final_review(proposal_id: str) -> Any:
-    """Compact final-review bundle: job summary, chosen base/ATS delta, PDF readiness,
+    """Compact final-review bundle: job summary, chosen base/match score delta, PDF readiness,
     QA answers, EEO consent flag (no values), blocked/manual items, evidence manifest.
     Requires an existing proposal — a 404 usually means propose_application was
     not called (it accepts application_id to late-link) or an application id

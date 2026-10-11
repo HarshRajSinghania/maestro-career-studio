@@ -196,6 +196,19 @@
       {"path": "backend/tests/sync/test_home_endpoints.py", "symbol": "test_the_always_on_copy_has_no_home_routes"},
       {"path": "backend/tests/sync/test_jobs_bundle.py", "symbol": "test_each_file_path_must_sit_inside_its_own_applications_folder"},
       {"path": "backend/tests/sync/test_jobs_bundle.py", "symbol": "test_a_bundle_may_not_aim_at_another_jobs_folder_by_inode_where_the_disk_ignores_case"}
+    ],
+    "inv-one-home": [
+      {"path": "backend/tests/maestro_cs/test_home.py", "symbol": "test_default_home_per_platform"},
+      {"path": "backend/tests/maestro_cs/test_home.py", "symbol": "test_backend_env_paths_and_enforced_values"},
+      {"path": "backend/tests/maestro_cs/test_home.py", "symbol": "test_backend_env_strips_foreign_data_pointers"},
+      {"path": "backend/maestro_cs/home.py", "symbol": "def default_home"}
+    ],
+    "inv-env-before-app": [
+      {"path": "backend/tests/maestro_cs/test_maintenance.py", "symbol": "test_importing_the_cli_alone_imports_no_app_module"},
+      {"path": "backend/tests/maestro_cs/test_maintenance.py", "symbol": "test_check_binds_settings_to_the_home_after_apply_env"},
+      {"path": "backend/tests/maestro_cs/test_bridge.py", "symbol": "test_importing_the_bridge_writes_nothing_and_never_loads_the_app"},
+      {"path": "backend/tests/maestro_cs/test_home.py", "symbol": "test_apply_env_sets_strips_and_chdirs"},
+      {"path": "backend/maestro_cs/home.py", "symbol": "def apply_env"}
     ]
   },
   "unpinned": {
