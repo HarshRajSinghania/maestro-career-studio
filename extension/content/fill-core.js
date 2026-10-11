@@ -198,15 +198,18 @@
     return hits.every((h) => h.text === hits[0].text && pathOf(h.el, pop) === where) ? { hit: hits[0] } : { ambiguous: true };
   };
   // One animation frame (a virtualized list draws the rows for its new
-  // scroll position on the next one), bounded: a hidden tab runs none, so a
-  // timer stands in after FRAME_MS.
-  const frame = () => new Promise((resolve) => {
-    const timer = setTimeout(resolve, FRAME_MS);
-    requestAnimationFrame(() => {
-      clearTimeout(timer);
-      resolve();
+  // scroll position on the next one), bounded: a hidden tab runs none, so
+  // the hidden-tab wait stands in after FRAME_MS without a throttled timer.
+  const frame = () => {
+    if (document.hidden) return b().sleep(FRAME_MS);
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, FRAME_MS);
+      requestAnimationFrame(() => {
+        clearTimeout(timer);
+        resolve();
+      });
     });
-  });
+  };
   const redrawn = async (t) => {
     await frame();
     await b().settle(t, 40);

@@ -1184,7 +1184,8 @@ fill-loop):
 `onUpdate(record)`, `now()`, `sleep(ms)`, `random()`, `cancelled(record)`.
 
 **Exports:** `ns.queueRun = { drive(record, deps), next(records, limits), LIMITS }`, where `LIMITS =
-{ parallel: 1, waitingMax: 10, stepMax: 15, changeMs: 15000, paceMs: [2000, 6000] }` (parallel 1: the spike result; see "Spike result").
+{ parallel: 3, waitingMax: 10, stepMax: 15, changeMs: 15000, paceMs: [2000, 6000] }`, plus
+`HIDDEN_TABS_OK = true` (Task 1a's acceptance passed; see "Spike result").
 
 **`drive(record, deps)`, the per-tab loop:**
 1. `opening`: `tabId = openTab(openUrl)`.
@@ -1325,7 +1326,7 @@ Parallel runs and the user's own Autofill must not share a changed budget.
   bindings), `extension/panel/panel.html` (after `actions/track.js`)
 - Modify: `extension/panel/panel.js`:
   - new `card` fields `view: "page" | "queue"`, `queue: null`, `runs: []`, `runWindowId: null`,
-    `runParallel: 1` (3 once Task 1a passed);
+    `runParallel: 3` (Task 1a passed);
   - `render()` draws the **This page | Queue (N)** switch at the top (a tablist; N = queued count)
     and either today's rail (`page`) or the Queue view (`queue`, Task 20's `panel/runs.js`);
   - fresh-open view rule: `view = "queue"` when a run is active or the active tab has neither a
@@ -1689,3 +1690,18 @@ Findings that change the design:
   inside the run window only); others wait or sit at Ready to submit. `LIMITS.parallel` defaults to
   1. Owner decision (B): Task 1a makes the engine work in hidden and covered tabs; only once Task
   1a's acceptance passes may `parallel` go above 1 (Task 19 reads `ns.queueRun.LIMITS.parallel`).
+
+**After Task 1a** (measured 2026-10-11, same setup, full run including the 6-minute case):
+
+| Fixture | Front tab | Background (immediate) | Background after 6 min |
+|---|---|---|---|
+| workday_text.html | 5/5, 308 ms | 5/5, 306 ms | 5/5, 306 ms |
+| workday_listbox.html | 5/5, 1670 ms | 5/5, 2644 ms (1.6×) | 5/5, 2635 ms (1.6×) |
+| workday_date.html | 5/5, 619 ms | 5/5, 615 ms | 5/5, 615 ms |
+
+**Acceptance passed** (5/5 everywhere, every median within 2× of the front tab). So: Task 17 sets
+`HIDDEN_TABS_OK = true` and `LIMITS.parallel` defaults to **3** (the 1 to 5 control shows); the
+"Keep the run window visible" pause in Task 19 is not built. The runner still never focuses the run
+window. Cost to watch: the hidden-tab wait is a MessageChannel loop, so a background tab keeps one
+CPU core busy while it waits; acceptable for a fill's length, and the run log's timings will show
+if it hurts.

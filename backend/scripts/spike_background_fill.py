@@ -475,10 +475,10 @@ def measure(server, debug_url, holder, process, names, *, visibility, delay=0):
         return replacement
 
     trials = [new_trial(name) for name in names]
-    # Keep three tabs: the holder and two trial slots (one idle when
-    # measuring a single fixture). A retry replaces only the failed slot.
-    if len(targets) == 1:
-        open_tab(server.base_url + "/idle")
+    # Reassert the foreground after the last /json/new, before /ready lets
+    # the driver verify visibility and start its scheduled wait. A lone
+    # hidden fixture needs only the holder in front, not an extra idle slot.
+    debug_http(debug_url, "/json/activate/" + active)
     server.arm(trials)
     rows = server.collect(trials, timeout=delay + 600, process=process, retry=retry)
     for trial in trial_targets:

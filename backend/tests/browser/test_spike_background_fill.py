@@ -374,6 +374,56 @@ def test_every_new_tab_restores_the_intended_foreground(monkeypatch, server, vis
         monkeypatch.setattr(server, "arm", arm)
 
 
+def test_six_minute_lone_fixture_waits_behind_the_holder(monkeypatch):
+    module = spike()
+    # This test exercises tab arrangement and the real trial bookkeeping,
+    # without a listening HTTP socket or a six-minute sleep.
+    with monkeypatch.context() as no_listener:
+        no_listener.setattr(module.SpikeServer, "server_bind", lambda self: setattr(self, "server_port", 0))
+        no_listener.setattr(module.SpikeServer, "server_activate", lambda self: None)
+        server = module.SpikeServer()
+    tabs = {"holder": server.base_url + "/idle"}
+    active = "holder"
+    arm = server.arm
+
+    def debug(_base, path, **_kwargs):
+        nonlocal active
+        if path.startswith('/json/new?'):
+            active = str(len(tabs))  # Creating a target brings it to the front.
+            tabs[active] = unquote(path.split('?', 1)[1])
+            return {"id": active}
+        if path.startswith('/json/activate/'):
+            active = path.rsplit('/', 1)[1]
+        elif path.startswith('/json/close/'):
+            del tabs[path.rsplit('/', 1)[1]]
+
+    def armed(trials):
+        # Exercise the real lone-fixture case, without an artificial idle slot.
+        assert len(tabs) == 2
+        assert active == "holder"
+        arm(trials)
+        for trial in trials:
+            url = next(url for url in tabs.values() if trial in url)
+            assert parse_qs(urlsplit(url).query)["delay"] == ["360"]
+            # The in-page driver's existing visibility checks guard both the
+            # scheduled wait's start and its wake-up (tested separately above).
+            server.check_visibility({"trial": trial, "visibility": "hidden",
+                                     "phase": "before scheduled wait"})
+            for run in range(module.RUNS):
+                server.accept_result({**receipt(trial), "run": run, "hidden_ms": 360_001})
+
+    monkeypatch.setattr(module, "debug_http", debug)
+    monkeypatch.setattr(server, "arm", armed)
+    try:
+        result = module.measure(server, "debug", "holder", None, ["workday_text.html"],
+                                visibility="hidden", delay=360)
+        assert len(result["workday_text.html"]) == module.RUNS
+        assert tabs == {"holder": server.base_url + "/idle"}
+    finally:
+        monkeypatch.setattr(server, "arm", arm)
+        server.server_close()
+
+
 @pytest.mark.parametrize("mismatches", [1, 3, 4])
 def test_visibility_retries_replace_only_the_failed_trial(monkeypatch, server, mismatches):
     module = spike()
