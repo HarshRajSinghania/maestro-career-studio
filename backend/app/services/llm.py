@@ -12,6 +12,7 @@ from openai import OpenAI
 
 from app.config import settings
 from app.services import tracing
+from app.services.llm_providers.openai_compat import completion_extras  # noqa: F401 — re-exported until Task 12 moves chat and the probe
 from app.services.llm_providers.errors import (  # noqa: F401 — re-exported; callers use llm.*
     _KEY_REFUSED,
     _TIMED_OUT,
@@ -82,23 +83,6 @@ def any_model_key_configured() -> bool:
     see `_get_client`). The ONE definition for setup status, KB seeding and the startup log."""
     return bool(get_base_url() or get_openai_key() or get_gemini_key()
                 or get_anthropic_key() or get_openrouter_key())
-
-
-def completion_extras(model: str) -> dict[str, Any]:
-    """Per-model kwargs for chat.completions.create, for every caller of it.
-
-    The GPT-5.6 family rejects function tools on /v1/chat/completions unless
-    reasoning_effort is "none" (400 otherwise); older models like gpt-4o reject
-    the reasoning_effort parameter entirely, so it must stay conditional.
-
-    This lives here, next to the client, because the chat agent is not the only
-    caller that passes tools: the capability probe does too, and when it carried
-    its own copy of the rule (it carried none) it measured a call the app never
-    makes and reported a working chat model as tool-incapable.
-    """
-    if model.startswith("gpt-5.6"):
-        return {"reasoning_effort": "none"}
-    return {}
 
 
 ANTHROPIC_BASE_URL = "https://api.anthropic.com"  # explicit: never ANTHROPIC_BASE_URL from a shell

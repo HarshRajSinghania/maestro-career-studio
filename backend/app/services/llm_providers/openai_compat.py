@@ -1,12 +1,12 @@
 """OpenAI chat.completions wire format: OpenAI, custom servers (Ollama, LM Studio, vLLM) and
-OpenRouter (Task 6). Quirks for that wire format live here and in `llm.completion_extras`."""
+OpenRouter. Every quirk of that wire format, model-id rules included, lives in this file."""
 
 from __future__ import annotations
 
 import base64
 import json
 import re
-from typing import Any, Callable
+from typing import Any, Callable, Iterable, Iterator
 
 import openai
 from urllib.error import HTTPError, URLError
@@ -21,19 +21,47 @@ from app.services.llm_providers.errors import (
     logger,
 )
 from app.services.llm_providers.types import (
+    Finish,
     ImagePart,
     Message,
+    ModelRef,
+    ProviderMeta,
+    ReasoningPart,
     Request,
     Response,
+    StreamEvent,
+    TextDelta,
     TextPart,
+    ToolCallPart,
+    ToolResultPart,
     Usage,
 )
 
 
 NO_ZDR_MESSAGE = "OpenRouter has no zero-retention provider for this model. Pick another model."
 # OpenRouter's 404 text when the forced zdr/data_collection preferences leave no endpoint.
-# Wording unconfirmed live (Task 14): matched loosely on its two stable phrases.
-_NO_ZDR_RE = re.compile(r"no endpoints|data policy", re.IGNORECASE)
+# Wording unconfirmed live (Task 14). NOT "no endpoints": OpenRouter's capability 404
+# ("No endpoints found that support tool use") must keep the model/capability wording.
+_NO_ZDR_RE = re.compile(r"data policy|zero data retention", re.IGNORECASE)
+
+# OpenAI: "Starting with GPT-5.4, Chat Completions does not support tool calling with
+# `reasoning_effort` values other than `none`" (migration guide, checked 2026-10-10).
+_TOOLS_NEED_NO_REASONING = re.compile(r"^gpt-5\.[4-9]")
+
+
+def completion_extras(model: str) -> dict[str, Any]:
+    """Per-model kwargs for chat.completions.create, for every caller of it.
+
+    GPT-5.4 and later reject function tools on /v1/chat/completions unless reasoning_effort is
+    "none" (400 otherwise); older models like gpt-4o reject the parameter entirely, so it stays
+    conditional. The id is tested after any vendor prefix, so OpenRouter's `openai/gpt-5.x-...`
+    matches. GPT-6 is not covered: OpenAI's page does not name it (Task 14 checks live).
+    The capability probe passes tools too and must send the same kwargs as chat, or it measures
+    a call the app never makes and reports a working chat model as tool-incapable.
+    """
+    if _TOOLS_NEED_NO_REASONING.match(model.rsplit("/", 1)[-1]):
+        return {"reasoning_effort": "none"}
+    return {}
 
 
 _OPENROUTER_MAX_PAGES = 20
@@ -73,6 +101,111 @@ def build_generate_kwargs(req: Request, *, json_mode: bool) -> dict[str, Any]:
     return kwargs
 
 
+def _reasoning_details(msg: Message, provider: str) -> list[Any]:
+    if provider != "openrouter":
+        return []
+    out: list[Any] = []
+    for p in msg.parts:
+        if (isinstance(p, ReasoningPart) and p.meta is not None and p.meta.provider == "openrouter"):
+            out.extend(p.meta.data.get("reasoning_details") or [])
+    return out
+
+
+def build_chat_kwargs(req: Request) -> dict[str, Any]:
+    """Streaming chat call: the whole transcript, tools, and the per-model extras."""
+    messages: list[dict[str, Any]] = []
+    if req.system:
+        messages.append({"role": "system", "content": req.system})
+    for msg in req.messages:
+        if msg.role == "user":
+            messages.append({"role": "user", "content": _user_content(msg)})
+        elif msg.role == "assistant":
+            calls = msg.tool_calls
+            out: dict[str, Any] = {"role": "assistant", "content": msg.text or None}
+            if not calls:
+                out["content"] = msg.text
+            else:
+                out["tool_calls"] = [
+                    {"id": c.id, "type": "function",
+                     "function": {"name": c.name, "arguments": json.dumps(c.arguments or {})}}
+                    for c in calls
+                ]
+            details = _reasoning_details(msg, req.model.provider)
+            if details:
+                out["reasoning_details"] = details
+            messages.append(out)
+        else:
+            for p in msg.parts:
+                if isinstance(p, ToolResultPart):
+                    messages.append({"role": "tool", "tool_call_id": p.tool_call_id, "content": p.content})
+    kwargs: dict[str, Any] = {"model": req.model.model, "messages": messages, "stream": True}
+    if req.tools:
+        kwargs["tools"] = [
+            {"type": "function",
+             "function": {"name": t.name, "description": t.description, "parameters": t.parameters}}
+            for t in req.tools
+        ]
+    kwargs.update(completion_extras(req.model.model))
+    return kwargs
+
+
+def _delta_reasoning_details(delta: Any) -> list[Any]:
+    raw = getattr(delta, "reasoning_details", None) or (getattr(delta, "model_extra", None) or {}).get(
+        "reasoning_details")
+    if not isinstance(raw, list):
+        return []
+    return [d.model_dump() if hasattr(d, "model_dump") else d for d in raw]
+
+
+def accumulate(chunks: Iterable[Any], ref: ModelRef) -> Iterator[StreamEvent]:
+    """Chunks -> TextDeltas, then one Finish. Tool-call deltas join by index; arguments that are
+    not a JSON object become None. OpenRouter `reasoning_details` ride in one leading ReasoningPart."""
+    text: list[str] = []
+    calls: dict[int, dict[str, Any]] = {}
+    details: list[Any] = []
+    stop_reason, usage, answered_by = "stop", None, ref.model
+    for chunk in chunks:
+        usage = _usage(chunk) or usage
+        if isinstance(getattr(chunk, "model", None), str):
+            answered_by = chunk.model
+        if not chunk.choices:
+            continue
+        choice = chunk.choices[0]
+        if isinstance(getattr(choice, "finish_reason", None), str):
+            stop_reason = choice.finish_reason
+        delta = choice.delta
+        if delta is None:
+            continue
+        if ref.provider == "openrouter":
+            details.extend(_delta_reasoning_details(delta))
+        if delta.content:
+            text.append(delta.content)
+            yield TextDelta(delta.content)
+        for tc in delta.tool_calls or []:
+            slot = calls.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+            if tc.id:
+                slot["id"] = tc.id
+            if tc.function:
+                if tc.function.name:
+                    slot["name"] = tc.function.name
+                if tc.function.arguments:
+                    slot["arguments"] += tc.function.arguments
+    parts: list[Any] = []
+    if details:
+        parts.append(ReasoningPart("", ProviderMeta("openrouter", ref.model, {"reasoning_details": details})))
+    if text:
+        parts.append(TextPart("".join(text)))
+    for index in sorted(calls):
+        slot = calls[index]
+        try:
+            args = json.loads(slot["arguments"] or "{}")
+        except json.JSONDecodeError:
+            args = None
+        parts.append(ToolCallPart(slot["id"] or f"call_{index}", slot["name"],
+                                  args if isinstance(args, dict) else None))
+    yield Finish(Message("assistant", parts), usage, stop_reason, answered_by)
+
+
 def _usage(response: Any) -> Usage | None:
     usage = getattr(response, "usage", None)
     i, o = getattr(usage, "prompt_tokens", None), getattr(usage, "completion_tokens", None)
@@ -92,7 +225,7 @@ class OpenAICompatProvider:
         self._client()  # raises LLMProviderError with the right sentence
 
     def _map_error(self, exc: openai.OpenAIError) -> LLMProviderError:
-        """The ONE place an SDK error becomes a user sentence (generate and, later, stream).
+        """The ONE place an SDK error becomes a user sentence (generate, stream, list_models).
         Normalizes to LLMProviderError so provider outages mean ONE exception type for every
         caller (app.main maps it to 502); SDK errors must not escape as 500s."""
         if (self.name == "openrouter" and getattr(exc, "status_code", None) == 404
@@ -120,8 +253,19 @@ class OpenAICompatProvider:
         return Response(Message("assistant", [TextPart(text)]), _usage(response), "stop",
                         answered_by if isinstance(answered_by, str) else req.model.model)
 
-    def stream(self, req: Request):  # Task 8
-        raise NotImplementedError
+    def stream(self, req: Request) -> Iterator[StreamEvent]:
+        """Streaming chat. No `stream_options`: custom servers reject it, so usage is usually None.
+        Errors, at the call and mid-stream, map through the same `_map_error` as `generate`."""
+        kwargs = build_chat_kwargs(req)
+        if self._extra_body:
+            kwargs["extra_body"] = self._extra_body
+        client = self._client()
+        if req.timeout is not None:
+            client = client.with_options(timeout=req.timeout, max_retries=0)
+        try:
+            yield from accumulate(client.chat.completions.create(**kwargs), req.model)
+        except openai.OpenAIError as exc:
+            raise self._map_error(exc) from exc
 
     def list_models(self) -> list[dict[str, str]]:
         """Chat-like models for Settings › Find models. OpenRouter lists only zero-retention

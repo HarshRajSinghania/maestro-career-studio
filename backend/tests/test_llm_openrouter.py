@@ -73,7 +73,7 @@ def test_ready_without_a_key_raises_the_openrouter_sentence(monkeypatch):
 
 @pytest.mark.parametrize("message", [
     "No endpoints found matching your data policy (Zero data retention).",
-    "No allowed providers are available for the selected model; no endpoints available.",
+    "No allowed providers are available for the selected model under your zero data retention setting.",
 ])
 def test_openrouter_404_without_a_zdr_endpoint_gets_its_own_sentence(message):
     client = MagicMock()
@@ -91,6 +91,15 @@ def test_other_openrouter_404_keeps_the_model_not_found_wording():
         _provider(client).generate(_req())
     assert "that model wasn't found" in str(ei.value)
     assert str(ei.value) != NO_ZDR
+
+
+def test_openrouter_capability_404_keeps_the_model_wording_not_the_zdr_sentence():
+    client = MagicMock()
+    client.chat.completions.create.side_effect = _status_error(404, "No endpoints found that support tool use")
+    with pytest.raises(LLMProviderError) as ei:
+        _provider(client).generate(_req())
+    assert str(ei.value) != NO_ZDR
+    assert "that model wasn't found" in str(ei.value)
 
 
 def test_the_zdr_branch_is_openrouter_only():
