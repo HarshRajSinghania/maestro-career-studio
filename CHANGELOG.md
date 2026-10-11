@@ -47,6 +47,7 @@ None.
 
 ### Fixed
 
+- The glossary and package description use match score; the social preview restores Inter Medium.
 - First starts without TeX render the demo resume with Typst; a failed seed render shows its reason.
 - Windows child processes keep the system environment needed for networking, including backup and update commands.
 

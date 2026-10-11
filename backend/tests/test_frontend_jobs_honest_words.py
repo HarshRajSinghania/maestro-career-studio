@@ -187,7 +187,7 @@ def test_ats_words_say_what_the_engine_measures():
     assert '"Add it"' not in words
 
 
-# --- Match score, spelled out as our estimate ---------------------------------------
+# --- Match score, explained as a comparison using fixed rules -----------------
 
 
 def test_the_ats_score_is_our_estimate_everywhere_it_is_explained():

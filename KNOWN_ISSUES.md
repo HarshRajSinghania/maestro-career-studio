@@ -18,7 +18,7 @@ Maintainers: the engineering detail behind every item here lives in
 
 These have real coverage and are unlikely to move under you.
 
-- **ATS scoring is deterministic.** No LLM anywhere in the scoring path. The
+- **Match scoring is deterministic.** No LLM anywhere in the scoring path. The
   same resume, job description and config version produce a byte-identical
   0–100 score and breakdown, every time. This is the part most worth trusting.
 - **Rendering.** Both engines (LaTeX and Typst) compile the bundled templates,
@@ -153,7 +153,7 @@ does not.
   is locked". It is user-started and rare; the workaround is not to use the app
   while one is running. The few seconds a tailoring
   session spends enriching gaps behave the same way.
-- **A stored ATS score cannot be exactly reproduced.** Scoring is deterministic
+- **A stored match score cannot be exactly reproduced.** Scoring is deterministic
   given its inputs, but a stored score does not record its as-of date, which
   versions of the résumé and job description it saw, or the embedding model —
   and recency is computed against *today* — so the same document can score
@@ -204,7 +204,7 @@ disagree, open a discussion rather than a PR.
 - **No hosted version, and no multi-tenancy.** Adding either would reverse the
   main design property and reintroduce the data-exposure risk this project was
   built to avoid.
-- **The ATS score does not predict any real ATS.** It is our own deterministic,
+- **The match score does not predict any real ATS.** It is our own deterministic,
   reproducible model. Anyone claiming to predict Workday's or Greenhouse's
   internal scoring is guessing. The narrowness is the point.
 - **No built-in job-board search or scraper.** The app captures postings you or

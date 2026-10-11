@@ -380,8 +380,7 @@ that read as machine-written — so the leverage is in depth per application.
 - **Tailoring** — adjusting a base resume to one job, using only things you
   actually did.
 - **Match score** — Maestro's comparison of your resume with a saved job
-  description. It is not an employer's score
-  or a prediction of an interview.
+  description. It is not an employer's score or a prediction of an interview.
 - **AI service** — OpenAI or Gemini, whichever you choose.
 
 ### 1. Build your career history first (once)
