@@ -123,7 +123,10 @@ def test_assistant_with_only_tool_calls_has_null_content_and_no_tools_key_when_n
 
 @pytest.mark.parametrize("model,expected", [
     ("gpt-5.4-x", True), ("gpt-5.5", True), ("gpt-5.6-luna", True), ("openai/gpt-5.6-luna", True),
-    ("gpt-4o", False), ("gpt-5.3-x", False), ("llama3.2:3b", False),
+    # Live check 2026-10-11: gpt-6-luna 400s "Function tools with reasoning_effort are not
+    # supported ... set reasoning_effort to 'none'" without it, and passes with it.
+    ("gpt-6-luna", True), ("gpt-6.1-sol", True), ("openai/gpt-6-astra", True),
+    ("gpt-4o", False), ("gpt-5.3-x", False), ("llama3.2:3b", False), ("gpt-60-x", False),
 ])
 def test_completion_extras_covers_gpt_5_4_and_up_after_any_vendor_prefix(model, expected):
     assert (oc.completion_extras(model) == {"reasoning_effort": "none"}) is expected

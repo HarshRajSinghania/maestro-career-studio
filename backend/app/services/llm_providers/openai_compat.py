@@ -47,17 +47,18 @@ NO_ZDR_MESSAGE = "OpenRouter has no zero-retention provider for this model. Pick
 _NO_ZDR_RE = re.compile(r"data policy|zero data retention", re.IGNORECASE)
 
 # OpenAI: "Starting with GPT-5.4, Chat Completions does not support tool calling with
-# `reasoning_effort` values other than `none`" (migration guide, checked 2026-10-10).
-_TOOLS_NEED_NO_REASONING = re.compile(r"^gpt-5\.[4-9]")
+# `reasoning_effort` values other than `none`" (migration guide, checked 2026-10-10). GPT-6 too:
+# the live check (2026-10-11) got a 400 from gpt-6-luna without it and a pass with it.
+_TOOLS_NEED_NO_REASONING = re.compile(r"^gpt-(5\.[4-9]|6([.-]|$))")
 
 
 def completion_extras(model: str) -> dict[str, Any]:
     """Per-model kwargs for chat.completions.create, for every caller of it.
 
-    GPT-5.4 and later reject function tools on /v1/chat/completions unless reasoning_effort is
-    "none" (400 otherwise); older models like gpt-4o reject the parameter entirely, so it stays
-    conditional. The id is tested after any vendor prefix, so OpenRouter's `openai/gpt-5.x-...`
-    matches. GPT-6 is not covered: OpenAI's page does not name it (Task 14 checks live).
+    GPT-5.4 and later, GPT-6 included, reject function tools on /v1/chat/completions unless
+    reasoning_effort is "none" (400 otherwise); older models like gpt-4o reject the parameter
+    entirely, so it stays conditional. The id is tested after any vendor prefix, so OpenRouter's
+    `openai/gpt-5.x-...` matches.
     The capability probe passes tools too and must send the same kwargs as chat, or it measures
     a call the app never makes and reports a working chat model as tool-incapable.
     """
