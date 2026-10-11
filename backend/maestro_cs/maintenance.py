@@ -188,7 +188,7 @@ class Maintenance:
         try:
             done = self.run([str(runtime.node_path(environ=self.ctx.environ)), "--version"],
                             capture_output=True, text=True, timeout=NODE_TIMEOUT, check=False,
-                            stdin=subprocess.DEVNULL, **kwargs)
+                            env=home_mod.child_env(self.ctx.environ), stdin=subprocess.DEVNULL, **kwargs)
         except (OSError, subprocess.SubprocessError):
             return None
         out = (done.stdout or "").strip()

@@ -401,8 +401,9 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   `MAESTRO_CS_PDFLATEX` overrides and fails CLOSED. Without `pdflatex`, `pdf_render.resolve_render_template` uses the
   first ready Typst template for LaTeX resumes, bases and cover letters; `render_note` names both. VALIDATION never
   substitutes. `base_resume_render.record_render_error`: committed writes persist `render_error`; render-only requests
-  return 400, never 500. Startup seed-render failures warn with tracebacks and leave the base usable; its first save
-  retries. Call sites: `tests/test_render_note_coverage.py`. Pinned by `tests/test_render_fallback.py`.
+  return 400, never 500. Startup validates seed templates before rendering bases; seed-render failures persist
+  `render_error`, warn with tracebacks and leave the base usable; its first save retries. Call sites:
+  `tests/test_render_note_coverage.py`. Pins: `tests/test_render_fallback.py`, `tests/test_seeding.py`.
 - **`user_cannot_confirm` is durable.** `{#inv-provenance-no-decay}` No code path upgrades that provenance to anything
   else — including the gap flow that writes it: a "cannot confirm" gap outcome stores a retired `user_cannot_confirm`
   point (on the entity its placement names, else the archived "Unconfirmed claims" holder) and future sessions
@@ -939,6 +940,8 @@ citation. Priority lives in the item text, not in the ordinal.
   set those properties, so `transition-[…transform]` jumps → register a class that takes a variant; name those properties.
 - **Agent sandboxes kill what a tool call starts** (2026-10-10): a server vanished between calls, even with `setsid` → run
   start, checks and stop in ONE call (`scripts/smoke_uv_install.py`), or use `maestro autostart`.
+- **HTTPServer binds through reverse DNS** (2026-10-10): a fake child prints boot before `getfqdn` finishes → loopback
+  fixtures bypass that lookup and report their bound port; HTTP health still earns readiness.
 
 ## 13. Active migrations & deprecation ledger
 

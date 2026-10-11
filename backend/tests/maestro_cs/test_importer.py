@@ -234,10 +234,10 @@ def test_import_copies_every_table_with_the_same_rows(imported):
 def test_import_rewrites_stored_paths_to_the_home(imported):
     home, db = imported.home, imported.db
     assert sql(db, "SELECT pdf_path, tex_path FROM base_resumes WHERE slug='main'") == [
-        (f"{home}/base_resumes/main.pdf", f"{home}/base_resumes/main.tex")]
-    assert sql(db, "SELECT artifact_dir FROM applications WHERE id='a1'") == [(f"{home}/applications/a1/",)]
-    assert sql(db, "SELECT file_path FROM kb_documents") == [(f"{home}/kb_documents/cv.txt",)]
-    assert sql(db, "SELECT pdf_path FROM qa_entries") == [(f"{home}/applications/a1/qa.pdf",)]
+        (str(home / "base_resumes" / "main.pdf"), str(home / "base_resumes" / "main.tex"))]
+    assert sql(db, "SELECT artifact_dir FROM applications WHERE id='a1'") == [(str(home / "applications" / "a1") + os.sep,)]
+    assert sql(db, "SELECT file_path FROM kb_documents") == [(str(home / "kb_documents" / "cv.txt"),)]
+    assert sql(db, "SELECT pdf_path FROM qa_entries") == [(str(home / "applications" / "a1" / "qa.pdf"),)]
     # Free text that merely mentions /app/ is not a path column value and stays as written.
     assert sql(db, "SELECT render_error FROM base_resumes WHERE slug='second'") == [
         ("could not write /app/base_resumes/second.tex: boom",)]
@@ -866,7 +866,7 @@ def test_the_real_command_writes_into_the_home_and_only_reads_the_checkout(tmp_p
     db = home / "data" / control.DB_FILENAME
     assert result["code"] == 0
     assert sql(db, "SELECT version_num FROM alembic_version") == [(code_head(),)]
-    assert sql(db, "SELECT artifact_dir FROM applications WHERE id='a1'") == [(f"{home}/applications/a1/",)]
+    assert sql(db, "SELECT artifact_dir FROM applications WHERE id='a1'") == [(str(home / "applications" / "a1") + os.sep,)]
     assert tree_hash(checkout) == before
 
 
@@ -1016,11 +1016,41 @@ def test_an_uncheckpointed_wal_in_the_uv_home_never_replays_into_the_imported_da
     live.commit()
     try:
         assert Path(f"{uv_db(ctx)}-wal").stat().st_size > 0
-        imp, _ = importer_for(ctx)
-        assert imp.run(str(checkout), replace=True, dry_run=False) == 0
+        # Preserve an uncleanly stopped install, then release the test's own Windows file lock.
+        uncheckpointed = {Path(f"{uv_db(ctx)}{suffix}"): Path(f"{uv_db(ctx)}{suffix}").read_bytes()
+                          for suffix in ("", "-wal", "-shm")}
     finally:
         live.close()
+    for path, data in uncheckpointed.items():
+        path.write_bytes(data)
+    imp, _ = importer_for(ctx)
+    assert imp.run(str(checkout), replace=True, dry_run=False) == 0
     assert sql(uv_db(ctx), "SELECT id FROM jobs ORDER BY id") == [("j1",), ("j2",)]
+
+
+@pytest.mark.parametrize("job", [False, True])
+def test_home_data_check_closes_every_connection_before_database_rename(world, template_db, monkeypatch, job):
+    ctx, _ = world
+    seed_uv_db(ctx, template_db, job=job)
+    opened = []
+    real_ro = importer._ro
+
+    def track(path):
+        conn = real_ro(path)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(importer, "_ro", track)
+    imp, _ = importer_for(ctx)
+    assert imp._home_holds_data() is job
+    assert opened
+    for conn in opened:
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            conn.execute("SELECT 1")
+    db = uv_db(ctx)
+    aside = db.with_suffix(".aside")
+    os.replace(db, aside)
+    os.replace(aside, db)
 
 
 # --- modes, keys, notes ---------------------------------------------------------------------------

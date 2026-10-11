@@ -657,8 +657,9 @@
     "duplication_pct": 0.51,
     "duplicated_lines": 381,
     "clone_count": 43,
-    "complexity_hotspots": 737,
+    "complexity_hotspots": 738,
     "error_masking": 16,
     "imports_per_module": 4.39
-  }
+  },
+  "complexity_hotspots_adjustment_reason": "CI portability: the existing fresh-process launcher test parses JSON and checks the platform-specific executable name; its assertion count raises measured complexity from 9 to 10. No production function crosses the threshold."
 }

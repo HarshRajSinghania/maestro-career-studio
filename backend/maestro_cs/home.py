@@ -129,6 +129,19 @@ def _without(values: Mapping[str, str], upper_names: set[str]) -> dict[str, str]
     return {k: v for k, v in values.items() if k.upper() not in upper_names}
 
 
+def child_env(environ: Mapping[str, str], *, platform: str | None = None) -> dict[str, str]:
+    """Keep Windows loader variables even when a caller supplies a minimal environment."""
+    env = dict(environ)
+    if (platform or sys.platform) == "win32":
+        present = {name.upper() for name in env}
+        for name, value in os.environ.items():
+            upper = name.upper()
+            if upper in {"SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT"} and upper not in present:
+                env[upper] = value
+                present.add(upper)
+    return env
+
+
 def backend_env(home: Path, settings: Mapping[str, str], environ: Mapping[str, str],
                 ports: Ports, version: str) -> dict[str, str]:
     enforced = {
@@ -161,7 +174,7 @@ def backend_env(home: Path, settings: Mapping[str, str], environ: Mapping[str, s
     env.update(_without(settings, blocked))
     env[_ORIGINS] = origins
     env.update(enforced)
-    return env
+    return child_env(env)
 
 
 def web_env(settings: Mapping[str, str], environ: Mapping[str, str], ports: Ports) -> dict[str, str]:
@@ -182,7 +195,7 @@ def web_env(settings: Mapping[str, str], environ: Mapping[str, str], ports: Port
     if hosts:
         env["FRONTEND_ALLOWED_HOSTS"] = hosts
     env.update(enforced)
-    return env
+    return child_env(env)
 
 
 def apply_env(home: Path, env: Mapping[str, str]) -> None:

@@ -5,6 +5,7 @@ thread here; a helper thread creates `run/stop.request`. Signals are tested thro
 """
 import contextlib
 import io
+import json
 import os
 import socket
 import subprocess
@@ -23,14 +24,15 @@ from maestro_cs.supervisor import ChildSpec, Supervisor
 POSIX = os.name == "posix"
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
-# argv: port pidfile [option ...]. Options:
+# argv: port pidfile [option ...]. Port 0 lets the child choose and report its own port. Options:
 #   unhealthy             /health answers 500
 #   ignore_term           ignores SIGTERM (and SIGBREAK on Windows)
 #   die_after_health=S    exits 3 about S seconds after the first /health it answers
 #   die_once=FILE         like die_after_health=0.05, but only while FILE does not exist
 FAKE_SERVER = textwrap.dedent('''
-    import os, signal, sys, threading
+    import json, os, signal, sys, threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from socketserver import TCPServer
 
     port, pidfile, options = int(sys.argv[1]), sys.argv[2], sys.argv[3:]
     opt = dict(o.partition("=")[::2] for o in options)
@@ -61,8 +63,31 @@ FAKE_SERVER = textwrap.dedent('''
         def log_message(self, *args):
             pass
 
-    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    class LoopbackServer(ThreadingHTTPServer):
+        def server_bind(self):
+            # HTTPServer.server_bind calls getfqdn: reverse DNS can block on runner networks.
+            TCPServer.server_bind(self)
+            self.server_name, self.server_port = self.server_address
+
+    server = LoopbackServer(("127.0.0.1", port), Handler)
+    with open(pidfile + ".listening", "w") as handle:
+        json.dump({"port": server.server_port}, handle)
+    server.serve_forever()
 ''')
+
+
+def test_fake_server_listens_without_reverse_dns(tmp_path, monkeypatch):
+    from http.server import ThreadingHTTPServer
+
+    def no_dns(*args):
+        raise AssertionError("the loopback fixture must not depend on reverse DNS")
+
+    monkeypatch.setattr(socket, "getfqdn", no_dns)
+    monkeypatch.setattr(sys, "argv", ["fake", "0", str(tmp_path / "child.pid")])
+    monkeypatch.setattr(ThreadingHTTPServer, "serve_forever", lambda self: self.server_close())
+    exec(FAKE_SERVER, {})
+    listening = json.loads((tmp_path / "child.pid.listening").read_text())
+    assert 0 < listening["port"] <= 65535
 
 
 def free_port() -> int:
@@ -78,6 +103,29 @@ def pid_alive(pid: int) -> bool:
         return False
 
 
+class ListeningSupervisor(Supervisor):
+    """Only the test harness discovers dynamic ports; production still probes HTTP readiness."""
+
+    def _spawn(self, spec):
+        if len(spec.argv) < 5:
+            return super()._spawn(spec)
+        listening = Path(spec.argv[4] + ".listening")
+        listening.unlink(missing_ok=True)
+        proc = super()._spawn(spec)
+        if proc is None:
+            return None
+        deadline = time.monotonic() + 60
+        while proc.poll() is None and not self._should_stop():
+            report = procs.read_json(listening)
+            if report:
+                spec.health_url = f"http://127.0.0.1:{report['port']}/health"
+                return proc
+            assert time.monotonic() < deadline, (
+                f"{spec.name} never reported listening: {spec.log.read_text(errors='replace')}")
+            time.sleep(0.02)
+        return proc
+
+
 @pytest.fixture
 def fleet(tmp_path):
     """Builds fake-server specs; teardown stops anything still alive and fails if there was any."""
@@ -89,10 +137,9 @@ def fleet(tmp_path):
     class Fleet:
         def __init__(self):
             self.run_dir, self.logs = run_dir, logs
-            self.ports: dict[str, int] = {}
 
         def spec(self, name, *options, health_timeout=20.0):
-            port = self.ports[name] = free_port()
+            port = 0  # no release-then-bind race with another test or service
             pidfile = tmp_path / f"{name}.pid"
             pidfiles.append(pidfile)
             return ChildSpec(
@@ -111,7 +158,7 @@ def fleet(tmp_path):
 
         def supervisor(self, specs, **kwargs):
             defaults = dict(poll=0.05, grace=1.0, out=io.StringIO())
-            return Supervisor(run_dir, specs, **{**defaults, **kwargs})
+            return ListeningSupervisor(run_dir, specs, **{**defaults, **kwargs})
 
     helper = Fleet()
     yield helper
@@ -124,7 +171,7 @@ def fleet(tmp_path):
     assert not leftovers, f"a test leaked child processes: {leftovers}"
 
 
-def request_stop_when(run_dir: Path, condition, *, timeout: float = 20.0) -> dict:
+def request_stop_when(run_dir: Path, condition, *, timeout: float = 90.0) -> dict:
     """On a helper thread: wait for `condition()`, snapshot the run dir, then ask for the stop."""
     snapshot: dict = {}
 
@@ -132,6 +179,7 @@ def request_stop_when(run_dir: Path, condition, *, timeout: float = 20.0) -> dic
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline and not condition():
             time.sleep(0.02)
+        snapshot["condition_met"] = bool(condition())
         snapshot["files"] = sorted(p.name for p in run_dir.glob("*.json"))
         for name in ("ready", "supervisor", "backend", "web"):
             snapshot[name] = procs.read_json(run_dir / f"{name}.json")
@@ -157,6 +205,7 @@ def test_starts_in_order_writes_the_records_and_stops_on_request(fleet):
     snap["thread"].join(5)
 
     assert code == 0
+    assert snap["condition_met"], sup.out.getvalue()
     assert snap["files"] == ["backend.json", "ready.json", "supervisor.json", "web.json"]
     ready = snap["ready"]
     assert ready["version"] == "9.9.9" and ready["ports"] == {"web": 3000}
@@ -391,28 +440,31 @@ def test_http_ok_is_false_for_a_closed_port_and_a_bad_url():
 RUNNER = textwrap.dedent('''
     import sys
     from pathlib import Path
-    from maestro_cs.supervisor import ChildSpec, Supervisor
+    from maestro_cs.supervisor import ChildSpec
+    from tests.maestro_cs.test_supervisor import ListeningSupervisor
 
     run_dir, fake, port, pidfile = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
     import os
     spec = ChildSpec("backend", [sys.executable, "-c", fake, port, pidfile], dict(os.environ),
                      run_dir.parent, run_dir.parent / "backend.log",
                      f"http://127.0.0.1:{port}/health", 20.0)
-    sys.exit(Supervisor(run_dir, [spec], poll=0.05, grace=1.0).run())
+    sys.exit(ListeningSupervisor(run_dir, [spec], poll=0.05, grace=1.0).run())
 ''')
 
 
 def run_in_subprocess(tmp_path: Path, **popen):
-    port, pidfile = free_port(), tmp_path / "child.pid"
+    port, pidfile = 0, tmp_path / "child.pid"
     run_dir = tmp_path / "run2"
     proc = subprocess.Popen(
         [sys.executable, "-c", RUNNER, str(run_dir), FAKE_SERVER, str(port), str(pidfile)],
         env={**os.environ, "PYTHONPATH": str(BACKEND_DIR)}, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **popen)
-    deadline = time.monotonic() + 20
+    deadline = time.monotonic() + 90
     try:
         while not (run_dir / "ready.json").exists():
             assert proc.poll() is None, "the supervisor subprocess died before it was ready"
-            assert time.monotonic() < deadline, "the supervisor never became ready"
+            assert time.monotonic() < deadline, (
+                "the supervisor never became ready: " +
+                (tmp_path / "backend.log").read_text(errors="replace"))
             time.sleep(0.05)
     except BaseException:
         proc.kill()

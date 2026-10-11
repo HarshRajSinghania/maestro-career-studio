@@ -26,7 +26,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Mapping, Sequence
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from maestro_cs import runtime
 from maestro_cs.control import ControlError
@@ -58,8 +58,8 @@ WINDOWS_HOME_NOTE = (
 
 # --- rendering (pure) ----------------------------------------------------------------------
 
-def render_plist(shim: str | Path, home: Path, custom_home: bool) -> bytes:
-    log = str(Path(home) / "logs" / "launchd.log")
+def render_plist(shim: str | Path, home: PurePath, custom_home: bool) -> bytes:
+    log = str(home / "logs" / "launchd.log")
     data: dict = {
         "Label": LABEL,
         "ProgramArguments": [str(shim), "run"],
@@ -82,7 +82,7 @@ def _unit_word(text: str) -> str:
     return text
 
 
-def render_unit(shim: str | Path, home: Path) -> str:
+def render_unit(shim: str | Path, home: PurePath) -> str:
     # MAESTRO_HOME is always pinned: the user manager does not see a shell's XDG_DATA_HOME, so
     # without it the unit could start a second, empty install in the default folder.
     lines = [

@@ -165,6 +165,19 @@ def test_start_on_windows_uses_a_hidden_new_process_group(rig, monkeypatch):
     assert "start_new_session" not in kwargs
 
 
+def test_detached_supervisor_keeps_windows_loader_variables_with_a_minimal_parent(rig, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    system = {"SYSTEMROOT": "system-root", "WINDIR": "windows-dir",
+              "COMSPEC": "shell", "PATHEXT": ".EXE;.CMD"}
+    for name, value in system.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("OPENAI_API_KEY", "parent-secret")
+    rig.ctl._detach()
+    env = rig.spawned[0][1]["env"]
+    assert all(env.get(name) == value for name, value in system.items())
+    assert "OPENAI_API_KEY" not in env
+
+
 def test_start_on_windows_retries_without_breakaway_when_the_job_forbids_it(rig, monkeypatch):
     monkeypatch.setattr(runtime, "web_dir_ok", lambda environ=None: True)
     monkeypatch.setattr(control, "WINDOWS", True)
@@ -322,7 +335,7 @@ def test_specs_follow_the_plan(tmp_path, monkeypatch):
     assert backend.health_url == "http://127.0.0.1:18001/health"
     assert backend.env["MAESTRO_HOME"] == str(rig.ctx.home)
     assert backend.env["OPENAI_API_KEY"] == "sk-secret"
-    assert web_spec.argv == ["/n/node", "server.js"] and web_spec.cwd == web
+    assert web_spec.argv == [str(Path("/n/node")), "server.js"] and web_spec.cwd == web
     assert web_spec.health_url == "http://127.0.0.1:13000/api/version"
     assert web_spec.health_timeout == 60
     assert "OPENAI_API_KEY" not in web_spec.env
@@ -725,6 +738,7 @@ def test_start_status_stop_with_the_real_backend(tmp_path):
     env = {
         "PATH": os.environ.get("PATH", ""),
         "HOME": str(tmp_path),
+        "USERPROFILE": str(tmp_path),
         "MAESTRO_HOME": str(home),
         "MAESTRO_PORT": str(ports[0]),
         "MAESTRO_WEB_PORT": str(ports[1]),
@@ -836,6 +850,7 @@ def test_the_cli_prints_a_sentence_for_a_non_http_listener(tmp_path, monkeypatch
         server.close()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows locks an open log against rename; rotation appends instead")
 def test_logs_follow_survives_rotation_without_replaying_the_old_log(rig):
     log = rig.ctx.logs_dir / "backend.log"
     log.write_text("old1\nold2\n", encoding="utf-8")
@@ -874,6 +889,7 @@ def test_logs_follow_survives_truncation(rig):
     assert rig.printed == ["a long first line of the old log", "new"]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows locks an open log against rename; rotation appends instead")
 def test_logs_follow_waits_while_the_log_is_missing_between_rotation_steps(rig):
     log = rig.ctx.logs_dir / "backend.log"
     log.write_text("x\n", encoding="utf-8")

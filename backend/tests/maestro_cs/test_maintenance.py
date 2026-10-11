@@ -17,6 +17,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 from maestro_cs import cli, control, maintenance, procs
+from maestro_cs import home as home_mod
 from maestro_cs.control import Context, ControlError
 from maestro_cs.home import Ports
 
@@ -78,7 +79,9 @@ def test_backup_without_a_database_says_so_and_runs_nothing(tmp_path):
     assert run.calls == []
 
 
-def test_backup_default_path_child_argv_env_and_cwd(tmp_path):
+def test_backup_default_path_child_argv_env_and_cwd(tmp_path, monkeypatch):
+    monkeypatch.setattr(home_mod.sys, "platform", "win32")
+    monkeypatch.setenv("SYSTEMROOT", "system-root")
     ctx = make_ctx(tmp_path)
     make_db(ctx)
     run = FakeRun()
@@ -90,6 +93,7 @@ def test_backup_default_path_child_argv_env_and_cwd(tmp_path):
     assert argv[1:] == ["-m", "app.tools.backup_db", "--out", str(expected)]
     assert kwargs["cwd"] == ctx.home
     assert kwargs["env"]["DATA_DIR"] == str(ctx.home / "data")  # the backend env, not the shell's
+    assert kwargs["env"]["SYSTEMROOT"] == "system-root"
 
 
 def test_backup_keeps_the_newest_five(tmp_path):

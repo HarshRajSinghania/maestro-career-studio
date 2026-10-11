@@ -14,13 +14,13 @@ from pathlib import Path
 
 import pytest
 
-from maestro_cs import cli, connect, control, detach, runtime
+from maestro_cs import cli, connect, control, detach
 from maestro_cs.control import Context, ControlError
 from maestro_cs.home import Ports
 
 BACKEND = Path(__file__).resolve().parents[2]
 FIXED_NOW = datetime(2026, 10, 10, 12, 30, 5, tzinfo=timezone.utc)
-SHIM = Path("/venv/bin/maestro")
+SHIM = Path(os.path.abspath("/venv/bin/maestro"))
 
 
 def make_ctx(tmp_path, platform_environ=None):
@@ -117,7 +117,7 @@ def test_a_missing_config_is_created_with_the_absolute_shim_path(tmp_path):
     written = json.loads(desktop_config(conn).read_text(encoding="utf-8"))
     entry = written["mcpServers"]["maestro-career-studio"]
     assert entry == ENTRY
-    assert Path(entry["command"]).is_absolute() and entry["command"] != "maestro"
+    assert Path(entry["command"]).is_absolute() and entry["command"] == str(SHIM)
     assert "Open Claude Desktop to load Maestro." in rec.text
     assert not list(desktop_config(conn).parent.glob("*.bak-*"))  # nothing existed to back up
     assert rec.detached == []
@@ -278,7 +278,7 @@ def test_print_shows_the_snippet_and_writes_nothing(tmp_path):
     conn, rec = make_connector(tmp_path)
     assert conn.connect("claude-desktop", print_only=True) == 0
     assert not desktop_config(conn).exists()
-    assert '"maestro-career-studio"' in rec.text and str(SHIM) in rec.text
+    assert '"maestro-career-studio"' in rec.text and json.dumps(str(SHIM)) in rec.text
     assert str(desktop_config(conn)) in rec.text
 
 
@@ -648,8 +648,12 @@ def test_claude_config_dir_and_codex_home_are_honoured(tmp_path):
     ("win32", {"creationflags": detach.CREATE_NEW_PROCESS_GROUP | detach.CREATE_NO_WINDOW
                | detach.CREATE_BREAKAWAY_FROM_JOB}),
 ])
-def test_detach_spawns_the_package_module_with_the_right_flags(tmp_path, platform, flags):
+def test_detach_spawns_the_package_module_with_the_right_flags(tmp_path, platform, flags, monkeypatch):
     calls = []
+    system = {"SYSTEMROOT": "system-root", "WINDIR": "windows-dir",
+              "COMSPEC": "shell", "PATHEXT": ".EXE;.CMD"}
+    for name, value in system.items():
+        monkeypatch.setenv(name, value)
 
     def popen(argv, **kwargs):
         calls.append((argv, kwargs))
@@ -663,7 +667,10 @@ def test_detach_spawns_the_package_module_with_the_right_flags(tmp_path, platfor
     assert argv[1:] == ["-m", "maestro_cs", "hello", "--x"]
     assert kwargs["cwd"] == tmp_path and kwargs["stdin"] is subprocess.DEVNULL
     assert kwargs["stderr"] is subprocess.STDOUT
-    assert kwargs["env"] == {"A": "1", "MAESTRO_HOME": str(tmp_path)}
+    expected = {"A": "1", "MAESTRO_HOME": str(tmp_path)}
+    if platform == "win32":
+        expected.update(system)
+    assert kwargs["env"] == expected
     for key, value in flags.items():
         assert kwargs[key] == value
     if platform != "win32":
@@ -791,7 +798,9 @@ def test_the_command_runs_in_a_fresh_process_without_the_developers_environment(
         cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60, check=False)
     assert done.returncode == 0, done.stderr
     assert "maestro" in done.stdout and "mcpServers" in done.stdout
-    assert runtime.shim_path().name in done.stdout
+    snippet = json.loads(done.stdout[done.stdout.index("{"):])
+    command = snippet["mcpServers"]["maestro-career-studio"]["command"]
+    assert Path(command).name.lower() == ("maestro.exe" if sys.platform == "win32" else "maestro")
     assert not list(user_home.rglob("claude_desktop_config.json"))
 
 

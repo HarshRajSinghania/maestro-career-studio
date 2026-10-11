@@ -376,17 +376,17 @@ class Smoke:
         return json.loads(blocks[0]["text"])
 
     def demo_base(self) -> None:
-        deadline = time.monotonic() + 120
-        rows: list[dict] = []
-        while time.monotonic() < deadline:
-            reply = self.get(self.backend_port, "/api/base-resumes")
-            self.expect_ok(reply.status == 200, f"GET /api/base-resumes returned {reply.status}")
-            rows = reply.json()
-            if any(row.get("pdf_rendered_at") for row in rows):
-                self.facts["demo base"] = [row["slug"] for row in rows][:3]
-                return
-            time.sleep(1.0)
-        raise Failure(f"no base resume has pdf_rendered_at after 120 s (the Typst render): {rows}")
+        # start already waited for health; startup renders synchronously, so polling cannot heal it.
+        reply = self.get(self.backend_port, "/api/base-resumes")
+        self.expect_ok(reply.status == 200, f"GET /api/base-resumes returned {reply.status}")
+        demo = next((row for row in reply.json() if row["slug"] == "example"), None)
+        self.expect_ok(demo is not None, "startup finished without the demo base resume")
+        self.expect_ok(not demo.get("render_error"), f"demo render failed: {demo.get('render_error')}")
+        self.expect_ok(bool(demo.get("pdf_rendered_at")), "startup finished without rendering the demo PDF")
+        pdf = self.get(self.backend_port, "/api/base-resumes/example/pdf")
+        self.expect_ok(pdf.status == 200 and pdf.body.startswith(b"%PDF"),
+                       f"demo PDF download returned HTTP {pdf.status} or invalid PDF bytes")
+        self.facts["demo base"] = ["example"]
 
     def score_without_a_key(self) -> None:
         # The path agents use: store_extracted_jd (the caller extracted the JD, so no LLM call)
@@ -513,7 +513,7 @@ class Smoke:
             ("host, origin, headers and bare 404 hold", self.boundary),
             ("listeners are loopback-only", self.loopback_only),
             ("POST /mcp initialize and tools/list", self.mcp_over_http),
-            ("demo base resume rendered (Typst)", self.demo_base),
+            ("demo base resume rendered and downloadable", self.demo_base),
             ("job stored and scored with no LLM key", self.score_without_a_key),
             ("maestro mcp bridge", self.bridge),
             ("maestro backup", self.backup),

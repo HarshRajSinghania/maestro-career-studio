@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from maestro_cs import runtime
+from maestro_cs import home as home_mod, runtime
 
 # subprocess.CREATE_* exist only on Windows; the values are fixed by the Win32 API.
 CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -59,7 +59,8 @@ def spawn_detached(
     """
     argv = [str(runtime.venv_python(platform, windowless=False, executable=executable)),
             "-m", "maestro_cs", *args]
-    child_env = {**(os.environ if env is None else env), "MAESTRO_HOME": str(home)}
+    child_env = {**home_mod.child_env(os.environ if env is None else env, platform=platform),
+                 "MAESTRO_HOME": str(home)}
     windows = platform == "win32"
     try:
         handle = open(log, "ab")  # noqa: SIM115  (closed below; the child keeps its own copy)

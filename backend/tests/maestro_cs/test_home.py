@@ -13,6 +13,30 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
 
 
+@pytest.mark.parametrize("builder", ["backend", "web"])
+def test_windows_child_env_recovers_system_variables_from_the_process(builder, tmp_path, monkeypatch):
+    monkeypatch.setattr(H.sys, "platform", "win32")
+    essentials = {"SYSTEMROOT": "system-root", "WINDIR": "windows-dir",
+                  "COMSPEC": "command-shell", "PATHEXT": ".EXE;.CMD"}
+    for name, value in essentials.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("OPENAI_API_KEY", "parent-secret")
+    if builder == "backend":
+        env = H.backend_env(tmp_path, {}, {}, Ports(18001, 18002), "test")
+    else:
+        env = H.web_env({}, {}, Ports(18001, 18002))
+    assert all(env.get(name) == value for name, value in essentials.items())
+    assert "OPENAI_API_KEY" not in env
+
+
+def test_windows_child_env_preserves_explicit_values_case_insensitively(monkeypatch):
+    monkeypatch.setattr(H.sys, "platform", "win32")
+    monkeypatch.setenv("SYSTEMROOT", "parent-root")
+    env = H.web_env({}, {"SystemRoot": "explicit-root"}, Ports(18001, 18002))
+    assert env["SystemRoot"] == "explicit-root"
+    assert "SYSTEMROOT" not in env
+
+
 def test_default_home_per_platform():
     assert H.default_home("darwin", {}, Path("/Users/u")) == Path(
         "/Users/u/Library/Application Support/Maestro Career Studio"

@@ -5,6 +5,7 @@ needs no npm, no uv and no network: which files may enter the wheel, the version
 member rules, and the smoke's failure wording.
 """
 import importlib.util
+import json
 import socket
 import sys
 import zipfile
@@ -192,6 +193,40 @@ def test_a_file_that_is_not_a_zip_is_a_problem_with_its_type(tmp_path):
 
 
 # --- smoke_uv_install --------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("demo, pdf, message", [
+    ({"slug": "example", "pdf_rendered_at": None, "render_error": "no ready template"},
+     b"%PDF", "no ready template"),
+    ({"slug": "example", "pdf_rendered_at": None, "render_error": None},
+     b"%PDF", "startup finished"),
+    ({"slug": "example", "pdf_rendered_at": "now", "render_error": None},
+     b"not a PDF", "PDF"),
+])
+def test_demo_smoke_requires_the_demo_pdf_and_reports_startup_failure(monkeypatch, demo, pdf, message):
+    probe = smoke.Smoke.__new__(smoke.Smoke)
+    probe.backend_port, probe.facts = 18001, {}
+    other = {"slug": "other", "pdf_rendered_at": "now"}
+
+    def get(port, path):
+        if path.endswith("/pdf"):
+            return smoke.Reply(200, {}, pdf)
+        return smoke.Reply(200, {}, json.dumps([other, demo]).encode())
+
+    probe.get = get
+    monkeypatch.setattr(smoke.time, "sleep", lambda _: pytest.fail("startup render is synchronous"))
+    with pytest.raises(smoke.Failure, match=message):
+        probe.demo_base()
+
+
+def test_demo_smoke_accepts_a_committed_render_with_a_downloadable_pdf():
+    probe = smoke.Smoke.__new__(smoke.Smoke)
+    probe.backend_port, probe.facts = 18001, {}
+    demo = {"slug": "example", "pdf_rendered_at": "now", "render_error": None}
+    probe.get = lambda port, path: smoke.Reply(
+        200, {}, b"%PDF-1.7" if path.endswith("/pdf") else json.dumps([demo]).encode())
+    probe.demo_base()
+    assert probe.facts["demo base"] == ["example"]
 
 def test_a_refused_connection_reads_as_no_answer_but_a_bug_names_its_type():
     assert smoke.describe(ConnectionRefusedError(61, "Connection refused")).startswith("no answer")

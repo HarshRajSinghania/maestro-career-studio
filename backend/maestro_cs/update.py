@@ -31,7 +31,7 @@ from typing import Any
 import httpx
 import psutil
 
-from maestro_cs import control, detach, maintenance, procs, runtime
+from maestro_cs import control, detach, home as home_mod, maintenance, procs, runtime
 from maestro_cs.control import Context, ControlError
 
 PACKAGE = "maestro-career-studio"
@@ -487,7 +487,8 @@ class Updater:
                 detach.popen_windows(
                     self.popen, windows_handoff_argv(),
                     detach.CREATE_NEW_PROCESS_GROUP | detach.CREATE_NO_WINDOW,
-                    cwd=logs, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+                    cwd=logs, env=home_mod.child_env(self.ctx.environ, platform=self.platform),
+                    stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
         except OSError as exc:
             raise ControlError(f"Couldn't hand the update to a background step: "
                                f"{exc.strerror or exc}. Maestro is stopped; run `maestro start`.") from None
@@ -498,7 +499,7 @@ class Updater:
 
     def _run_uv(self, argv: list[str]) -> tuple[int, str]:
         try:
-            done = self.run_cmd(argv, cwd=self.ctx.home, env=dict(self.ctx.environ),
+            done = self.run_cmd(argv, cwd=self.ctx.home, env=home_mod.child_env(self.ctx.environ),
                                 stdin=subprocess.DEVNULL, capture_output=True, text=True,
                                 check=False)
         except OSError as exc:
@@ -509,7 +510,7 @@ class Updater:
         """Start through the (possibly new) launcher, as a new process: this one has old code."""
         try:
             done = self.run_cmd([str(shim), "start", "--no-browser"], cwd=self.ctx.home,
-                                env=dict(self.ctx.environ), stdin=subprocess.DEVNULL,
+                                env=home_mod.child_env(self.ctx.environ), stdin=subprocess.DEVNULL,
                                 capture_output=True, text=True, check=False)
         except OSError as exc:
             self.say(f"Couldn't start Maestro: {exc.strerror or exc}.")
@@ -521,7 +522,7 @@ class Updater:
     def _installed_version(self, shim: Path) -> str | None:
         try:
             done = self.run_cmd([str(shim), "--version"], cwd=self.ctx.home,
-                                env=dict(self.ctx.environ), stdin=subprocess.DEVNULL,
+                                env=home_mod.child_env(self.ctx.environ), stdin=subprocess.DEVNULL,
                                 capture_output=True, text=True, check=False)
         except OSError:
             return None

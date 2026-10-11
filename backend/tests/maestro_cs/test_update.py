@@ -202,9 +202,9 @@ def test_upgrade_commands():
     # The PyPI path installs exactly the version whose changelog was shown, and `--force` replaces
     # a `==<old>` pin that a documented rollback leaves behind (`uv tool upgrade` honours it).
     assert update.upgrade_argv(uv, None, "0.9.0") == [
-        "/x/uv", "tool", "install", "--force", "--python", "3.12", "maestro-career-studio==0.9.0"]
+        str(uv), "tool", "install", "--force", "--python", "3.12", "maestro-career-studio==0.9.0"]
     assert update.upgrade_argv(uv, "/w/m.whl", "0.9.0") == [
-        "/x/uv", "tool", "install", "--force", "--python", "3.12", "/w/m.whl"]
+        str(uv), "tool", "install", "--force", "--python", "3.12", "/w/m.whl"]
     assert update.manual_command(None, "0.9.0") == (
         "uv tool install --force --python 3.12 maestro-career-studio==0.9.0")
     assert update.manual_command("/w/m.whl", None) == "uv tool install --force --python 3.12 /w/m.whl"
@@ -343,7 +343,8 @@ def test_the_happy_path_orders_snapshot_stop_uv_start_verify(tmp_path, monkeypat
     assert uv_argv[1:] == ["tool", "install", "--force", "--python", "3.12",
                            "maestro-career-studio==0.9.0"]
     start_argv = next(a for a, _ in rig.run_calls if a[1:] == ["start", "--no-browser"])
-    assert Path(start_argv[0]).name == "maestro"  # the shim, a NEW process (this one has old code)
+    assert Path(start_argv[0]).name.lower() == (
+        "maestro.exe" if sys.platform == "win32" else "maestro")  # a NEW process runs the new code
 
 
 def test_both_network_calls_are_named_before_they_are_made(tmp_path, monkeypatch):

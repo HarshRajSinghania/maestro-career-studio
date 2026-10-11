@@ -194,8 +194,9 @@ def parent_environ(original: Mapping[str, str]) -> Iterator[None]:
     spawned meanwhile would inherit them. The applied environment comes back afterwards.
     """
     applied = dict(os.environ)
+    child = home_mod.child_env(original)
     os.environ.clear()
-    os.environ.update(original)
+    os.environ.update(child)
     try:
         yield
     finally:
@@ -330,7 +331,7 @@ class Connector:
         try:
             # The original environment: `apply_env` has put maestro.env's API keys in os.environ.
             done = self.run(argv, capture_output=True, text=True, timeout=COMMAND_TIMEOUT,
-                            stdin=subprocess.DEVNULL, check=False, env=dict(self.ctx.environ))
+                            stdin=subprocess.DEVNULL, check=False, env=home_mod.child_env(self.ctx.environ))
         except subprocess.TimeoutExpired:
             raise ControlError(f"{label} didn't answer within {COMMAND_TIMEOUT:g} seconds. "
                                f"Run this yourself: {command}") from None

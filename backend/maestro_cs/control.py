@@ -31,6 +31,7 @@ from maestro_cs import detach, package_version, procs, runtime
 from maestro_cs.home import (
     Ports,
     backend_env,
+    child_env,
     prepare_home,
     ports_from,
     read_env_file,
@@ -395,7 +396,7 @@ class Controller:
         # Always the console python: a GUI-subsystem (pythonw) supervisor would give each child
         # its own visible console and turn every stop into a hard kill (review of de8d215b).
         argv = [str(runtime.venv_python(windowless=False)), "-m", "maestro_cs", "run"]
-        env = {**ctx.environ, "MAESTRO_HOME": str(ctx.home)}
+        env = {**child_env(ctx.environ), "MAESTRO_HOME": str(ctx.home)}
         try:
             with open(ctx.logs_dir / "supervisor.log", "ab") as log:
                 common: dict[str, Any] = {"cwd": ctx.home, "env": env, "stdin": subprocess.DEVNULL,

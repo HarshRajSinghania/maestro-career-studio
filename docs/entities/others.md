@@ -806,10 +806,14 @@
   - **Environment** (`home.backend_env`, `web_env`): the backend gets the shell, then `maestro.env` (a name set there wins in any
     capitalisation), then the enforced paths and `ALLOWED_HOSTS=localhost,127.0.0.1`; `DATABASE_URL` and other foreign data pointers are
     stripped. The web process gets the shell minus `_WEB_STRIPPED`, `HOSTNAME=127.0.0.1`, `NEXT_TELEMETRY_DISABLED=1`, and
-    `FRONTEND_ALLOWED_HOSTS` from the file.
+    `FRONTEND_ALLOWED_HOSTS` from the file. Every Windows child environment keeps `SYSTEMROOT`, `WINDIR`, `COMSPEC`
+    and `PATHEXT` when present; `home.child_env` recovers missing names from the process environment without copying secrets.
   - **Run and stop**: `maestro start` preflights both ports, seeds the demo resume, downloads the scoring model into an empty
     `fastembed_cache/` (skip: `--skip-model`), detaches `maestro run` (on Windows with `CREATE_BREAKAWAY_FROM_JOB` first, without it when the job forbids that: `detach.popen_windows`) and waits for both health URLs. `maestro stop` writes
     `run/stop.request`; the supervisor stops each child (SIGTERM to its session on POSIX, `CTRL_BREAK_EVENT` on Windows), then a tree kill after 10 s.
+    Backend startup validates seed templates before rendering bases, so a first start without TeX uses ready Typst;
+    seed-render failures persist `render_error`. The smoke checks the demo's committed timestamp and PDF download after health,
+    without a second render poll: startup rendering is synchronous.
   - **Update**: `maestro update` checks PyPI, prints the changelog's `### Breaking changes`, asks, writes a verified snapshot
     (`backups/db-*.sqlite3.gz`, newest five kept), stops, runs `uv tool install --force --python 3.12 maestro-career-studio==NEW` (or the WHEEL for
     `--source`; `--force` clears a rollback pin), starts, and compares versions. On Windows the running executables are locked: `update` first refuses (nothing changed) while any other

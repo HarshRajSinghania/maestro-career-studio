@@ -5,8 +5,9 @@ Nothing here runs launchctl, systemctl, loginctl or schtasks, and nothing writes
 import plistlib
 import shutil
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -39,7 +40,7 @@ PYTHONW_SPACES = r"C:\Users\Ann Lee\AppData\Roaming\uv\tools\maestro-career-stud
 # --- pure rendering ------------------------------------------------------------------------
 
 def test_plist_has_the_documented_keys():
-    data = plistlib.loads(render_plist(SHIM, Path(HOME), custom_home=False))
+    data = plistlib.loads(render_plist(SHIM, PurePosixPath(HOME), custom_home=False))
     assert data == {
         "Label": LABEL,
         "ProgramArguments": [SHIM, "run"],
@@ -53,7 +54,7 @@ def test_plist_has_the_documented_keys():
 
 
 def test_plist_carries_maestro_home_only_when_the_user_set_one():
-    data = plistlib.loads(render_plist(SHIM_SPACES, Path("/data/mine"), custom_home=True))
+    data = plistlib.loads(render_plist(SHIM_SPACES, PurePosixPath("/data/mine"), custom_home=True))
     assert data["EnvironmentVariables"] == {"MAESTRO_HOME": "/data/mine"}
     assert data["ProgramArguments"][0] == SHIM_SPACES  # a path with spaces is one argv entry
 
@@ -67,7 +68,7 @@ def test_rendered_plist_passes_plutil_lint(tmp_path):
 
 
 def test_unit_text_is_exact():
-    text = render_unit(SHIM, Path("/home/ann/.local/share/maestro-career-studio"))
+    text = render_unit(SHIM, PurePosixPath("/home/ann/.local/share/maestro-career-studio"))
     assert text == (
         "[Unit]\n"
         "Description=Maestro Career Studio\n"
@@ -84,7 +85,7 @@ def test_unit_text_is_exact():
 
 
 def test_unit_quotes_paths_and_escapes_specifiers():
-    text = render_unit('/home/ann lee/100%/$bin/maestro', Path("/srv/my data"))
+    text = render_unit('/home/ann lee/100%/$bin/maestro', PurePosixPath("/srv/my data"))
     assert 'ExecStart="/home/ann lee/100%%/$$bin/maestro" run\n' in text
     assert 'Environment="MAESTRO_HOME=/srv/my data"\n' in text
 
@@ -188,6 +189,7 @@ def unit_file(tmp_path):
 
 # --- macOS ---------------------------------------------------------------------------------
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows does not implement POSIX file modes")
 def test_mac_on_writes_a_0644_plist_and_bootstraps_it(tmp_path):
     runner = Runner()
     auto, said = make(tmp_path, "darwin", runner)
@@ -361,7 +363,12 @@ def test_linux_unit_pins_maestro_home_even_when_the_shell_set_nothing(tmp_path):
     env = {"XDG_DATA_HOME": str(tmp_path / "xdgdata")}
     auto, _ = make(tmp_path, "linux", environ=env)
     auto.handle("on")
-    assert f"Environment=MAESTRO_HOME={tmp_path / 'data'}\n" in unit_file(tmp_path).read_text()
+    value = str(tmp_path / "data")
+    if "\\" in value or " " in value:
+        value = '"MAESTRO_HOME=' + value.replace("\\", "\\\\") + '"'
+    else:
+        value = "MAESTRO_HOME=" + value
+    assert f"Environment={value}\n" in unit_file(tmp_path).read_text()
 
 
 def test_linux_refused_linger_warns_but_succeeds(tmp_path):

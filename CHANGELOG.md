@@ -45,6 +45,11 @@ None.
 
 - The app calls its score the match score (it was labelled ATS score).
 
+### Fixed
+
+- First starts without TeX render the demo resume with Typst; a failed seed render shows its reason.
+- Windows child processes keep the system environment needed for networking, including backup and update commands.
+
 ## [0.9.0] — 2026-10-10
 
 This release is about getting Maestro out of its box. AI agents now reach it by
