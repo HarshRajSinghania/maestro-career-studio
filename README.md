@@ -113,12 +113,13 @@ Then:
 
 [The full command table](docs/SETUP_REFERENCE.md#the-maestro-command-and-the-uv-install) also covers `logs`, `open`, `restart`, `autostart`, `backup`, uninstalling and TeX for LaTeX templates. What the command contacts, and when: [PRIVACY.md](PRIVACY.md#what-the-maestro-command-and-first-start-download).
 
-> **Young, but rehearsed.** The app runs daily on my machine, and a fresh
-> install — clone, start, first tailored resume — has been checked end to end on
-> a second machine. It has had little testing on machines that aren't mine. If
-> it fails on yours, please
+> **Young, but rehearsed.** The app runs daily on my machine. A fresh Docker
+> install (clone, start, first tailored resume) has been checked end to end on a
+> second machine, and CI installs and starts the uv package on macOS, Linux and
+> Windows for every change. It has had little testing on machines that
+> aren't mine. If it fails on yours, please
 > [open an issue](https://github.com/seinun-ai/maestro-career-studio/issues)
-> with the log — that report is one of the most valuable contributions there is.
+> with the log. That report is one of the most valuable contributions there is.
 
 ## Alternative: run with Docker (self-hosters)
 
