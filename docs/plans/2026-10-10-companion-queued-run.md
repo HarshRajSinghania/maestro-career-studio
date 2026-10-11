@@ -1409,7 +1409,13 @@ tests/test_extension_queue_run.py -q`. Expected: PASS.
      panel shows "Saved N answers to your profile · Undo", and Undo writes the previous values back;
   3. re-enter `drive(record, deps)`, which refills, then advances or reaches ready.
   Walls (captcha / verify / create_account / sign_in_failed) also show **Resume** after "Do this
-  step in the tab, then Resume".
+  step in the tab, then Resume", plus **Skip this job**: it stops that record (`why: "user"`) and
+  leaves the job Queued, never skipped or rejected on the server. Below, one line names the other
+  walls ("It also stops here for: a CAPTCHA · creating an account · a sign-in that didn't work ·
+  apply on a job board").
+- **Running card (This page, Fill):** eyebrow "Applying", title "Filling page N", a progress bar,
+  a page-by-page list (finished pages with a tick and their filled count, the current page with
+  "k of n"), **Stop**, and the fixed line "It clicks Next for you. It never clicks Submit." 
 - **Ready to submit:** a row with "Check before you submit" flags (the receipt flags from the
   record's last receipt post). Nothing to press in the panel; the user submits in the tab.
 - **Confirmation watch:** for `ready` records, `chrome.tabs.onUpdated` (url change) on that tab →
@@ -1421,6 +1427,10 @@ tests/test_extension_queue_run.py -q`. Expected: PASS.
   3. Undo → back to `ready`, with a manual **Mark applied** button calling the same endpoint.
   A 409 (cap or skip list) shows the server's sentence through `failureNote`.
 - **Timing:** `yourMs` accrues from park to Resume and from `readyAt` to confirmation.
+- **Queue view rows outside the run:** unticked jobs stay in the list as "Queued · Not in this run".
+- **Run finished:** a summary card above the remaining rows: Applied, Needs you, your time per job
+  (median `yourMs`), run time; **Done** posts the run log and clears the summary. Applied jobs leave
+  the queue (the next `loadQueue` no longer returns them); the remaining rows keep their reason.
 - **Run log:** when no record is active (all applied, parked, ready or stopped) and the user
   presses **Done** (or every record is terminal), POST `/api/agent-runs`
   `{automation: "queued-run", outcome: "ok"|"partial", counts: {ready, needs_you, applied, stopped,
@@ -1433,7 +1443,10 @@ tests/test_extension_queue_run.py -q`. Expected: PASS.
 - confirmation → nothing posted before 8 s (fake timers) → posted after; Undo within 8 s → nothing
   posted, Mark applied shows;
 - the run log posts once with medians;
-- no row ever shows a Submit control.
+- no row ever shows a Submit control;
+- Skip this job leaves the proposal `accepted` (no PATCH sent);
+- unticked jobs render "Not in this run"; the finished summary shows the four numbers and Done
+  posts the run log once.
 
 **Step 2: Run.** Expected: FAIL.
 
@@ -1472,6 +1485,14 @@ with **Queue** beside it; with it off, **Save job** exactly as today.
   the page is already the employer's form, start at classify.
 - Hidden when the job is already applied, or its proposal is already queued (then the footer shows
   **Apply** only, which skips the queue step).
+- **Canvas details:** with full automation off, Save job carries one line, "Turn on full automation
+  in Settings to apply from here." With it on, the base picker's card reads "Apply with this
+  resume", Apply and Queue sit side by side, one line says "Apply fills every page here and stops
+  before Submit.", and below are **Update scores** and **Tailor first, then apply** (opens today's
+  Resume step instead of applying). The open-custom-session state ("Finish tailoring first") offers
+  **Finish in Maestro CS** (the web app's tailoring session) and **Apply with the base resume**
+  (`POST /api/applications/from-base` then render, then the one-job run; the open session is left
+  untouched).
 
 **Step 1: Failing panel-harness tests:**
 - full automation off → only Save job;
@@ -1479,6 +1500,7 @@ with **Queue** beside it; with it off, **Save job** exactly as today.
 - Queue posts the proposal then the accepted PATCH with channel `companion`;
 - Apply with an open custom session never calls quick-tailor and shows the finish-first note;
 - Apply on a board posting with `apply_url` navigates the current tab and drives one record;
+- "Apply with the base resume" never calls quick-tailor and leaves the open session `open`;
 - no new tab or window opens for Apply.
 
 **Step 2: Run.** Expected: FAIL. **Step 3: Implement.** **Step 4: Run**
