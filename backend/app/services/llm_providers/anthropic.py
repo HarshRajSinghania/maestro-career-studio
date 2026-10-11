@@ -187,10 +187,26 @@ def _signature_retry(exc: Exception, req: Request) -> Request | None:
     return _strip_reasoning(req)
 
 
+_ERROR_TYPE_STATUS = {"overloaded_error": 529, "rate_limit_error": 429}
+
+
+def _anthropic_reason(exc: Any) -> str:
+    """A few words for an SDK status error. A mid-stream `event: error` is raised with the
+    stream response's status (200), so below 400 the reason comes from the body's error type."""
+    status = exc.status_code
+    if status >= 400:
+        return _status_reason(status)
+    body = getattr(exc, "body", None)
+    err = body.get("error") if isinstance(body, dict) else None
+    kind = err.get("type") if isinstance(err, dict) else (body.get("type") if isinstance(body, dict) else None)
+    mapped = _ERROR_TYPE_STATUS.get(kind) if isinstance(kind, str) else None
+    return _status_reason(mapped) if mapped else "the provider had an error"
+
+
 @contextmanager
 def _sdk_errors() -> Iterator[None]:
     """The ONE place an anthropic SDK error becomes a user sentence (calls, streams, model listing).
-    Raw httpx/httpx2 transport errors can escape the SDK mid-stream, so they map here too."""
+    The httpx branch is a guard for older SDKs; httpx2 (what 1.13 uses) is the transport that can leak."""
     import anthropic
     import httpx
 
@@ -206,7 +222,7 @@ def _sdk_errors() -> Iterator[None]:
     try:
         yield
     except anthropic.APIStatusError as exc:
-        raise _no_answer(_status_reason(exc.status_code), f"Anthropic API request failed: {exc}",
+        raise _no_answer(_anthropic_reason(exc), f"Anthropic API request failed: {exc}",
                          provider="Claude") from exc
     except anthropic.APITimeoutError as exc:
         raise _no_answer(_TIMED_OUT, f"Anthropic API request timed out: {exc}", provider="Claude") from exc

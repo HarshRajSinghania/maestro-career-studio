@@ -7,12 +7,14 @@ from app.services.llm_providers import anthropic as ap
 from app.services.llm_providers import registry
 from app.services.llm_providers.errors import LLMProviderError
 from app.services.llm_providers.types import (
+    Finish,
     ImagePart,
     Message,
     ModelRef,
     ProviderMeta,
     ReasoningPart,
     Request,
+    TextDelta,
     TextPart,
     ToolCallPart,
     ToolResultPart,
@@ -282,9 +284,6 @@ def test_list_models_rows_are_sorted_dicts(monkeypatch):
 
 # --- stream (Task 9) ------------------------------------------------------------------------
 
-from app.services.llm_providers.types import Finish, TextDelta  # noqa: E402
-
-
 class _EventStream(_Stream):
     """Fake SDK stream: iterating yields events (optionally raising part-way), exit is recorded."""
 
@@ -449,4 +448,22 @@ def test_early_stop_closes_the_sdk_stream(monkeypatch):
     gen = ap.AnthropicProvider().stream(_HI)
     assert next(gen).text == "a"
     gen.close()
+    assert s.closed
+
+
+@pytest.mark.parametrize("kind,words", [("overloaded_error", "the provider is overloaded"),
+                                        ("rate_limit_error", "too many requests"),
+                                        ("api_error", "the provider had an error")])
+def test_mid_stream_error_event_maps_by_error_type_not_status_200(monkeypatch, kind, words):
+    import anthropic
+    import httpx2
+    body = {"type": "error", "error": {"type": kind, "message": "x"}}
+    resp = httpx2.Response(200, request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages"))
+    boom = anthropic.Anthropic(api_key="k")._make_status_error(str(body), body=body, response=resp)
+    assert boom.status_code == 200
+    s = _EventStream(_final(), [_text("a")], boom=boom)
+    _use(monkeypatch, _stream_client(s, seen=[]))
+    with pytest.raises(LLMProviderError) as exc:
+        list(ap.AnthropicProvider().stream(_HI))
+    assert words in str(exc.value) and "error 200" not in str(exc.value) and "refused your API key" not in str(exc.value)
     assert s.closed
