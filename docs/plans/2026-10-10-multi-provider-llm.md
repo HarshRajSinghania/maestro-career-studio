@@ -2151,3 +2151,8 @@ two-tool scenario once with both tools requested in one step.
 | 5 | Signature-400 retry strips every `ReasoningPart` (ruling C7) | That also removes the `fallback` block whose position validates surrounding thinking | `_strip_reasoning` drops only parts where `types.is_anthropic_thinking_part` (type `thinking`/`redacted_thinking`); the predicate lives in `types.py` for Task 11's persisted `drop_reasoning` | Principle: one shared predicate |
 | 5 | `_STATUS_WORDS[529]` (ruling C10) | Design header would word it differently | Kept the plan's "the provider is overloaded" | Wording only |
 | 5 | No explicit `thinking` param (ruling C13) | n/a | None sent; test asserts it; Task 14 (local) must confirm thinking appears | Answer quality only |
+| 6 | ZDR 404 branch inline in `generate` keyed on name + 404 (ruling C9) | Task 8 `stream` must reuse it | `OpenAICompatProvider._map_error(exc)` is the single mapping place incl. the OpenRouter branch; `generate` calls it | Principle: no duplicate code paths |
+| 6 | Base-URL test compares the URL (ruling C15) | SDK appends a trailing slash | Test asserts `str(client.base_url).rstrip("/") == OPENROUTER_BASE_URL` | Test detail |
+| 6 | Match on the exact OpenRouter 404 text | Live text unconfirmed (Task 14) | Case-insensitive regex `no endpoints\|data policy` on `str(exc)` for status 404 + name `openrouter`; Task 14 must record the real text | Privacy: forced zdr never silently retried |
+| 6 | Privacy body forced on every request | n/a | `OPENROUTER_PRIVACY` passed as `extra_body` on both plain and timeout clients; tested | Privacy: zero retention not a setting |
+

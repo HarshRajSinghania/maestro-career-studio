@@ -43,7 +43,14 @@ def _load_builtins() -> None:
         register(GeminiProvider())
     if "anthropic" not in _adapters:
         register(AnthropicProvider())
-    # Task 6 adds OpenRouter here.
+    if "openrouter" not in _adapters:
+        register(OpenAICompatProvider(
+            "openrouter",
+            client=lambda: llm._get_openrouter_client(),
+            json_mode=lambda: True,
+            label=lambda: "OpenRouter",
+            extra_body=llm.OPENROUTER_PRIVACY,
+        ))
 
 
 def resolve(model: str) -> ModelRef:

@@ -4,11 +4,12 @@ OpenRouter (Task 6). Quirks for that wire format live here and in `llm.completio
 from __future__ import annotations
 
 import base64
+import re
 from typing import Any, Callable
 
 import openai
 
-from app.services.llm_providers.errors import _no_answer, _openai_reason
+from app.services.llm_providers.errors import LLMProviderError, _no_answer, _openai_reason, logger
 from app.services.llm_providers.types import (
     ImagePart,
     Message,
@@ -17,6 +18,12 @@ from app.services.llm_providers.types import (
     TextPart,
     Usage,
 )
+
+
+NO_ZDR_MESSAGE = "OpenRouter has no zero-retention provider for this model. Pick another model."
+# OpenRouter's 404 text when the forced zdr/data_collection preferences leave no endpoint.
+# Wording unconfirmed live (Task 14): matched loosely on its two stable phrases.
+_NO_ZDR_RE = re.compile(r"no endpoints|data policy", re.IGNORECASE)
 
 
 def _user_content(msg: Message) -> Any:
@@ -60,6 +67,19 @@ class OpenAICompatProvider:
     def ready(self) -> None:
         self._client()  # raises LLMProviderError with the right sentence
 
+    def _map_error(self, exc: openai.OpenAIError) -> LLMProviderError:
+        """The ONE place an SDK error becomes a user sentence (generate and, later, stream).
+        Normalizes to LLMProviderError so provider outages mean ONE exception type for every
+        caller (app.main maps it to 502); SDK errors must not escape as 500s."""
+        if (self.name == "openrouter" and getattr(exc, "status_code", None) == 404
+                and _NO_ZDR_RE.search(str(exc))):
+            # Every OpenRouter request forces zero retention, so a model with no such
+            # provider answers 404 "No endpoints found matching your data policy".
+            logger.warning("model provider failed: %s", exc)
+            return LLMProviderError(NO_ZDR_MESSAGE, provider_detail=f"OpenRouter request failed: {exc}")
+        return _no_answer(_openai_reason(exc), f"OpenAI API request failed: {exc}",
+                          provider=self._label())
+
     def generate(self, req: Request) -> Response:
         kwargs = build_generate_kwargs(req, json_mode=self._json_mode())
         if self._extra_body:
@@ -70,10 +90,7 @@ class OpenAICompatProvider:
         try:
             response = client.chat.completions.create(**kwargs)
         except openai.OpenAIError as exc:
-            # Normalize to LLMProviderError so provider outages mean ONE exception type for
-            # every caller (app.main maps it to 502); SDK errors must not escape as 500s.
-            raise _no_answer(_openai_reason(exc), f"OpenAI API request failed: {exc}",
-                             provider=self._label()) from exc
+            raise self._map_error(exc) from exc
         text = response.choices[0].message.content or ""
         answered_by = getattr(response, "model", None)  # a MagicMock under patched-client tests
         return Response(Message("assistant", [TextPart(text)]), _usage(response), "stop",
