@@ -2128,8 +2128,8 @@ two-tool scenario once with both tools requested in one step.
 | Task 2 suite unchanged | cloud venv: 11042 passed / same 102 env failures as baseline; ruff clean |
 | Task 5 CI-venv suite, lock diff, import-time check | cloud venv (anthropic 1.13.0): 11086 passed / 906 skipped / 68 failed + 34 errors = the same 102 baseline ids (diff empty), 289 s; ruff clean; `-X importtime -c "import app.main"` shows 0 anthropic lines; wheel built + check_wheel ok (METADATA `Requires-Dist: anthropic<2,>=1.13`), test_wheel_scripts 76 passed; uv smoke left to CI (needs network); pending local: lock regeneration in python:3.12-slim |
 | Task 11 upgrade/downgrade/upgrade | scratch `$SP/data`: upgrade to 559244b575bc, seeded user / assistant+tool_calls / tool / assistant rows, `upgrade head` (cf0804d00ae2) backfilled v1 `parts` on all four rows; `downgrade -1` dropped parts/provider/model; `upgrade head` backfilled again identically; `alembic current` = cf0804d00ae2 (head) |
-| Task 14 live check (per provider: text/json/image/2-step tools/switch) | |
-| Task 16 final suite, lint, frontend, docs, slop | |
+| Task 14 live check (per provider: text/json/image/2-step tools/switch) | pending local: script not yet written (owner's real keys; never in the cloud). Open items it must confirm: OpenRouter no-ZDR 404 text and `links.next` format, OpenRouter `reasoning_details` replay, Gemini `parametersJsonSchema`, Claude fallback acceptance per model and that thinking appears (C13), GPT-6 `reasoning_effort` |
+| Task 16 final suite, lint, frontend, docs, slop | cloud pre-check @8b5d1ce: backend 11205 passed / 906 skipped / 68 failed + 34 errors = baseline set (0 new); after final-review fixes (b36685a) 11211 passed, same baseline set; ruff clean; frontend tsc/lint/394 node/build green; check_system_md 992/1000; greps as planned. Pending local: full gates on the Mac, slop ratchet, wheel/uv smoke, lock regeneration (Task 5), 1280px visual check (Task 13) |
 
 ## Deviation log
 
