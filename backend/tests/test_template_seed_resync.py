@@ -27,7 +27,9 @@ def _current_source(seed_id: str) -> str:
 
 def _fixture_versions() -> list[tuple[str, Path]]:
     return sorted(
-        (d.name, f) for d in FIXTURES.iterdir() if d.is_dir() for f in d.glob("*.tex.j2")
+        (d.name, f)
+        for d in FIXTURES.iterdir() if d.is_dir()
+        for f in d.iterdir() if f.name.endswith((".tex.j2", ".typ"))
     )
 
 
@@ -71,7 +73,7 @@ def test_a_seed_row_with_a_shipped_old_source_is_resynced(db_session, seed_id, p
             id=seed_id,
             display_name="old",
             source=old,
-            engine="latex",
+            engine="typst" if path.suffix == ".typ" else "latex",
             status="ready",
             origin="seed",
             # Stale evidence about the OLD bytes, all four fields populated so

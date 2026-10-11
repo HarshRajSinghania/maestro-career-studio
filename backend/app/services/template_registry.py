@@ -355,7 +355,7 @@ def _needs_seed_validation(tmpl: Template) -> bool:
 # never resynced ("untouched applies to the SOURCE", ensure_seed_templates), so
 # it is safe to replace with the current bundle; a user-edited row matches
 # nothing and is left alone. Pinned literals, checked against the frozen bytes
-# under tests/fixtures/templates_superseded/<seed_id>/<n>.tex.j2 — a wrong
+# under tests/fixtures/templates_superseded/<seed_id>/<n>.tex.j2 or <n>.typ — a wrong
 # digest is a silent no-op. Seed-time rather than alembic because rows that
 # v0.4.0 imported verbatim from the old Postgres database never passed through
 # a SQLite migration, and only seeding — which runs on every boot — ever sees
@@ -373,6 +373,8 @@ SUPERSEDED_SEED_DIGESTS: dict[str, frozenset[str]] = {
         # 590cb2d5: \href targets fixed; the name line still ended an empty
         # line when contact.name was blank (the web Blank tab).
         "7a7484a25d6f93db395899e63084ad1f9f9d317f6c8f727ef475df8979102b8e",
+        # Source before the template attribution headers.
+        "f6f0203fc1d6ab08a03827d20172118edc417989e4d893a9aba2af68c2bb38ea",
     }),
     "harshibar": frozenset({
         # e81696be, c4b40be0, c27b05d4 (last change on main; identical at
@@ -384,6 +386,8 @@ SUPERSEDED_SEED_DIGESTS: dict[str, frozenset[str]] = {
         # 590cb2d5: \href fixed; a contact line with nothing on it still
         # ended with a bare \\ (the web Blank tab).
         "4ec93a33152635603d7d8d2281cf5e8c23db964cd36ac818f22c9346493473c6",
+        # Source before the template attribution headers.
+        "d9853145206988204e1b8e9b15838d64efefc5bbbc49ae99655b29426586023c",
     }),
     "xcharter_serif": frozenset({
         # e81696be, c4b40be0, c27b05d4 (identical at 8878731d): all three end
@@ -391,6 +395,12 @@ SUPERSEDED_SEED_DIGESTS: dict[str, frozenset[str]] = {
         "3b69c685a8f9ca528886432fc16a71bd36b4ae3720cd39f99b8f306915aae0a6",
         "6fbbb40605eaefd3994104866540dc297a827292edcb955709db05f637a7f979",
         "7f577cd106ad0bbe6e2ccff58131d68da3c967597c802215d10dcb9d0ce4f289",
+        # Source before the template attribution headers.
+        "a06c8ecba153c566efeab09470152d931bc3dab1b737830dad583bbc25797e45",
+    }),
+    "xcharter_serif_typst": frozenset({
+        # Typst port before the inherited template attribution header.
+        "539815b940267de984338042350d0d8e3c91e7bd6ad7656cdaccf782dc4c7350",
     }),
 }
 
@@ -401,9 +411,10 @@ SUPERSEDED_SEED_DIGESTS: dict[str, frozenset[str]] = {
 # release will carry, and the resync can only recognise what was pinned.
 # Update it LAST, after the fixture and the SUPERSEDED_SEED_DIGESTS entry.
 CURRENT_SEED_DIGESTS: dict[str, str] = {
-    "carlito_dense": "f6f0203fc1d6ab08a03827d20172118edc417989e4d893a9aba2af68c2bb38ea",
-    "harshibar": "d9853145206988204e1b8e9b15838d64efefc5bbbc49ae99655b29426586023c",
-    "xcharter_serif": "a06c8ecba153c566efeab09470152d931bc3dab1b737830dad583bbc25797e45",
+    "carlito_dense": "6585a38def5fd891416d27014c40c0ef9e88a0c722620ae4904438d5433a1667",
+    "harshibar": "122996d28e6937e74a0f3571bbba22a8a680bd5f12f95f3b83ced5f397e0cb4c",
+    "xcharter_serif": "1dd50d7a9253d090f48e5ad4241e456e1da6f024b24fdd6d616023a4c38798e7",
+    "xcharter_serif_typst": "84710581bbe696e3c32f2970b0edf929552b90b12114f3f3083845f2b0a22a53",
 }
 
 

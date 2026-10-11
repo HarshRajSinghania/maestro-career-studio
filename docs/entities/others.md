@@ -191,10 +191,11 @@
   (400, the same as any invalid override) so a typo cannot be saved. Extras keep
   their documented anchor as a *default* position; `section_order` moves the
   whole extras run, `move_extra_section` orders them among themselves.
-  The four live user templates are bundled at
-  `app/templates/user/`; `scripts/apply_template_sources` is their update
-  path, and seed-time `SUPERSEDED_SEED_DIGESTS` is what reaches installed
-  rows.
+  Fresh installs seed Classic, Typst Classic, and all four designs bundled at
+  `app/templates/user/` (including Harshibar). `THIRD_PARTY_NOTICES.md` inventories
+  their provenance and licenses; derived sources carry attribution headers.
+  `scripts/apply_template_sources` is the maintainer update path; seed-time
+  `SUPERSEDED_SEED_DIGESTS` reaches untouched installed rows for either engine.
   **Pre-change template sources are frozen per migration** at
   `tests/fixtures/templates_pre_section_order/`: reconstructing old bytes from
   the LIVE templates (what the date-resync test did) breaks on the next template

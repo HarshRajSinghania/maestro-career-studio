@@ -657,9 +657,9 @@
     "duplication_pct": 0.51,
     "duplicated_lines": 381,
     "clone_count": 43,
-    "complexity_hotspots": 738,
+    "complexity_hotspots": 741,
     "error_masking": 16,
     "imports_per_module": 4.39
   },
-  "complexity_hotspots_adjustment_reason": "CI portability: the existing fresh-process launcher test parses JSON and checks the platform-specific executable name; its assertion count raises measured complexity from 9 to 10. No production function crosses the threshold."
+  "complexity_hotspots_adjustment_reason": "Template license coverage: two new attribution tests and the existing seed-resync test cross the assertion-aware complexity threshold (cc 11, 11 and 10). No production function changes its control flow or crosses the threshold; only this count changes from 738 to 741. Other metric limits stay unchanged."
 }

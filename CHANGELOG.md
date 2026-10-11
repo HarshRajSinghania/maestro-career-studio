@@ -47,6 +47,8 @@ None.
 
 ### Fixed
 
+- Bundled resume templates carry complete MIT attribution, including Harshibar;
+  third-party notices list all six seeded designs and both cover-letter sources.
 - The glossary and package description use match score; the social preview restores Inter Medium.
 - First starts without TeX render the demo resume with Typst; a failed seed render shows its reason.
 - Windows child processes keep the system environment needed for networking, including backup and update commands.

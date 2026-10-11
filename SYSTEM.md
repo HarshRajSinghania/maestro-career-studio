@@ -94,7 +94,8 @@ backend/
                        automations (page catalog), agent_runs + inbox_readiness, …)
     automations/skills/  the agent prompts, one <name>/SKILL.md each: the Automations
                        source of the Automations page; indexed by docs/skills/README.md
-    templates/         bundled .tex.j2 sources, typst_classic.typ and cover_letter.typ
+    templates/         six seeded resume designs + both cover-letter sources; derived
+                       sources carry MIT headers; inventory/licenses: THIRD_PARTY_NOTICES.md
     tools/             operator tools, `python -m app.tools.<name>`: backup_db
   mcp_server/          FastMCP registry + http.py per-profile ASGI endpoint; client.py httpx → REST
   maestro_cs/          the `maestro` command (uv install, §9): CLI, supervisor, home layout, update, connect, stdio bridge
