@@ -32,34 +32,6 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 None.
 
-### Added
-
-- Career history imports PowerPoint decks (.pptx), including speaker notes.
-- **`maestro import-docker CHECKOUT`** moves a Docker install's data into the uv
-  install, once: the database (with stored file locations rewritten), resumes,
-  applications, knowledge-base files, settings, the sync key and the settings in
-  its `.env` that Maestro understands. It reads the Docker folder and changes
-  nothing in it, saves a snapshot of the uv database first, and puts back the
-  database, sync key, settings and `maestro.env` if anything fails. `--dry-run` shows the plan. See `docs/UPDATING.md`.
-
-### Changed
-
-- The app calls its score the match score (it was labelled ATS score).
-- README rewritten: shorter top screen, the uv install leads the Quickstart; the manual moved to `docs/USING_MAESTRO.md` and `docs/SETUP_REFERENCE.md`.
-
-### Security
-
-- Typst renders can no longer download packages, including through a computed import path. LaTeX compiles each run in its own temporary folder, so a template cannot read or overwrite another resume's source.
-
-### Fixed
-
-- PyPI wheels include the project license and notices; untouched Classic templates receive the complete attribution header on upgrade.
-- Bundled resume templates carry complete MIT attribution, including Harshibar;
-  third-party notices list all six seeded designs and both cover-letter sources.
-- The glossary and package description use match score; the social preview restores Inter Medium.
-- First starts without TeX render the demo resume with Typst; a failed seed render shows its reason.
-- Windows child processes keep the system environment needed for networking, including backup and update commands.
-
 ## [0.9.0] — 2026-10-10
 
 This release is about getting Maestro out of its box. AI agents now reach it by
@@ -86,6 +58,13 @@ commands and no Docker at all. If you already run the Docker version,
 
 ### Added
 
+- Career history imports PowerPoint decks (.pptx), including speaker notes.
+- **`maestro import-docker CHECKOUT`** moves a Docker install's data into the uv
+  install, once: the database (with stored file locations rewritten), resumes,
+  applications, knowledge-base files, settings, the sync key and the settings in
+  its `.env` that Maestro understands. It reads the Docker folder and changes
+  nothing in it, saves a snapshot of the uv database first, and puts back the
+  database, sync key, settings and `maestro.env` if anything fails. `--dry-run` shows the plan. See `docs/UPDATING.md`.
 - **A Docker-free install with uv, and the `maestro` command.**
   `uv tool install --python 3.12 maestro-career-studio` installs Maestro (published
   to PyPI on every release tag, with the web app and Node inside the package) on
@@ -121,6 +100,8 @@ commands and no Docker at all. If you already run the Docker version,
 
 ### Changed
 
+- The app calls its score the match score (it was labelled ATS score).
+- README rewritten: shorter top screen, the uv install leads the Quickstart; the manual moved to `docs/USING_MAESTRO.md` and `docs/SETUP_REFERENCE.md`.
 - **The backend's Python distribution is renamed** `maestro-career-studio-backend`
   to `maestro-career-studio` (it is the PyPI name). The setup scripts uninstall the
   old name; nothing to do. `pyproject.toml` is also the PyPI version.
@@ -165,8 +146,18 @@ commands and no Docker at all. If you already run the Docker version,
   are removed in v0.10.0. Existing `maestro-career-studio-mcp` connections keep
   working as a compatibility fallback.
 
+### Security
+
+- Typst renders can no longer download packages, including through a computed import path. LaTeX compiles each run in its own temporary folder, so a template cannot read or overwrite another resume's source.
+
 ### Fixed
 
+- PyPI wheels include the project license and notices; untouched Classic templates receive the complete attribution header on upgrade.
+- Bundled resume templates carry complete MIT attribution, including Harshibar;
+  third-party notices list all six seeded designs and both cover-letter sources.
+- The glossary and package description use match score; the social preview restores Inter Medium.
+- First starts without TeX render the demo resume with Typst; a failed seed render shows its reason.
+- Windows child processes keep the system environment needed for networking, including backup and update commands.
 - Failed startup base-resume renders and artifact file deletions log warnings
   with tracebacks; missing files and folder-pruning failures stay quiet.
 - Prompt reads that open their own session use the file default without writing
