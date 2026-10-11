@@ -19,6 +19,10 @@ harness), Chrome MV3 extension (plain JS IIFEs on `window.careerStudioCompanion`
 **Design:** `docs/plans/2026-10-10-companion-queued-run-design.md` (approved 2026-10-10; Job step
 buttons, park less and Part 8 added 2026-10-11). Read it first.
 
+**Panel look:** direction C ("one next step"), per the design's "Panel look" decision. The panel
+tasks (19, 20, 20a) render the run states into C's single Next card; ask the planner for the canvas
+mockups before starting them.
+
 **Task order:** 1 → 2–10 → 10a → 11 → 12–16 → 17 → 18 → 18a → 19 → 20 → 20a → 20b → (21) → 22 → 23. Where this plan and the design differ, this plan says so under "Adjustments" and why.
 
 ---

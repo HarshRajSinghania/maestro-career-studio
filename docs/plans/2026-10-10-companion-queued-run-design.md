@@ -57,6 +57,11 @@ of the gates. Lowering that friction is part of the goal, not a side effect.
   **Apply** (primary: save, pick the resume, queue as the user's yes, then run this one job in this
   tab through to review) and **Queue** (save and queue for a later Apply to queued). Plain **Save job**
   shows only when full automation is off, exactly as today.
+- **Panel look (2026-10-11):** direction C, "one next step": a single Next card that changes as the
+  run moves (Apply → Filling page N → Needs you → Ready to submit), under a four-segment progress bar.
+  Mockups of the Job step (Save job / Apply + Queue / finish tailoring first), a running job (filling,
+  Needs you, a wall, Ready to submit with the 8 s Undo) and Apply to queued (Before we start, the run
+  list, run finished) live in the owner's private design canvas. Tasks 19, 20 and 20a build to them.
 - **Park less (2026-10-11):** a run parks only on required fields it could not answer or could not
   operate. A field that shows a value the engine could not prove does not park: the run clicks Next
   and lets the page's own validation decide (refill once, then park with the page's error text).
