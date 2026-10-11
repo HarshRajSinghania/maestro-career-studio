@@ -1,7 +1,6 @@
 import io
 import struct
 import zipfile
-from xml.etree import ElementTree
 
 import pytest
 
@@ -127,16 +126,21 @@ def test_slide_relationship_targets_resolve_relative_to_presentation(target):
 def test_malformed_deck_xml_uses_the_plain_read_error(part):
     parts = _deck_parts()
     parts[part] = '<broken'
-    with pytest.raises(ElementTree.ParseError) as caught:
+    with pytest.raises(ax.UnreadableFile) as caught:
         ax.extract_text('broken.pptx', None, _zip(parts))
-    assert ax.plain_read_error(caught.value) == "Couldn't read this file."
+    assert ax.plain_read_error(caught.value) == "This file isn't a readable PowerPoint deck."
 
 
-@pytest.mark.parametrize('data', [b'not a zip', _zip({})])
-def test_unreadable_deck_uses_a_plain_sentence(data):
-    with pytest.raises((zipfile.BadZipFile, ax.UnreadableFile)) as caught:
-        ax.extract_text('broken.pptx', None, data)
-    assert ax.plain_read_error(caught.value) in {"Couldn't read this file.", ax.NO_TEXT}
+def test_non_zip_deck_uses_a_plain_sentence():
+    with pytest.raises(ax.UnreadableFile) as caught:
+        ax.extract_text('broken.pptx', None, b'not a zip')
+    assert ax.plain_read_error(caught.value) == "This file isn't a readable PowerPoint deck."
+
+
+def test_empty_archive_uses_the_no_text_sentence():
+    with pytest.raises(ax.UnreadableFile) as caught:
+        ax.extract_text('empty.pptx', None, _zip({}))
+    assert ax.plain_read_error(caught.value) == ax.NO_TEXT
 
 
 def test_notes_only_slide_is_kept_but_empty_slide_is_skipped():
@@ -196,3 +200,132 @@ def test_deck_limits_xml_before_decompression_including_total_size(sizes):
     with pytest.raises(ax.UnreadableFile, match='too large') as caught:
         ax.extract_text('large.pptx', None, bytes(data))
     assert ax.plain_read_error(caught.value) == 'This PowerPoint file is too large to read.'
+
+
+MC = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+
+
+def _count_reads(monkeypatch):
+    from collections import Counter
+
+    counts = Counter()
+    original = zipfile.ZipFile.read
+
+    def read(archive, name, *args, **kwargs):
+        counts[name] += 1
+        # Fail early on the old path instead of allocating hundreds of MB.
+        assert counts[name] == 1, f"Repeated read: {name}"
+        return original(archive, name, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, 'read', read)
+    return counts
+
+
+def test_duplicate_slide_ids_read_each_part_once_and_bound_output(monkeypatch):
+    parts = _deck_parts()
+    parts['ppt/presentation.xml'] = (
+        f'<p:presentation xmlns:p="{P}" xmlns:r="{R}"><p:sldIdLst>'
+        + '<p:sldId r:id="second"/>' * 1500
+        + '</p:sldIdLst></p:presentation>'
+    )
+    parts['ppt/slides/slide2.xml'] = _slide(_shape('X' * 1_000_000))
+    counts = _count_reads(monkeypatch)
+    text = ax._pptx_text(_zip(parts))
+    assert counts['ppt/slides/slide2.xml'] == 1
+    assert text == 'Slide 1\n' + 'X' * (ax.MAX_CHARS - len('Slide 1\n'))
+    assert counts['ppt/notesSlides/notesSlide7.xml'] == 0
+
+
+def test_duplicate_slides_keep_first_occurrence_order():
+    parts = _deck_parts()
+    parts['ppt/presentation.xml'] = parts['ppt/presentation.xml'].replace(
+        '<p:sldId id="258" r:id="empty"/>', '<p:sldId r:id="second"/>',
+    )
+    text = ax.extract_text('deck.pptx', None, _zip(parts))
+    assert text.count('Project overview') == 1
+    assert text.index('Project overview') < text.index('Results')
+    assert 'Slide 3' not in text
+
+
+def test_notes_targets_are_read_once_across_references_and_slides(monkeypatch):
+    parts = _deck_parts()
+    rels = _rels([
+        ('notes', 'notesSlide', '../notesSlides/notesSlide7.xml'),
+        ('again', 'notesSlide', '../notesSlides/notesSlide7.xml'),
+    ])
+    parts['ppt/slides/_rels/slide1.xml.rels'] = rels
+    parts['ppt/slides/_rels/slide2.xml.rels'] = rels
+    counts = _count_reads(monkeypatch)
+    text = ax.extract_text('deck.pptx', None, _zip(parts))
+    assert counts['ppt/notesSlides/notesSlide7.xml'] == 1
+    assert text.count('I led delivery') == 1
+
+
+def test_character_budget_stops_before_reading_later_slides(monkeypatch):
+    parts = _deck_parts()
+    monkeypatch.setattr(ax, 'MAX_CHARS', 40)
+    counts = _count_reads(monkeypatch)
+    text = ax._pptx_text(_zip(parts))
+    assert len(text) == 40
+    assert counts['ppt/slides/slide1.xml'] == 0
+
+
+def test_more_than_one_thousand_unique_slides_is_too_large():
+    parts = {f'ppt/slides/slide{i}.xml': _slide(_shape('Small')) for i in range(1, 1002)}
+    with pytest.raises(ax.UnreadableFile) as caught:
+        ax.extract_text('large.pptx', None, _zip(parts))
+    assert str(caught.value) == 'This PowerPoint file is too large to read.'
+
+
+def test_alternate_content_reads_only_the_first_choice():
+    content = (
+        f'<mc:AlternateContent xmlns:mc="{MC}">'
+        '<mc:Choice>' + _shape('Chosen') + '</mc:Choice>'
+        '<mc:Choice>' + _shape('Other choice') + '</mc:Choice>'
+        '<mc:Fallback>' + _shape('Fallback') + '</mc:Fallback></mc:AlternateContent>'
+    )
+    assert ax.extract_text('deck.pptx', None, _zip({
+        'ppt/slides/slide1.xml': _slide(content),
+    })) == 'Slide 1\nChosen'
+
+
+def test_slide_number_is_skipped_but_dates_and_footers_stay():
+    content = _shape('Title')
+    for kind, text in [('sldNum', '99'), ('dt', 'Project date'), ('ftr', 'Project footer')]:
+        content += _shape(text, f'<p:nvSpPr><p:nvPr><p:ph type="{kind}"/></p:nvPr></p:nvSpPr>')
+    assert ax.extract_text('deck.pptx', None, _zip({
+        'ppt/slides/slide1.xml': _slide(content),
+    })) == 'Slide 1\nTitle\nProject date\nProject footer'
+
+
+def test_missing_relationship_target_is_an_unreadable_deck():
+    parts = _deck_parts()
+    parts.pop('ppt/notesSlides/notesSlide7.xml')
+    with pytest.raises(ax.UnreadableFile) as caught:
+        ax.extract_text('deck.pptx', None, _zip(parts))
+    assert str(caught.value) == "This file isn't a readable PowerPoint deck."
+
+
+def test_deep_groups_are_an_unreadable_deck():
+    content = '<p:grpSp>' * 5000 + _shape('Nested') + '</p:grpSp>' * 5000
+    with pytest.raises(ax.UnreadableFile) as caught:
+        ax.extract_text('deck.pptx', None, _zip({'ppt/slides/slide1.xml': _slide(content)}))
+    assert str(caught.value) == "This file isn't a readable PowerPoint deck."
+
+
+@pytest.mark.parametrize('table', [False, True], ids=['paragraph', 'table'])
+def test_alternate_content_inside_text_reads_only_the_first_choice(table):
+    alternate = (
+        f'<mc:AlternateContent xmlns:mc="{MC}">'
+        '<mc:Choice><a:r><a:t>Chosen</a:t></a:r></mc:Choice>'
+        '<mc:Fallback><a:r><a:t>Fallback</a:t></a:r></mc:Fallback>'
+        '</mc:AlternateContent>'
+    )
+    paragraph = '<a:p>' + alternate + '</a:p>'
+    content = (
+        '<a:tbl><a:tr><a:tc><a:txBody>' + paragraph + '</a:txBody></a:tc></a:tr></a:tbl>'
+        if table else '<p:sp><p:txBody>' + paragraph + '</p:txBody></p:sp>'
+    )
+    assert ax.extract_text('deck.pptx', None, _zip({
+        'ppt/slides/slide1.xml': _slide(content),
+    })) == 'Slide 1\nChosen'

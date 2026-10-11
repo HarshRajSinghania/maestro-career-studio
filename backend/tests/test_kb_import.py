@@ -483,3 +483,22 @@ def test_demo_resume_is_excluded_from_the_kb_seed(db_session, tmp_path, monkeypa
     seeding.seed_career_kb(db_session)
 
     assert captured == [] or seeding.DEMO_SLUG not in (captured[0] if captured else [])
+
+
+@pytest.mark.parametrize('filename,mime', [
+    ('deck.pptx', None),
+    ('upload', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'),
+])
+def test_resume_batch_skips_decks_without_minting_a_base(db_session, tmp_path, monkeypatch, filename, mime):
+    from tests.test_attachment_extract_pptx import _deck_parts, _zip
+
+    _stub_pipeline(monkeypatch, tmp_path)
+
+    def no_parse(*args):
+        pytest.fail('A deck must not reach the resume parser')
+
+    monkeypatch.setattr(kb_consolidation, 'parse_resume_text', no_parse)
+    result = kb_import.import_resumes(db_session, [(filename, mime, _zip(_deck_parts()))])
+    assert result.bases == []
+    assert result.skipped[0].reason == 'Import PowerPoint decks as documents in Career history.'
+    assert db_session.query(BaseResume).count() == 0

@@ -18,6 +18,7 @@ NOT used anywhere: it is AGPL-3.0 and would relicense the whole project.
 
 import io
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 
 from app.services.pdfium_lock import PDFIUM_LOCK
@@ -35,6 +36,7 @@ _IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp"}
 
 MAX_CHARS = 200_000
 _OFFICE_XML_MAX_BYTES = 50 * 1024 * 1024
+_PPTX_MAX_SLIDES = 1_000
 
 # A PDF whose text layer is this sparse AND that embeds images is treated as
 # image-based (scanned page, generated certificate) and sent to vision.
@@ -153,6 +155,16 @@ def _grid_value(node, default: str) -> int:
 
 
 def _docx_text(data: bytes) -> str:
+    import zipfile
+    from xml.etree import ElementTree
+
+    try:
+        return _docx_document_text(data)
+    except (zipfile.BadZipFile, ElementTree.ParseError, KeyError, RecursionError) as exc:
+        raise UnreadableFile("This file isn't a readable Word document.") from exc
+
+
+def _docx_document_text(data: bytes) -> str:
     import posixpath
     import zipfile
     from xml.etree import ElementTree
@@ -206,36 +218,57 @@ def _docx_text(data: bytes) -> str:
 _A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 _P = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
 _R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_MC = "{http://schemas.openxmlformats.org/markup-compatibility/2006}"
+
+
+def _pptx_nodes(node):
+    """Walk one representation of alternate content, including inside runs and cells."""
+    if node is None:
+        return
+    yield node
+    children = node.findall(f"{_MC}Choice")[:1] if node.tag == f"{_MC}AlternateContent" else node
+    for child in children:
+        yield from _pptx_nodes(child)
 
 
 def _a_text(paragraph) -> str:
     return "".join(
         "\n" if node.tag == f"{_A}br" else (node.text or "")
-        for node in paragraph.iter() if node.tag in (f"{_A}t", f"{_A}br")
+        for node in _pptx_nodes(paragraph) if node.tag in (f"{_A}t", f"{_A}br")
     )
 
 
-def _pptx_content(node, *, notes: bool = False) -> list[str]:
-    """Read shape/group order, keeping table rows together and omitting note furniture."""
-    if node is None:
-        return []
+def _pptx_table(node) -> Iterator[str]:
+    for row in node.findall(f"{_A}tr"):
+        cells = [
+            "\n".join(_a_text(p) for p in _pptx_nodes(cell) if p.tag == f"{_A}p")
+            for cell in row.findall(f"{_A}tc")
+        ]
+        if any(cell.strip() for cell in cells):
+            yield " | ".join(cells)
+
+
+def _pptx_skip_placeholder(node, notes: bool) -> bool:
     placeholder = node.find(f"{_P}nvSpPr/{_P}nvPr/{_P}ph")
-    if notes and placeholder is not None and placeholder.get("type") in {"sldNum", "hdr", "ftr", "dt"}:
-        return []
-    if node.tag == f"{_A}p":
+    skipped = {"sldNum", "hdr", "ftr", "dt"} if notes else {"sldNum"}
+    return placeholder is not None and placeholder.get("type") in skipped
+
+
+def _pptx_content(node, *, notes: bool = False) -> Iterator[str]:
+    """Yield shape/group text in order, keeping table rows and the first alternate choice."""
+    if node is None or _pptx_skip_placeholder(node, notes):
+        return
+    if node.tag == f"{_MC}AlternateContent":
+        yield from _pptx_content(node.find(f"{_MC}Choice"), notes=notes)
+    elif node.tag == f"{_A}p":
         text = _a_text(node)
-        return [text] if text.strip() else []
-    if node.tag == f"{_A}tbl":
-        rows = []
-        for row in node.findall(f"{_A}tr"):
-            cells = [
-                "\n".join(_a_text(p) for p in cell.iter(f"{_A}p"))
-                for cell in row.findall(f"{_A}tc")
-            ]
-            if any(cell.strip() for cell in cells):
-                rows.append(" | ".join(cells))
-        return rows
-    return [text for child in node for text in _pptx_content(child, notes=notes)]
+        if text.strip():
+            yield text
+    elif node.tag == f"{_A}tbl":
+        yield from _pptx_table(node)
+    else:
+        for child in node:
+            yield from _pptx_content(child, notes=notes)
 
 
 def _pptx_targets(archive, part: str, kind: str) -> dict[str, str]:
@@ -277,40 +310,78 @@ def _pptx_slide_order(archive) -> list[str]:
     try:
         presentation_data = archive.read("ppt/presentation.xml")
     except KeyError:
-        return slides
+        return _pptx_unique_slides(slides)
     presentation = ElementTree.fromstring(presentation_data)
     ids = presentation.findall(f"{_P}sldIdLst/{_P}sldId")
     targets = _pptx_targets(archive, "ppt/presentation.xml", "slide")
     if not ids or any(slide.get(f"{_R}id") not in targets for slide in ids):
-        return slides
-    return [targets[slide.get(f"{_R}id")] for slide in ids]
+        return _pptx_unique_slides(slides)
+    return _pptx_unique_slides(targets[slide.get(f"{_R}id")] for slide in ids)
+
+
+def _pptx_unique_slides(parts) -> list[str]:
+    slides = list(dict.fromkeys(parts))
+    if len(slides) > _PPTX_MAX_SLIDES:
+        raise UnreadableFile("This PowerPoint file is too large to read.")
+    return slides
+
+
+def _pptx_part_content(archive, part: str, *, notes: bool = False) -> Iterator[str]:
+    from xml.etree import ElementTree
+
+    root = ElementTree.fromstring(archive.read(part))
+    yield from _pptx_content(root.find(f"{_P}cSld/{_P}spTree"), notes=notes)
+
+
+def _pptx_slide_content(archive, part: str, seen_notes: set[str]) -> Iterator[str]:
+    yield from _pptx_part_content(archive, part)
+    note_label = False
+    for target in _pptx_targets(archive, part, "notesSlide").values():
+        if target in seen_notes:
+            continue
+        seen_notes.add(target)
+        for text in _pptx_part_content(archive, target, notes=True):
+            if not note_label:
+                yield "Notes:"
+                note_label = True
+            yield text
+
+
+def _pptx_collect(archive) -> str:
+    parts: list[str] = []
+    total = 0
+    seen_notes: set[str] = set()
+    for number, part in enumerate(_pptx_slide_order(archive), 1):
+        first = True
+        for text in _pptx_slide_content(archive, part, seen_notes):
+            prefix = "\n"
+            if first:
+                prefix = ("\n\n" if parts else "") + f"Slide {number}\n"
+                first = False
+            chunk = prefix + text
+            parts.append(chunk[:MAX_CHARS - total])
+            total += len(chunk)
+            if total >= MAX_CHARS:
+                return "".join(parts)
+    return "".join(parts)
 
 
 def _pptx_text(data: bytes) -> str:
     import zipfile
     from xml.etree import ElementTree
 
-    with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        # Bound the whole deck's XML before decompressing any part, including notes/rels.
-        xml_size = sum(
-            part.file_size for part in archive.infolist()
-            if part.filename.startswith("ppt/") and part.filename.endswith((".xml", ".rels"))
-        )
-        if xml_size > _OFFICE_XML_MAX_BYTES:
-            raise UnreadableFile("This PowerPoint file is too large to read.")
-        slides = []
-        for number, part in enumerate(_pptx_slide_order(archive), 1):
-            root = ElementTree.fromstring(archive.read(part))
-            text = _pptx_content(root.find(f"{_P}cSld/{_P}spTree"))
-            notes = []
-            for target in _pptx_targets(archive, part, "notesSlide").values():
-                note = ElementTree.fromstring(archive.read(target))
-                notes.extend(_pptx_content(note.find(f"{_P}cSld/{_P}spTree"), notes=True))
-            if notes:
-                text.extend(["Notes:", *notes])
-            if text:
-                slides.append("\n".join([f"Slide {number}", *text]))
-    return "\n\n".join(slides)
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            # Bound the whole deck's XML before decompressing any part, including notes/rels.
+            xml_size = sum(
+                part.file_size for part in archive.infolist()
+                if part.filename.startswith("ppt/") and part.filename.endswith((".xml", ".rels"))
+            )
+            if xml_size > _OFFICE_XML_MAX_BYTES:
+                raise UnreadableFile("This PowerPoint file is too large to read.")
+            return _pptx_collect(archive)
+    except (zipfile.BadZipFile, ElementTree.ParseError, KeyError, RecursionError) as exc:
+        raise UnreadableFile("This file isn't a readable PowerPoint deck.") from exc
 
 
 class UnreadableFile(ValueError):
@@ -345,7 +416,10 @@ def extract_text(filename: str, mime: str | None, data: bytes) -> str:
     suffix = Path(filename or "").suffix.lower()
     mime = (mime or "").lower().split(";")[0].strip()
 
-    if suffix == ".ppt" or mime == "application/vnd.ms-powerpoint":
+    supported_suffixes = {".pdf", ".docx", ".pptx", *_TEXT_SUFFIXES, *_IMAGE_SUFFIXES}
+    if suffix == ".ppt" or (
+        mime == "application/vnd.ms-powerpoint" and suffix not in supported_suffixes
+    ):
         raise UnreadableFile("Save it as .pptx or PDF.")
     if suffix == ".pdf" or mime == "application/pdf":
         text = _pdf_text(data)

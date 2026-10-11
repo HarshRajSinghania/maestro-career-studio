@@ -503,6 +503,11 @@ def _parse_resume_upload(db: Session, file: UploadFile) -> tuple[str, dict, list
     if len(blob) > IMPORT_MAX_BYTES:
         raise HTTPException(status_code=413, detail="This file is over 10 MB.")
 
+    try:
+        kb_import.require_resume_file(safe_name, file.content_type)
+    except UnreadableFile as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     if kb_import._is_json(safe_name, file.content_type):
         try:
             return safe_name, kb_import.parse_resume_json(blob), []

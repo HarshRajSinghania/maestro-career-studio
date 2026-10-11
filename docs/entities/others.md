@@ -284,9 +284,13 @@
   one (new entities default status `completed`), stores the document via the
   shared `kb_ingest.store_document` helper, and mints draft points in the same
   call. 422 when no text extracts (no orphan rows), 400 bad LLM output, 502
-  provider outage. Imports read PDF, DOCX, PPTX, Markdown, text and images. PPTX uses stdlib ZIP/XML:
-  presentation order (numeric fallback), slide text/tables and linked speaker notes, with a 50 MiB XML cap;
-  empty slides are skipped, images get no OCR, and binary PPT requires saving as PPTX or PDF.
+  provider outage. Document imports read PDF, DOCX, PPTX, Markdown, text and images. PPTX uses stdlib ZIP/XML:
+  presentation order (numeric fallback), slide text/tables and linked speaker notes, with a 50 MiB XML cap,
+  at most 1,000 unique slides and 200,000 collected characters. Slide and notes parts are read once;
+  only the first alternate choice is read, slide numbers and note furniture are skipped, and empty slides
+  are skipped. Images get no OCR; binary PPT requires saving as PPTX or PDF. Unreadable DOCX/PPTX files
+  return a plain file-type sentence (chat 400, document import 422). Decks belong in the documents lane;
+  `kb_import.require_resume_file` refuses them in both base-resume import paths before parsing.
   UI: the Quick capture card is dual-intake. **Vision fallback
   for image-based documents**: certificate PDFs are often one full-page raster
   whose only text layer is the recipient's name (which once minted an

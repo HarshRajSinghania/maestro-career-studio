@@ -657,9 +657,9 @@
     "duplication_pct": 0.51,
     "duplicated_lines": 381,
     "clone_count": 43,
-    "complexity_hotspots": 744,
+    "complexity_hotspots": 743,
     "error_masking": 16,
     "imports_per_module": 4.39
   },
-  "complexity_hotspots_adjustment_reason": "PPTX import adds one hotspot: _pptx_content (cc 15) preserves shape order, table rows and note text. Worst complexity stays 42; hotspot density stays below the baseline. Only the count changes from 743 to 744; other metric limits stay unchanged (SYSTEM.md §9)."
+  "complexity_hotspots_adjustment_reason": "Wheel license and Classic resync coverage: two new tests cross the assertion-aware complexity threshold (staging cc 10, Classic source/default preservation cc 14). Classic bootstrap already exceeds the threshold; no production function newly crosses it. Only this count changes from 741 to 743; other metric limits stay unchanged."
 }
