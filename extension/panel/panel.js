@@ -97,9 +97,10 @@
  * Both are enforced by scope rather than by agreement, which is the only kind
  * of enforcement this arrangement has.
  *
- * WHAT RENDERS WHAT: three regions are constant chrome — header (mark + the
- * one deep link), identity (title / company / chip / ATS rings), footer
- * (status + exactly one primary CTA) — and the rail is the dynamic one. The
+ * WHAT RENDERS WHAT: four regions are constant chrome — header (mark + the
+ * one deep link), identity (title / company / chip / ATS rings), progress
+ * (four segments and "Step N of 4"), footer (status + exactly one primary CTA)
+ * — and the rail is the dynamic one. The
  * active stage is COMPUTED from the store, never from what the user last
  * clicked (design: "stage inference, not stage navigation").
  */
@@ -1787,6 +1788,40 @@
     region("identity").replaceChildren(...children);
   }
 
+  /** Where the user IS, in four segments and a label: "Step N of 4 · Name".
+   *
+   * N and the name come from the ACTIVE row of `railModel` (`decision.stage`),
+   * never from `open`: a reopened done row is a thing the user is looking at,
+   * and the bar is the same fact `aria-current` reports. The segments BEFORE
+   * the active one are `done` and the active one is `active`, the rest bare:
+   * the bar says how far along the journey is, by position, and leaves each
+   * row's own tick, skip and "Not yet" to the rail (a job applied inside the
+   * web app has Fill never ticked here, and the bar still has passed it).
+   * One `role="img"` carries the words, so
+   * the four spans are not announced as four things; the visible label is
+   * hidden from the tree because the image already says it.
+   *
+   * Nothing on a page the panel reads nothing about (`refreshControl`'s own
+   * rule): a settings tab has no journey, and a bar at "Step 1" would claim one. */
+  function renderProgress(decision) {
+    if (card.tabId === null || !isWebPage(card.url)) {
+      region("progress").replaceChildren();
+      return;
+    }
+    const rows = railModel(decision);
+    const active = rows.find((row) => row.state === "active");
+    const label = `Step ${active.n} of ${rows.length} \u00b7 ${active.name}`;
+    const bar = node("div", "progress-bar");
+    bar.setAttribute("role", "img");
+    bar.setAttribute("aria-label", label);
+    attach(bar, ...rows.map((row) => node(
+      "span", row.n < active.n ? "seg-bar done"
+        : row.n === active.n ? "seg-bar active" : "seg-bar")));
+    const words = node("div", "progress-label", label);
+    words.setAttribute("aria-hidden", "true");
+    region("progress").replaceChildren(bar, words);
+  }
+
   /** Refresh (`refreshPage`), or nothing on a page the panel reads nothing
    * about. Disabled while any action runs, `statusSegment`'s rule: a re-read
    * resets the store that action is writing. While its OWN load runs it is
@@ -2660,6 +2695,7 @@
     // rather than where it takes them from.
     withPlaceKept(() => {
       renderIdentity(decision);
+      renderProgress(decision);
       renderRail(decision, open);
     });
     renderFoot(open);

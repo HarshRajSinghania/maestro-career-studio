@@ -1741,6 +1741,50 @@ def test_a_tab_that_is_not_a_web_page_costs_no_round_trip(tmp_path):
     assert _text(out["regions"]["foot"]).strip() == "Save job"
 
 
+def _progress(regions_):
+    """The progress bar as `(segment classes, label, aria-label, role)`."""
+    [bar] = _by_class(regions_["progress"], "progress-bar")
+    [label] = _by_class(regions_["progress"], "progress-label")
+    segs = [kid["class"].replace("seg-bar", "").strip()
+            for kid in _by_class(bar, "seg-bar")]
+    return segs, label["text"], bar["attrs"].get("aria-label"), bar["attrs"].get("role")
+
+
+def test_a_fresh_unsaved_job_starts_the_progress_bar_on_step_one(tmp_path):
+    out = _load(tmp_path, api={
+        "lightningai": _reply({"match": "none", "job": None, "application": None}),
+        "/api/base-resumes": _reply(BASE_RESUMES),
+    })
+    segs, label, aria, role = _progress(out["regions"])
+    assert segs == ["active", "", "", ""]
+    assert label == "Step 1 of 4 \u00b7 Job"
+    # Announced as one image whose name is the visible words, not four spans.
+    assert (aria, role) == (label, "img")
+
+
+def test_a_saved_tailored_applied_job_reads_step_four_in_the_progress_bar_with_three_done(tmp_path):
+    out = _load(tmp_path, api={
+        "lightningai": _reply({"match": "exact", "job": LIGHTNING_JOB,
+                               "application": {"id": "app-1", "status": "applied"}}),
+        "/api/base-resumes": _reply(BASE_RESUMES),
+        "/api/ats-scores": _reply(SCORES),
+        "/api/applications/app-1": _reply({"pdf_path": "renders/app-1.pdf",
+                                           "status": "applied"}),
+    }, replies={"read_settings": SETTINGS_REPLY,
+                "panel_frame0": _reply({"tier": "A", "form": True, "score": 3})})
+    segs, label, aria, role = _progress(out["regions"])
+    assert segs == ["done", "done", "done", "active"]
+    assert label == "Step 4 of 4 \u00b7 Track"
+    assert (aria, role) == (label, "img")
+
+
+def test_a_page_with_no_job_to_read_draws_no_progress_bar(tmp_path):
+    for url in ("chrome://settings", "about:blank", ""):
+        out = _load(tmp_path, tabs=[{"id": 7, "url": url}])
+        assert _by_class(out["regions"]["progress"], "progress-bar") == [], url
+        assert out["regions"]["progress"]["children"] == [], url
+
+
 def test_a_load_that_fails_leaves_a_rendered_panel_rather_than_a_dead_one(tmp_path):
     """Every load degrades to honesty. The match failing is the only one the
     user hears about; the rest cost a ranking or a detail, and a panel that
@@ -2373,6 +2417,14 @@ def test_reopening_shows_that_stages_body_without_moving_the_rail(revisited):
     # about the application changed because the user looked at a step again.
     assert [_numeral(row) for row in rail_rows] == [
         "circle-check", "circle-check", "3", "4"]
+
+
+def test_reopening_a_done_row_does_not_move_the_progress_bar(revisited):
+    """The bar follows `decision.stage` (where the user IS), never the row they
+    are looking at; the rail's own active mark holds still for the same reason."""
+    for phase in ("atFill", "jobOpen", "jobClosed", "resumeOpen"):
+        assert _progress(revisited[phase])[:2] == (
+            ["done", "done", "active", ""], "Step 3 of 4 \u00b7 Fill"), phase
 
 
 def test_pressing_an_open_header_again_closes_it(revisited):

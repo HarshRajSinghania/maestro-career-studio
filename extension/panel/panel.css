@@ -200,6 +200,16 @@ body {
 }
 .ats .hint { color: var(--cs-muted); font-size: 12px; margin-left: 4px; }
 
+/* ------- progress: four segments and "Step N of 4 · Name" ---------------- */
+
+.progress { flex: none; padding: 12px 14px 0; }
+.progress:empty { display: none; }
+.progress-bar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.seg-bar { height: 4px; border-radius: 999px; background: var(--cs-line); }
+.seg-bar.done { background: var(--cs-good); }
+.seg-bar.active { background: var(--cs-primary); }
+.progress-label { margin-top: 8px; color: var(--cs-muted); font-size: 12px; }
+
 /* ------- the rail: the one dynamic region, and the only one that scrolls ---- */
 
 .rail {

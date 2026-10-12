@@ -492,7 +492,7 @@ class FakeNode {
   click() { this.dispatch("click"); }
 }
 
-// The document, mirroring panel.html: three regions, and inside the footer the
+// The document, mirroring panel.html: four regions, and inside the footer the
 // two nodes the render loop addresses separately — the live note it writes
 // through and the controls it rebuilds.
 //
@@ -503,6 +503,7 @@ class FakeNode {
 // back would find nothing and throw here rather than render into a void.
 const REGIONS = {
   identity: new FakeNode("div"),
+  progress: new FakeNode("div"),
   rail: new FakeNode("ol"), foot: new FakeNode("div"),
 };
 const NOTE = new FakeNode("div");
