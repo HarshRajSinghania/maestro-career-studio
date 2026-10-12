@@ -247,6 +247,19 @@ def test_failure_to_record_the_failure_still_does_not_raise(db_session, folder_o
     assert len(calls) == 2
 
 
+def test_a_broken_availability_check_still_does_not_raise(db_session, folder_on, tmp_path, monkeypatch):
+    job = make_job(db_session)
+    app = make_application(db_session, job, pdf=make_pdf(tmp_path))
+
+    def boom():
+        raise RuntimeError("sync status unreadable")
+
+    monkeypatch.setattr(rf, "availability", boom)
+    assert rf.copy_application(app.id) is None
+    rf.copy_job(job.id)  # returns, raises nothing
+    assert not folder_on.exists()
+
+
 # ---- hook points: render, cover letter, sync arrival (Task 5) ----
 
 
@@ -289,6 +302,19 @@ def test_render_endpoint_copies_and_reports_where(db_session, folder_on, monkeyp
     copy = Path(body["copy_path"])
     assert copy.is_file() and folder_on in copy.parents
     assert copy.read_bytes() == Path(body["pdf_path"]).read_bytes()
+
+
+def test_render_hands_the_copy_the_id_it_was_given_not_a_refreshed_row(db_session, folder_on, monkeypatch):
+    """After the commit `application.id` is expired: reading it would reload the row inside render's try."""
+    from app.services import application_render
+
+    application = make_application(db_session, make_job(db_session))
+    _stub_render(monkeypatch)
+    seen = []
+    monkeypatch.setattr(application_render.resumes_folder, "copy_application", lambda i: seen.append(i))
+    given = application.id
+    application_render.render_resume(db_session, given)
+    assert len(seen) == 1 and seen[0] is given
 
 
 def test_render_survives_a_failed_copy(db_session, folder_on, monkeypatch, client):

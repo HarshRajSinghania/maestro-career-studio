@@ -112,7 +112,7 @@ def render_resume(
         application.pdf_pages = len(pdf_preview.ensure_page_images(pdf_path))
         application.render_error = None
         db.commit()
-        resumes_folder.copy_application(application.id)  # never raises
+        resumes_folder.copy_application(application_id)  # never raises; the id, since the commit expired the row
 
         return source_path, pdf_path, doc
     except Exception as e:

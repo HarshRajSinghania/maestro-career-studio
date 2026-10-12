@@ -279,9 +279,9 @@ def _sources(db: Session, application: Application) -> tuple[Path | None, list[P
 
 def _attempt(application_id: UUID) -> tuple[bool, Path | None]:
     """(ok, resume copy). ok is False only when a copy was due and failed."""
-    if availability() is not None:
-        return True, None
     try:
+        if availability() is not None:
+            return True, None
         with SessionLocal() as db:
             if not enabled(db):
                 return True, None
@@ -327,9 +327,9 @@ def copy_job(job_id: UUID) -> None:
 
 def copy_path_for(application_id: UUID) -> Path | None:
     """Where the resume copy is, without writing anything. None when there is none."""
-    if availability() is not None:
-        return None
     try:
+        if availability() is not None:
+            return None
         with SessionLocal() as db:
             application = db.get(Application, application_id)
             name = _get(db, APP_KEY_PREFIX + application_id.hex)
@@ -385,7 +385,7 @@ def backfill() -> int | None:
         try:
             _BACKFILL_WANTED.clear()
             copied = _backfill_pass()
-        except Exception:  # noqa: BLE001 — runs as a thread target and from the PUT handler (planning decision 8)
+        except Exception:  # noqa: BLE001 — runs as a thread target (planning decision 8)
             logger.warning("The resumes folder backfill stopped", exc_info=True)
             copied = None
         finally:
