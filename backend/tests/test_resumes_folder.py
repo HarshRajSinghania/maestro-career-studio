@@ -4,6 +4,8 @@ import os
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from app.config import settings as app_settings
 from app.models.qa_entry import QAEntry
 from app.models.setting import Setting
@@ -173,6 +175,24 @@ def test_a_failed_copy_clears_the_backfill_marker_so_the_next_start_retries(db_s
     (tmp_path / "usb-unplugged").rename(custom)  # drive back
     assert rf.backfill() == 1  # the next start fills what the failed copy missed
     assert (next(custom.iterdir()) / "Second.pdf").is_file()
+
+
+def test_validate_folder_refuses_the_data_folder_in_any_letter_case(folder_on, tmp_path):
+    inside = tmp_path / "work" / "Sub"
+    inside.mkdir()
+    shouting = tmp_path / "WORK" / "sub"
+    if not shouting.is_dir():
+        pytest.skip("case-sensitive filesystem: a mixed-case path is a different folder here")
+    with pytest.raises(rf.FolderRefused, match="outside Maestro's own data folder"):
+        rf.validate_folder(str(shouting))
+
+
+def test_the_data_folder_check_compares_case_insensitively_on_macos_and_windows(tmp_path):
+    owner = tmp_path / "Library" / "Application Support"
+    for platform, refused in (("darwin", True), ("win32", True), ("linux", False)):
+        assert rf._inside(tmp_path / "library" / "application support" / "x", owner, platform) is refused
+    assert rf._inside(tmp_path / "Library" / "Application Support" / "x", owner, "linux") is True
+    assert rf._inside(tmp_path / "Library" / "Elsewhere", owner, "darwin") is False
 
 
 def test_off_and_unavailable_copy_nothing(db_session, folder_on, tmp_path, monkeypatch):

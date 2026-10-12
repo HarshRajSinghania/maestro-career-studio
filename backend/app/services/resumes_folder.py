@@ -90,6 +90,23 @@ def display(path: Path, home: Path | None = None) -> str:
     return " › ".join(parts) if parts else str(path)
 
 
+def _inside(path: Path, owner: str | Path, platform: str | None = None) -> bool:
+    """Whether the resolved `path` is `owner` or under it. APFS and NTFS ignore case, and resolve() keeps it."""
+    owner = Path(owner).resolve()
+    if path.is_relative_to(owner):
+        return True
+    if (platform or sys.platform) not in ("darwin", "win32"):
+        return False
+    for candidate in (path, *path.parents):
+        try:
+            if os.path.samefile(candidate, owner):  # the filesystem's own answer, when both exist
+                return True
+        except OSError:
+            break
+    shown, held = [part.casefold() for part in path.parts], [part.casefold() for part in owner.parts]
+    return shown[: len(held)] == held
+
+
 def validate_folder(raw: str) -> Path:
     """The chosen custom root, or FolderRefused with a sentence for the user (no paths in it)."""
     try:
@@ -102,7 +119,7 @@ def validate_folder(raw: str) -> Path:
     if not path.is_dir():
         raise FolderRefused("That folder doesn't exist. Create it first, then try again.")
     own = [app_settings.applications_dir, os.environ.get("MAESTRO_HOME")]
-    if any(o and path.is_relative_to(Path(o).resolve()) for o in own):
+    if any(o and _inside(path, o) for o in own):
         raise FolderRefused("Choose a folder outside Maestro's own data folder.")
     try:
         fd, probe = tempfile.mkstemp(prefix=".maestro-probe-", dir=path)
