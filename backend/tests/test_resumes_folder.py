@@ -1,4 +1,6 @@
 """Visible copies of finished resumes ({#inv-resumes-folder-one-way})."""
+import builtins
+import os
 from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -8,9 +10,11 @@ import pytest
 from app.config import settings as app_settings
 from app.models.application import Application
 from app.models.job import Job
+from app.models.qa_entry import QAEntry
 from app.models.setting import Setting
 from app.services import resumes_folder as rf
 from app.services.sync import registry
+from tests.pdf_fixtures import write_blank_pdf
 
 
 def _job(db, *, company="Acme", title="Data Scientist"):
@@ -120,3 +124,91 @@ def test_folder_name_is_chosen_under_the_write_lock(db_session, folder_on, monke
     assert calls == ["lock", "label"]  # the lock comes before the name is chosen
     rf._folder_for(db_session, application, job)
     assert calls == ["lock", "label"]  # a saved name returns without taking the lock again
+
+
+def _pdf(tmp_path, name="Riley_Quill_DataScientist_Resume.pdf"):
+    path = tmp_path / "work" / "Acme_DS_20261011_abcd1234" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_blank_pdf(path, 1)
+    return path
+
+
+def test_copies_resume_and_cover_letter_pdfs_only(db_session, folder_on, tmp_path):
+    resume = _pdf(tmp_path)
+    (resume.parent / "Riley_Quill_DataScientist_Resume.log").write_text("x")
+    letter = _pdf(tmp_path, "Riley_Quill_DataScientist_CoverLetter.pdf")
+    app = _application(db_session, _job(db_session, company="Acme", title="Data Scientist"), pdf=resume)
+    db_session.add(QAEntry(application_id=app.id, kind="cover_letter", answer="Hi", pdf_path=str(letter)))
+    db_session.commit()
+
+    copied = rf.copy_application(app.id)
+
+    assert copied is not None and copied.read_bytes() == resume.read_bytes()
+    assert sorted(p.name for p in copied.parent.iterdir()) == [letter.name, resume.name]
+    assert copied.parent.parent == folder_on
+
+
+def test_second_copy_is_a_no_op(db_session, folder_on, tmp_path):
+    app = _application(db_session, _job(db_session), pdf=_pdf(tmp_path))
+    first = rf.copy_application(app.id)
+    before = first.stat().st_mtime_ns
+    assert rf.copy_application(app.id) == first
+    assert first.stat().st_mtime_ns == before
+    assert not [p for p in first.parent.iterdir() if p.name.startswith(".maestro-")]
+
+
+def test_never_reads_the_copy(db_session, folder_on, tmp_path, monkeypatch):
+    app = _application(db_session, _job(db_session), pdf=_pdf(tmp_path))
+    first = rf.copy_application(app.id)
+    os.utime(first, ns=(0, 0))  # force a rewrite on the next call
+    real_open = builtins.open
+
+    def guarded(file, *args, **kwargs):
+        assert Path(file) != first, "the copy must never be opened for reading"
+        return real_open(file, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", guarded)
+    assert rf.copy_application(app.id) == first
+
+
+def test_failure_is_recorded_not_raised(db_session, folder_on, tmp_path, monkeypatch):
+    app = _application(db_session, _job(db_session), pdf=_pdf(tmp_path))
+
+    def refuse(*args, **kwargs):
+        raise PermissionError("no")
+
+    with monkeypatch.context() as broken:  # unlike monkeypatch.undo(), this keeps folder_on
+        broken.setattr(rf.shutil, "copyfile", refuse)
+        assert rf.copy_application(app.id) is None
+    db_session.expire_all()
+    assert rf.last_error(db_session)["code"] == "write"
+    assert rf.copy_application(app.id) is not None
+    db_session.expire_all()
+    assert rf.last_error(db_session) is None  # a success clears it
+
+
+def test_vanished_custom_root_is_not_recreated(db_session, folder_on, tmp_path):
+    custom = tmp_path / "usb"
+    db_session.add(Setting(key=rf.PATH_KEY, value=str(custom)))
+    db_session.commit()
+    app = _application(db_session, _job(db_session), pdf=_pdf(tmp_path))
+    assert rf.copy_application(app.id) is None
+    assert not custom.exists()
+    db_session.expire_all()
+    assert rf.last_error(db_session)["code"] == "missing"
+
+
+def test_off_and_unavailable_copy_nothing(db_session, folder_on, tmp_path, monkeypatch):
+    app = _application(db_session, _job(db_session), pdf=_pdf(tmp_path))
+    db_session.add(Setting(key=rf.ENABLED_KEY, value="off"))
+    db_session.commit()
+    assert rf.copy_application(app.id) is None
+    assert not folder_on.exists()
+    monkeypatch.setattr(app_settings, "resumes_folder_default", None)
+    assert rf.copy_application(app.id) is None
+
+
+def test_no_pdf_means_no_folder(db_session, folder_on):
+    app = _application(db_session, _job(db_session))
+    assert rf.copy_application(app.id) is None
+    assert not folder_on.exists()
