@@ -44,6 +44,7 @@ import { apiFetch, apiUrlForBrowserPdf } from "@/lib/api";
 import { CONCEPT_ICONS } from "@/lib/concept-icons";
 import { couldnt } from "@/lib/error-text";
 import { notifyRenderNote } from "@/lib/render-note";
+import { RESUMES_FOLDER_KEY } from "@/lib/resumes-folder";
 import type { Application, JobDetail, Referral, RenderResult } from "@/lib/types";
 
 function formatDateInput(value: string | null | undefined): string {
@@ -340,6 +341,7 @@ export function OutputTab({ app, jobId, readOnly = false }: { app: Application; 
       qc.invalidateQueries({
         queryKey: ["pdf-preview", `/api/applications/${app.id}`],
       });
+      qc.invalidateQueries({ queryKey: RESUMES_FOLDER_KEY }); // a failed copy records an error the note must see
       notifyRenderNote(result);
       toast.success("PDF ready");
     },
@@ -410,7 +412,7 @@ export function OutputTab({ app, jobId, readOnly = false }: { app: Application; 
             />
             <ShowCopyButton applicationId={app.id} variant="outline" disabled={!pdfReady} />
           </div>
-          {pdfReady && <ResumesFolderNote applicationId={app.id} />}
+          {pdfReady && <ResumesFolderNote applicationId={app.id} copyMissed={renderPdf.data?.copy_path === null} />}
           {pdfReady ? (
             <div className="h-[80vh] min-h-[520px] overflow-hidden rounded-corner-md border"
               data-pending={renderPdf.isPending ? "true" : undefined}

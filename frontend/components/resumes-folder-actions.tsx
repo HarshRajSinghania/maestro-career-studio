@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -48,9 +48,12 @@ export function ShowCopyButton({
   className,
 }: ShowCopyButtonProps) {
   const { data } = useResumesFolder();
+  const qc = useQueryClient();
   const reveal = useMutation({
     mutationFn: () => apiFetch<{ path: string }>(`/api/applications/${applicationId}/show-copy`, { method: "POST" }),
     onError: (error: Error) => toast.error(couldnt("open the folder", error)),
+    // Showing the copy heals a missed one, or fails and records why: either way the saved error moved.
+    onSettled: () => qc.invalidateQueries({ queryKey: RESUMES_FOLDER_KEY }),
   });
   // A double click opened two file-manager windows.
   const revealOnce = useSingleFlight(reveal.mutate);
@@ -72,12 +75,13 @@ export function ShowCopyButton({
   );
 }
 
-/** A one-time line under the PDF card's buttons that says where the copy went. */
-export function ResumesFolderNote({ applicationId }: { applicationId: string }) {
+/** A one-time line under the PDF card's buttons that says where the copy went. `copyMissed`: the render just
+ *  answered with no copy, so the line stays quiet while the saved error is still on its way. */
+export function ResumesFolderNote({ applicationId, copyMissed = false }: { applicationId: string; copyMissed?: boolean }) {
   const { data } = useResumesFolder();
   const [dismissed, setDismissed] = useLocalStorageState(NOTE_DISMISSED_KEY, parseFlag, serializeFlag);
   // With an error the copy may not exist: Settings shows the error, so the note stays quiet.
-  if (!data || !copiesOn(data) || data.last_error || dismissed) return null;
+  if (!data || !copiesOn(data) || data.last_error || copyMissed || dismissed) return null;
   return (
     <NoteBody applicationId={applicationId} folderDisplay={data.folder_display} onDismiss={() => setDismissed(true)} />
   );

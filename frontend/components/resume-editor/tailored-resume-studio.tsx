@@ -81,6 +81,7 @@ import { overlayBaseline, type ResumeFormatting } from "@/lib/formatting";
 import { fieldsNeedFixing } from "@/lib/describe-edit";
 import { couldnt } from "@/lib/error-text";
 import { notifyRenderNote } from "@/lib/render-note";
+import { RESUMES_FOLDER_KEY } from "@/lib/resumes-folder";
 import { resumeDataSchema } from "@/lib/resume-schema";
 import {
   adoptServerKey,
@@ -221,6 +222,7 @@ export function TailoredResumeStudio({
       qc.invalidateQueries({ queryKey: ["job-detail", jobId] });
       qc.invalidateQueries({ queryKey: ["application", applicationId] });
       qc.invalidateQueries({ queryKey: ["pdf-preview"] });
+      qc.invalidateQueries({ queryKey: RESUMES_FOLDER_KEY }); // a failed copy records an error Settings shows
       // Save chains straight into render (see StudioEditor's `save`), and a
       // stale-content save is exactly when the tailored ATS score has
       // drifted — chain the re-score so that doesn't happen silently.
