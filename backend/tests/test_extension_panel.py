@@ -867,8 +867,11 @@ def test_the_header_link_points_at_the_web_app_and_never_at_nothing(booted):
     # No job and no application yet, so the link can only offer the app itself.
     assert link["href"] == APP_URL
     assert _text(link) == "Open in Maestro CS"
-    # The leaves-this-surface mark is an icon, never a text arrow.
+    # Icon-only since the header repaint: the words ride a visually hidden span, so a screen reader
+    # and `textContent` still read them, and the leaves-this-surface mark is an icon, never a text arrow.
     assert _icons(link) == ["external-link"]
+    assert [(kid["class"], kid["text"]) for kid in link["children"] if kid["tag"] == "SPAN"] == [
+        ("vh", "Open in Maestro CS")]
     # The accessible name says the destination in full, and that it opens a new
     # tab. Beside a job title this matters more than it did beside the deleted
     # wordmark.
@@ -898,11 +901,12 @@ def test_the_panel_says_its_own_name_nowhere_because_chrome_already_does(booted)
     """
     for node in _walk(booted["opened"]["identity"]):
         if "Maestro CS" in node["text"]:
-            assert "linkish" in node["class"].split(), node
+            # The link's words ride a visually hidden span inside it.
+            assert {"linkish", "vh"} & set(node["class"].split()), node
     assert 'id="head"' not in PANEL_HTML
 
 
-def test_the_deleted_bands_styles_went_with_it_and_the_link_got_its_own_line():
+def test_the_deleted_bands_styles_went_with_it_and_the_tools_are_icon_buttons():
     """The stylesheet half, and a separate test rather than four more asserts
     on the one above: that one is about what the panel RENDERS and this is
     about what panel.css still declares, which are two failures with two fixes.
@@ -914,14 +918,16 @@ def test_the_deleted_bands_styles_went_with_it_and_the_link_got_its_own_line():
     """
     assert not re.search(r"^\.p-head\b", PANEL_CSS, re.M), "the deleted band still has rules"
     assert not re.search(r"^\.mark\s*\{", PANEL_CSS, re.M), "the deleted logo tile still has rules"
-    # The link's own line — the placement the measurement bought, and the one
-    # part of it that lives in CSS rather than in DOM order: an `auto` left
-    # margin on a fit-content block is what right-aligns it, and without it the
-    # link would sit inline under the job title's first letter.
-    block = re.search(r"\.identity \.linkish\s*\{([^}]+)\}", PANEL_CSS)
-    assert block, "the identity link has no rule of its own"
-    assert "display: block" in block.group(1)
-    assert "0 auto" in block.group(1)
+    # The two header tools are 32px icon buttons, a square hit target apiece. The `.linkish` anchor is
+    # a flex box centring its icon, and the words they keep are the visually hidden ones.
+    block = re.search(r"\.identity \.linkish,\s*\.identity \.refresh\s*\{([^}]+)\}", PANEL_CSS)
+    assert block, "the header tools have no rule of their own"
+    assert "width: 32px" in block.group(1) and "height: 32px" in block.group(1)
+    assert "display: inline-flex" in block.group(1)
+    vh = re.search(r"^\.vh\s*\{([^}]+)\}", PANEL_CSS, re.M)
+    assert vh, "the visually hidden rule is gone"
+    assert "position: absolute" in vh.group(1)
+    assert "clip" in vh.group(1) and "overflow: hidden" in vh.group(1)
 
 
 def test_the_rail_renders_four_stages_and_marks_the_one_you_are_on(booted):
@@ -1700,17 +1706,21 @@ def test_a_loaded_page_renders_as_itself_from_end_to_end(tmp_path):
     # the one destination this link never has.
     assert link["attrs"]["aria-label"] == (
         "Open this application in Maestro CS (opens in a new tab)")
-    # ITS OWN LINE, and this is the assertion that keeps it off `row1`. Beside
-    # the chip was the first home and a measured mistake: `.who` and a nowrap
-    # link share one axis there, so at 400px — a NORMAL side-panel width — the
-    # job title was cut to 104px and wrapped five times to buy the link its
-    # 129. The block's last line, shared only with Refresh at its left, so it
-    # competes with nothing that wraps.
-    last = identity["children"][-1]
-    assert last["class"] == "id-foot"
-    assert [kid["class"] for kid in last["children"]] == ["refresh", "linkish"]
+    # THE TOOLS ARE ICON BUTTONS at the top right of the header (direction C), after the title block
+    # in `row1` and ahead of the rings. They hold nothing that wraps, so neither competes with the
+    # title: the job title keeps the row's flexible width, the tools their two 32px squares.
     [row1] = _by_class(identity, "row1")
-    assert [kid["class"] for kid in row1["children"]] == ["who", "chip role-muted"]
+    assert [kid["class"] for kid in row1["children"]] == ["who", "id-tools"]
+    [tools] = _by_class(identity, "id-tools")
+    assert [kid["class"] for kid in tools["children"]] == ["refresh", "linkish"]
+    assert [kid["class"] for kid in identity["children"]] == ["row1", "ats"]
+    # "Company · status" is ONE line: the company, a separator, the status chip.
+    [who] = _by_class(identity, "who")
+    assert [kid["class"] for kid in who["children"]] == ["title", "co-line"]
+    [co_line] = _by_class(identity, "co-line")
+    assert [kid["class"] for kid in co_line["children"]] == ["co", "sep", "chip role-muted"]
+    sep = co_line["children"][1]
+    assert sep["attrs"]["aria-hidden"] == "true"
     # Every endpoint is the widget's, unchanged — a panel that invented a route
     # would 404 in the browser and pass here.
     paths = [msg["path"] for msg in out["sent"] if msg["type"] == "api"]
@@ -3160,8 +3170,8 @@ def test_the_selected_application_survives_a_refresh(tmp_path):
 
 
 def test_refresh_keeps_focus_and_is_named_for_what_it_does(tmp_path):
-    """Visible text "Refresh", an accessible name that says what it re-reads,
-    and a stable id so the render loop hands focus back to the rebuilt control
+    """An icon button whose words ("Refresh") ride a visually hidden span, an accessible name that
+    says what it re-reads, and a stable id so the render loop hands focus back to the rebuilt control
     after every repaint the refresh causes."""
     out = _refresh(tmp_path, api={
         "lightningai": _UNMATCHED,
@@ -3169,7 +3179,11 @@ def test_refresh_keeps_focus_and_is_named_for_what_it_does(tmp_path):
     })
     button = _refresh_button(out["loaded"]["identity"])
     assert button["tag"] == "BUTTON"
-    assert button["text"] == "Refresh"
+    # `_text` reads the subtree, like a browser's `textContent`: the word is in the hidden span.
+    assert _text(button) == "Refresh"
+    assert _icons(button) == ["rotate-cw"]
+    assert [(kid["class"], kid["text"]) for kid in button["children"] if kid["tag"] == "SPAN"] == [
+        ("vh", "Refresh")]
     assert button["attrs"]["aria-label"] == "Refresh from Maestro CS"
     assert out["focus"] == {"id": "refresh-page", "fresh": True}
 

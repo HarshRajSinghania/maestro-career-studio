@@ -2,7 +2,7 @@
  *
  * Glyph data from Lucide (lucide-react v1.48.0, ISC licence, https://lucide.dev): the same drawings the web app
  * uses, one per concept (frontend/lib/concept-icons.ts: done = circle-check, warning = triangle-alert,
- * attachment = paperclip, locked = lock, none = minus, skip = skip-forward, ai = sparkles, unknown = circle-help). `ns.icon(name, { size, label })` builds an <svg> with
+ * attachment = paperclip, locked = lock, none = minus, skip = skip-forward, ai = sparkles, unknown = circle-help, refresh = rotate-cw). `ns.icon(name, { size, label })` builds an <svg> with
  * createElementNS and setAttribute, never innerHTML, so the panel stays CSP-clean and the node harness can read it.
  *
  * An icon never stands alone. With no `label` it is `aria-hidden` and a word sits beside it; with one it is an
@@ -28,6 +28,8 @@
     "chevron-right": [["path", { d: "m9 18 6-6-6-6" }]],
     "external-link": [["path", { d: "M15 3h6v6" }], ["path", { d: "M10 14 21 3" }],
       ["path", { d: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" }]],
+    "rotate-cw": [["path", { d: "M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" }],
+      ["path", { d: "M21 3v5h-5" }]],
     "arrow-right": [["path", { d: "M5 12h14" }], ["path", { d: "m12 5 7 7-7 7" }]],
     "paperclip": [["path", {
       d: "m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551" }]],
