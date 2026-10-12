@@ -42,6 +42,7 @@ from app.routers import (
     templates,
     version,
 )
+from app.routers import resumes_folder as resumes_folder_router
 from app.services import automations as automation_prompts
 from app.services import http_client, memory, resumes_folder, seeding, tracing
 from app.services.llm import LLMProviderError
@@ -419,6 +420,7 @@ app.include_router(referrals.router)
 app.include_router(explore.router)
 app.include_router(setup.router)
 app.include_router(settings.router)
+app.include_router(resumes_folder_router.router)
 app.include_router(autofill.router)
 app.include_router(base_resumes.router)
 app.include_router(career_kb.router)

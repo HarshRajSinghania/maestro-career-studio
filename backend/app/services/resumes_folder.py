@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import shutil
+import sys
 import tempfile
 import threading
 import unicodedata
@@ -64,6 +65,49 @@ def _put(db: Session, key: str, value: str | None) -> None:
         db.add(Setting(key=key, value=value))
     else:
         row.value = value
+
+
+ERROR_SENTENCES = {
+    "missing": "Maestro couldn't find this folder. Reconnect the drive or choose another folder.",
+    "write": "Maestro couldn't save the last copy to this folder. Check that it still exists and that you can write to it.",
+}
+
+
+class FolderRefused(ValueError):
+    """A custom folder the user can't use, phrased for them."""
+
+
+def platform_name(platform: str = sys.platform) -> str:
+    return {"darwin": "macos", "win32": "windows"}.get(platform, "linux")
+
+
+def display(path: Path, home: Path | None = None) -> str:
+    """The folder as the user sees it: `Documents › Maestro Career Studio › Applications` under home."""
+    try:
+        parts = path.relative_to(home or Path.home()).parts
+    except ValueError:
+        return str(path)
+    return " › ".join(parts) if parts else str(path)
+
+
+def validate_folder(raw: str) -> Path:
+    """The chosen custom root, or FolderRefused with a sentence for the user (no paths in it)."""
+    path = Path(raw.strip()).expanduser()
+    if not raw.strip() or not path.is_absolute():
+        raise FolderRefused("Enter the folder's full path.")
+    path = path.resolve()
+    if not path.is_dir():
+        raise FolderRefused("That folder doesn't exist. Create it first, then try again.")
+    own = [app_settings.applications_dir, os.environ.get("MAESTRO_HOME")]
+    if any(o and path.is_relative_to(Path(o).resolve()) for o in own):
+        raise FolderRefused("Choose a folder outside Maestro's own data folder.")
+    try:
+        fd, probe = tempfile.mkstemp(prefix=".maestro-probe-", dir=path)
+        os.close(fd)
+        os.unlink(probe)
+    except OSError:
+        raise FolderRefused("Maestro can't save files in that folder. Choose another one.") from None
+    return path
 
 
 def enabled(db: Session) -> bool:
