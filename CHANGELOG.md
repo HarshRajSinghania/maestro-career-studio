@@ -28,12 +28,19 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-10-12
+
 Until now Maestro spoke two AI dialects, OpenAI and Gemini, so a Claude key
 could only watch from the side. This release adds Claude, talking to Anthropic
 directly, and OpenRouter, with zero data retention switched on for you. A Claude
 key alone now runs the whole app, the Assistant included. Your chats are saved in
 a format that belongs to no single provider, so you can change models halfway
 through a conversation and it still remembers what was said.
+
+Two smaller things you will notice. Every finished resume now also lands in your
+Documents folder, one folder per job, so there is no more digging through a data
+folder to find it. And the Companion has a new look, one clear next step at a
+time, and it no longer drops dropdowns when its tab is in the background.
 
 ### Breaking changes
 
