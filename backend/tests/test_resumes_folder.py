@@ -500,6 +500,34 @@ def test_a_pass_whose_root_became_unavailable_writes_no_marker(
     assert rf._get(db_session, rf.BACKFILLED_KEY) is None
 
 
+def test_a_copy_that_fails_while_a_pass_finishes_keeps_the_marker_cleared(
+    db_session, folder_on, tmp_path, monkeypatch
+):
+    """A render's failed copy lands after the pass's last attempt, before its marker write."""
+    make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
+    real_attempt = rf._attempt
+
+    def attempt(application_id):
+        result = real_attempt(application_id)  # this one succeeded...
+        rf._record_error(OSError("disk full"))  # ...then another request's copy failed
+        return result
+
+    monkeypatch.setattr(rf, "_attempt", attempt)
+    rf.backfill()
+    db_session.expire_all()
+    assert rf._get(db_session, rf.BACKFILLED_KEY) is None
+    assert rf.last_error(db_session) is not None
+
+
+def test_backfill_and_start_backfill_never_raise_from_the_availability_check(monkeypatch):
+    def boom():
+        raise RuntimeError("sync status unreadable")
+
+    monkeypatch.setattr(rf, "availability", boom)
+    assert rf.backfill() is None
+    assert rf.start_backfill() is None
+
+
 def test_start_backfill_runs_it_on_a_thread(folder_on, monkeypatch):
     started = []
 

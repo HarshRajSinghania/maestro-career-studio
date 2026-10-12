@@ -357,16 +357,29 @@ def _backfill_pass() -> int | None:
         ids = list(db.scalars(select(Application.id).where(Application.pdf_path.is_not(None))))
     results = [_attempt(application_id) for application_id in ids]
     copied = sum(1 for _, path in results if path is not None)
-    # Mark the root done only if nobody asked for another backfill while this pass ran. Comparing the
-    # first and last root misses A to B to A, which leaves some copies in B. The flag, raised after
-    # each root change commits, catches every change.
-    if _BACKFILL_WANTED.is_set() or not all(ok for ok, _ in results):
-        return copied  # unmarked: the loop (or the next start) runs a full pass again
+    # Mark the root done only if nothing happened while the pass ran, and decide under SQLite's write lock.
+    # A request for another backfill (the flag, raised after each root change commits) means some copies
+    # may be in the wrong root; comparing the first and last root would miss A to B to A. A recorded
+    # error means a copy failed (a render's, say) after this pass looked at it; _record_error sets it
+    # and clears the marker in one commit, so the lock orders the two: this write either sees the
+    # error and stays out, or lands first and the error's commit clears it.
     with SessionLocal() as db:
-        if root(db) == target and enabled(db):
+        begin_write(db)
+        if (all(ok for ok, _ in results) and not _BACKFILL_WANTED.is_set()
+                and last_error(db) is None and root(db) == target and enabled(db)):
             _put(db, BACKFILLED_KEY, str(target))
             db.commit()
+        # otherwise unmarked: the loop (or the next start) runs a full pass again
     return copied
+
+
+def _unavailable() -> bool:
+    """availability() is not None, with a check that can't be read counting as unavailable."""
+    try:
+        return availability() is not None
+    except Exception:  # noqa: BLE001 — never raise (planning decision 8)
+        logger.warning("Couldn't check whether the resumes folder is available", exc_info=True)
+        return True
 
 
 def backfill() -> int | None:
@@ -375,7 +388,7 @@ def backfill() -> int | None:
     Requests coalesce: one that arrives while a pass runs sets the flag and returns None, and the
     running pass loops once more for it. Set the flag first, then try the lock, so none is lost.
     """
-    if availability() is not None:
+    if _unavailable():
         return None
     _BACKFILL_WANTED.set()
     copied = None
@@ -395,7 +408,7 @@ def backfill() -> int | None:
 
 def start_backfill() -> threading.Thread | None:
     """Fill the folder in the background so startup never waits on a slow drive."""
-    if availability() is not None:
+    if _unavailable():
         return None
     # Raise the flag here, in the caller's thread: the PUT handler commits the new root first, so a
     # pass already running sees the request before it could mark the old root done.
