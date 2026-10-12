@@ -28,15 +28,16 @@ Maestro tailors it from your whole career history in under a minute, and every b
 
 **[Install in two commands](#quickstart)**, or follow the [Getting Started guide](docs/GETTING_STARTED.md) if this is all new to you.
 
-<!-- P4 hero.gif — CLEARED for publish 2026-08-20. Recorded on the mock instance:
-     contact header scrubbed (ajey@seinun.com, placeholder phone), lift
-     49.2 -> 70.8 is a real deterministic score. Two items reviewed and
-     accepted by the owner rather than fixed: the real Visa posting stays (an
-     employer-published public document), and the "Liberty Hill, TX" experience
-     location stays (already the contact city on the public resume).
-     1000px / 10fps / 64 colors, 1.8 MB; re-encode any replacement to match. -->
+<!-- hero.gif: career-history animation, approved by the owner 2026-10-12 for the
+     launch. All data is the fictional Jordan Ellis persona (example.com email,
+     555 phone, sample-company employers, target "Woodgrove Bank"). The resume
+     pages, the 82.4 -> 87.3 Match score and the Apache Spark gap card are real
+     captures from the app (v0.10.1) on a throwaway stack; tailoring took 4.6 s.
+     Source, captures and the encode script live in the private marketing repo
+     (hero-gif/). 1000px / 12fps / 32 colors, no dither, 1.82 MB; keep any
+     replacement under 2 MB. -->
 
-![Score, tailor, see every AI edit, download the PDF — end to end](docs/assets/hero.gif)
+![Many resume versions become one career history, then a specialist resume per role, company and country, matched to a job and ready to apply. You press Submit.](docs/assets/hero.gif)
 
 **Works with Claude, Codex or the ChatGPT desktop app** (88 tools) ·
 **bring your own AI key**, OpenAI, Gemini or Claude (scoring, PDFs and tracking work
