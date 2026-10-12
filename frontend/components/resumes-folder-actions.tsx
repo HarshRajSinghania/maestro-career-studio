@@ -76,7 +76,8 @@ export function ShowCopyButton({
 export function ResumesFolderNote({ applicationId }: { applicationId: string }) {
   const { data } = useResumesFolder();
   const [dismissed, setDismissed] = useLocalStorageState(NOTE_DISMISSED_KEY, parseFlag, serializeFlag);
-  if (!data || !copiesOn(data) || dismissed) return null;
+  // With an error the copy may not exist: Settings shows the error, so the note stays quiet.
+  if (!data || !copiesOn(data) || data.last_error || dismissed) return null;
   return (
     <NoteBody applicationId={applicationId} folderDisplay={data.folder_display} onDismiss={() => setDismissed(true)} />
   );
