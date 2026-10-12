@@ -92,7 +92,7 @@ def _xdg_documents(environ: Mapping[str, str], user_home: Path) -> Path | None:
     config = Path(environ.get("XDG_CONFIG_HOME") or user_home / ".config") / "user-dirs.dirs"
     try:
         lines = config.read_text(encoding="utf-8").splitlines()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     for line in lines:
         key, sep, value = line.strip().partition("=")
@@ -227,8 +227,13 @@ def backend_env(home: Path, settings: Mapping[str, str], environ: Mapping[str, s
     env = _without(environ, blocked | {k.upper() for k in settings})
     env.update(_without(settings, blocked))
     # A default, not enforced: maestro.env or the shell may point it elsewhere (tests, scratch stacks).
-    env.setdefault("RESUMES_FOLDER_DEFAULT",
-                   str(documents_dir(environ=environ).joinpath(APP_DIR_NAME, *RESUMES_SUBPATH)))
+    # Any capitalisation counts, and a blank value means unset.
+    given = [k for k in env if k.upper() == "RESUMES_FOLDER_DEFAULT"]
+    if not any(env[k].strip() for k in given):
+        for name in given:
+            del env[name]
+        env["RESUMES_FOLDER_DEFAULT"] = str(
+            documents_dir(environ=environ).joinpath(APP_DIR_NAME, *RESUMES_SUBPATH))
     env[_ORIGINS] = origins
     env.update(enforced)
     return child_env(env)

@@ -387,3 +387,35 @@ def test_backend_env_sets_resumes_folder_default(tmp_path):
     # A maestro.env line overrides it (it is a default, not an enforced value).
     env = _backend(tmp_path, settings={"RESUMES_FOLDER_DEFAULT": "/elsewhere"})
     assert env["RESUMES_FOLDER_DEFAULT"] == "/elsewhere"
+
+
+def test_documents_dir_ignores_an_unreadable_user_dirs_file(tmp_path):
+    config = tmp_path / "cfg"
+    config.mkdir()
+    (config / "user-dirs.dirs").write_bytes(b"\xff\xfe")
+    assert H.documents_dir("linux", {"XDG_CONFIG_HOME": str(config)}, Path("/home/u")) == Path(
+        "/home/u/Documents"
+    )
+
+
+def _resumes_values(env):
+    return {k: v for k, v in env.items() if k.upper() == "RESUMES_FOLDER_DEFAULT"}
+
+
+def test_resumes_folder_default_respects_any_capitalisation(tmp_path):
+    for env in (
+        _backend(tmp_path, settings={"resumes_folder_default": "/scratch"}),
+        _backend(tmp_path, environ={"Resumes_Folder_Default": "/scratch"}),
+    ):
+        assert _resumes_values(env) == {k: "/scratch" for k in _resumes_values(env)}
+        assert len(_resumes_values(env)) == 1
+
+
+@pytest.mark.parametrize("blank", ["", "  "])
+def test_a_blank_resumes_folder_default_means_unset(tmp_path, blank):
+    expected = str(H.documents_dir(environ={}) / H.APP_DIR_NAME / "Applications")
+    for env in (
+        _backend(tmp_path, settings={"resumes_folder_default": blank}),
+        _backend(tmp_path, environ={"RESUMES_FOLDER_DEFAULT": blank}),
+    ):
+        assert _resumes_values(env) == {"RESUMES_FOLDER_DEFAULT": expected}
