@@ -128,6 +128,19 @@ function FolderRow({
   });
   const openOnce = useSingleFlight(open.mutate);
 
+  // The native dialog only fills the field. Nothing is saved until the user presses Save.
+  const choose = useMutation({
+    mutationFn: () =>
+      apiFetch<{ folder: string | null }>(`${RESUMES_FOLDER_URL}/choose`, { method: "POST" }),
+    onSuccess: (result) => {
+      if (result.folder) onDraft(result.folder);
+    },
+    onError: (error: Error) => toast.error(couldnt("open the folder dialog", error)),
+  });
+  const chooseOnce = useSingleFlight(choose.mutate);
+  // The field is frozen while a dialog or a save is out, so the answer lands in the field it came from.
+  const busy = saving || choose.isPending;
+
   // Closing the editor (Save or Cancel) and resetting to the default each remove the focused
   // control, so focus goes to "Change folder" unless the user already moved it elsewhere.
   const changeRef = useRef<HTMLButtonElement>(null);
@@ -179,20 +192,40 @@ function FolderRow({
       {draft !== null && (
         <div className="grid gap-1.5">
           <Label htmlFor={inputId}>Folder path</Label>
-          <Input
-            id={inputId}
-            value={draft}
-            // readOnly, not disabled, while it saves: a disabled field drops focus to <body>.
-            readOnly={saving}
-            onChange={(event) => onDraft(event.target.value)}
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              id={inputId}
+              value={draft}
+              // readOnly, not disabled, while it works: a disabled field drops focus to <body>.
+              readOnly={busy}
+              onChange={(event) => onDraft(event.target.value)}
+            />
+            {data.picker && (
+              <Button
+                variant="outline"
+                pending={choose.isPending}
+                focusableWhenDisabled
+                disabled={saving}
+                className="data-disabled:pointer-events-none data-disabled:opacity-50"
+                onClick={() => chooseOnce(undefined)}
+              >
+                Choose…
+              </Button>
+            )}
+          </div>
           <div className={ACTION_ROW}>
-            <Button variant="ghost" onClick={() => onDraft(null)}>
+            <Button
+              variant="ghost"
+              focusableWhenDisabled
+              disabled={choose.isPending}
+              className="data-disabled:pointer-events-none data-disabled:opacity-50"
+              onClick={() => onDraft(null)}
+            >
               Cancel
             </Button>
             <Button
               focusableWhenDisabled
-              disabled={saving || !draft.trim()}
+              disabled={busy || !draft.trim()}
               className="data-disabled:pointer-events-none data-disabled:opacity-50"
               onClick={() => onSave(draft.trim())}
             >

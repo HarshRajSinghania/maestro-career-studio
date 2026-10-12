@@ -31,3 +31,8 @@ class ResumesFolderUpdate(BaseModel):
 
 class ShownCopy(BaseModel):
     path: str
+
+
+class ChosenFolder(BaseModel):
+    """What the folder dialog returned; null = the user cancelled."""
+    folder: str | None

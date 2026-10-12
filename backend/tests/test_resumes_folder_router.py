@@ -7,7 +7,7 @@ import pytest
 from app.config import settings as app_settings
 from app.models.setting import Setting
 from app.routers import resumes_folder as router_mod
-from app.services import folder_opener
+from app.services import folder_opener, folder_picker
 from app.services import resumes_folder as rf
 from tests.resumes_folder_fixtures import make_application, make_job, make_pdf
 
@@ -180,9 +180,10 @@ def test_every_mutating_route_is_409_when_unavailable(client, folder_on, db_sess
     responses = [
         client.put(URL, json={"enabled": False}),
         client.post(f"{URL}/open"),
+        client.post(f"{URL}/choose"),
         client.post(f"/api/applications/{application.id}/show-copy"),
     ]
-    assert [r.status_code for r in responses] == [409, 409, 409]
+    assert [r.status_code for r in responses] == [409, 409, 409, 409]
     assert all(r.json()["detail"] == router_mod.UNAVAILABLE for r in responses)
 
 
@@ -274,6 +275,7 @@ def test_every_409_and_422_sentence_is_plain(client, folder_on, tmp_path, monkey
     """frontend/lib/error-text.ts shows a server detail only when isPlainSentence passes."""
     sentences = [
         router_mod.UNAVAILABLE, router_mod.OFF, router_mod.NO_PDF, router_mod.NOT_FOUND, router_mod.NOT_SAVED, router_mod.CANT_OPEN,
+        router_mod.PICKER_BUSY, router_mod.PICKER_FAILED,
         *rf.ERROR_SENTENCES.values(),
     ]
     inside = tmp_path / "work" / "x"
@@ -290,3 +292,67 @@ def test_every_409_and_422_sentence_is_plain(client, folder_on, tmp_path, monkey
     assert r.status_code == 422
     sentences.append(r.json()["detail"])
     assert [s for s in sentences if not is_plain_sentence(s)] == []
+
+
+@pytest.fixture
+def picked(monkeypatch):
+    """A fake dialog: never opens a real one. calls = the start paths; answer = what it returns."""
+    state = {"calls": [], "answer": None, "error": None}
+
+    def fake(start):
+        state["calls"].append(start)
+        if state["error"]:
+            raise state["error"]
+        return state["answer"]
+
+    monkeypatch.setattr(folder_picker, "available", lambda *a, **k: True)
+    monkeypatch.setattr(folder_picker, "choose", fake)
+    return state
+
+
+def test_get_reports_whether_a_picker_exists(client, folder_on, monkeypatch):
+    monkeypatch.setattr(folder_picker, "available", lambda *a, **k: True)
+    assert client.get(URL).json()["picker"] is True
+    monkeypatch.setattr(folder_picker, "available", lambda *a, **k: False)
+    assert client.get(URL).json()["picker"] is False
+
+
+def test_choose_returns_the_folder_and_saves_nothing(client, folder_on, db_session, tmp_path, picked):
+    picked["answer"] = tmp_path / "Resumes"
+    r = client.post(f"{URL}/choose")
+    assert (r.status_code, r.json()) == (200, {"folder": str(tmp_path / "Resumes")})
+    assert _row(db_session, rf.PATH_KEY) is None
+
+
+def test_choose_cancelled_is_a_null_folder(client, folder_on, picked):
+    r = client.post(f"{URL}/choose")
+    assert (r.status_code, r.json()) == (200, {"folder": None})
+
+
+def test_choose_starts_at_the_saved_folder_else_home(client, folder_on, tmp_path, monkeypatch, picked):
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    client.post(f"{URL}/choose")  # the default does not exist yet
+    saved = tmp_path / "saved"
+    saved.mkdir()
+    client.put(URL, json={"folder": str(saved)})
+    client.post(f"{URL}/choose")
+    assert picked["calls"] == [tmp_path, saved]
+
+
+def test_choose_while_a_dialog_is_open_is_a_409(client, folder_on, picked):
+    picked["error"] = folder_picker.PickerBusy()
+    r = client.post(f"{URL}/choose")
+    assert (r.status_code, r.json()["detail"]) == (409, router_mod.PICKER_BUSY)
+
+
+def test_choose_failing_is_a_409(client, folder_on, picked):
+    picked["error"] = folder_picker.PickerFailed("exit 1")
+    r = client.post(f"{URL}/choose")
+    assert (r.status_code, r.json()["detail"]) == (409, router_mod.PICKER_FAILED)
+
+
+def test_choose_without_a_picker_is_a_409(client, folder_on, monkeypatch, picked):
+    monkeypatch.setattr(folder_picker, "available", lambda *a, **k: False)
+    r = client.post(f"{URL}/choose")
+    assert (r.status_code, r.json()["detail"]) == (409, router_mod.PICKER_FAILED)
+    assert picked["calls"] == []

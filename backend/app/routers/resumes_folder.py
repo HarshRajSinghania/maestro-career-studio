@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
@@ -7,12 +8,13 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models.application import Application
 from app.schemas.resumes_folder import (
+    ChosenFolder,
     ResumesFolderError,
     ResumesFolderSettings,
     ResumesFolderUpdate,
     ShownCopy,
 )
-from app.services import folder_opener
+from app.services import folder_opener, folder_picker
 from app.services import resumes_folder as rf
 
 router = APIRouter(tags=["resumes-folder"])
@@ -23,6 +25,8 @@ NO_PDF = "Create the PDF first."
 NOT_SAVED = "Maestro couldn't save a copy to your resumes folder. Check Settings › Tailoring."
 NOT_FOUND = "This application doesn't exist."
 CANT_OPEN = "Maestro couldn't open the folder on this computer."  # no path: planning decision 9
+PICKER_BUSY = "A folder dialog is already open."
+PICKER_FAILED = "Maestro couldn't open the folder dialog."
 
 
 def _state(db: Session) -> ResumesFolderSettings:
@@ -36,7 +40,7 @@ def _state(db: Session) -> ResumesFolderSettings:
         folder_display=rf.display(base) if base else None,
         default_folder=str(default) if default else None,
         custom=rf.is_custom(db), platform=rf.platform_name(),
-        picker=False,  # Task 10 turns this on where a picker exists
+        picker=reason is None and folder_picker.available(),
         last_error=ResumesFolderError(message=rf.ERROR_SENTENCES.get(err["code"], rf.ERROR_SENTENCES["write"]),
                                       at=err["at"]) if err else None,
     )
@@ -81,6 +85,23 @@ def open_resumes_folder(db: Annotated[Session, Depends(get_db)]):
         folder_opener.open_folder(base)
     except (OSError, folder_opener.OpenerUnavailable):
         raise HTTPException(409, detail=CANT_OPEN) from None
+
+
+@router.post("/api/settings/resumes-folder/choose", response_model=ChosenFolder,
+             dependencies=[Depends(_require_available)])
+def choose_resumes_folder(db: Annotated[Session, Depends(get_db)]):
+    """Show the OS folder dialog. Never saves: the user still presses Save, which validates the path."""
+    if not folder_picker.available():
+        raise HTTPException(409, detail=PICKER_FAILED)
+    base = rf.root(db)
+    start = base if base is not None and base.is_dir() else Path.home()
+    try:
+        chosen = folder_picker.choose(start)
+    except folder_picker.PickerBusy:
+        raise HTTPException(409, detail=PICKER_BUSY) from None
+    except folder_picker.PickerFailed:
+        raise HTTPException(409, detail=PICKER_FAILED) from None
+    return ChosenFolder(folder=str(chosen) if chosen else None)
 
 
 @router.post("/api/applications/{application_id}/show-copy", response_model=ShownCopy,
