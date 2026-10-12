@@ -72,9 +72,6 @@ def put_resumes_folder(payload: ResumesFolderUpdate, db: Annotated[Session, Depe
     rf._put(db, rf.LAST_ERROR_KEY, None)  # a new choice starts with a clean slate
     db.flush()  # autoflush is off: the reads below must see the staged rows
     changed = owed or (rf.enabled(db), rf.root(db)) != before
-    if changed:
-        # Copies skipped while it was off, or a root never filled, are owed: forget the "done" marker.
-        rf._put(db, rf.BACKFILLED_KEY, None)
     db.commit()
     if changed and rf.enabled(db):
         rf.start_backfill()

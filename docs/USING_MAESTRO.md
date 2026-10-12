@@ -470,8 +470,9 @@ Documents folder, even when OneDrive moved it). Each job gets one folder named
 later does not move it, and two jobs with the same name get a "(2)" on the second.
 
 The copy happens after you create or update a PDF, after a cover letter is
-rendered and after a job arrives from your second copy. The first start after
-this arrives copies the resume PDFs you already have, with their cover letters. Maestro only writes there. It
+rendered and after a job arrives from your second copy. Every start also
+copies the resume PDFs you already have, with their cover letters, skipping the ones
+already there, and so does changing the folder or switching copies back on. Maestro only writes there. It
 never reads a copy back and never deletes anything, so you can rename or tidy your
 own files, though a re-render replaces the file with the same name.
 

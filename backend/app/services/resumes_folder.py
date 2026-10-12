@@ -34,7 +34,6 @@ from app.services.sync import status as sync_status
 PREFIX = "resumes_folder."  # machine-local: sync/registry.LOCAL_SETTING_PREFIXES
 ENABLED_KEY = PREFIX + "enabled"      # row exists only as "off"
 PATH_KEY = PREFIX + "path"            # custom root; no row = the default
-BACKFILLED_KEY = PREFIX + "backfilled"  # the root the last clean backfill filled
 LAST_ERROR_KEY = PREFIX + "last_error"  # JSON {code, path, at}
 APP_KEY_PREFIX = PREFIX + "app."      # + application uuid hex -> folder name
 
@@ -216,7 +215,6 @@ def _record_error(exc: Exception) -> None:
                 "path": str(path) if path else None,
                 "at": datetime.now(UTC).isoformat(),
             }))
-            _put(db, BACKFILLED_KEY, None)  # a failed copy is owed: the next start fills the root again
             db.commit()
     except Exception:  # noqa: BLE001 — opening the session can raise OSError too (planning decision 8)
         logger.warning("Couldn't record the resumes folder error", exc_info=True)
@@ -347,29 +345,21 @@ _BACKFILL_WANTED = threading.Event()
 
 
 def _backfill_pass() -> int | None:
-    """One pass over every application for the root as it is now. Resumes copied, or None."""
+    """One pass over every application with a resume PDF. Resumes copied (or already there), or None.
+
+    It stops at the first failed copy: the rest would fail the same way, and one traceback per
+    application at every start is noise. The next start, a Save in Settings or a reveal retries.
+    """
     with SessionLocal() as db:
-        target = root(db)  # read once: _attempt re-reads the root per application
-        if target is None or not enabled(db):
+        if root(db) is None or not enabled(db):
             return None
-        if _get(db, BACKFILLED_KEY) == str(target):
-            return 0
         ids = list(db.scalars(select(Application.id).where(Application.pdf_path.is_not(None))))
-    results = [_attempt(application_id) for application_id in ids]
-    copied = sum(1 for _, path in results if path is not None)
-    # Mark the root done only if nothing happened while the pass ran, and decide under SQLite's write lock.
-    # A request for another backfill (the flag, raised after each root change commits) means some copies
-    # may be in the wrong root; comparing the first and last root would miss A to B to A. A recorded
-    # error means a copy failed (a render's, say) after this pass looked at it; _record_error sets it
-    # and clears the marker in one commit, so the lock orders the two: this write either sees the
-    # error and stays out, or lands first and the error's commit clears it.
-    with SessionLocal() as db:
-        begin_write(db)
-        if (all(ok for ok, _ in results) and not _BACKFILL_WANTED.is_set()
-                and last_error(db) is None and root(db) == target and enabled(db)):
-            _put(db, BACKFILLED_KEY, str(target))
-            db.commit()
-        # otherwise unmarked: the loop (or the next start) runs a full pass again
+    copied = 0
+    for application_id in ids:
+        ok, path = _attempt(application_id)
+        copied += path is not None
+        if not ok:
+            break
     return copied
 
 
@@ -383,8 +373,9 @@ def _unavailable() -> bool:
 
 
 def backfill() -> int | None:
-    """Copy every application's PDFs once per root. Returns how many resumes the last pass copied.
+    """Copy every application's PDFs, skipping those already copied. Returns how many resumes the last pass covered.
 
+    Runs at every start and after a Settings change; a copy already in place costs one `stat`.
     Requests coalesce: one that arrives while a pass runs sets the flag and returns None, and the
     running pass loops once more for it. Set the flag first, then try the lock, so none is lost.
     """

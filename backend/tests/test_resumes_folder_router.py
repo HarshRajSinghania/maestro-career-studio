@@ -156,10 +156,8 @@ def test_put_clears_the_last_error(client, folder_on, db_session):
 def test_put_after_a_failed_copy_retries_even_if_nothing_changed(client, folder_on, db_session, backfills):
     """Save after reconnecting a drive: the same folder, but copies are owed."""
     rf._put(db_session, rf.LAST_ERROR_KEY, '{"code": "missing", "path": null, "at": "2026-10-11T10:00:00+00:00"}')
-    rf._put(db_session, rf.BACKFILLED_KEY, str(folder_on))
     db_session.commit()
     assert client.put(URL, json={"enabled": True}).json()["last_error"] is None
-    assert _row(db_session, rf.BACKFILLED_KEY) is None
     assert backfills == [1]
 
 
@@ -399,8 +397,7 @@ def test_choose_with_an_unreadable_saved_folder_starts_at_home(client, folder_on
 def test_turning_it_back_on_copies_what_was_made_while_it_was_off(client, folder_on, db_session, tmp_path, monkeypatch):
     first = make_application(db_session, make_job(db_session), make_pdf(tmp_path))
     assert rf.copy_application(first.id) is not None
-    rf.backfill()  # marks the root done
-    assert _row(db_session, rf.BACKFILLED_KEY).value == str(folder_on)
+    rf.backfill()
     client.put(URL, json={"enabled": False})
     second = make_application(
         db_session, make_job(db_session, company="Globex"), make_pdf(tmp_path, name="Second_Resume.pdf"))
@@ -408,17 +405,3 @@ def test_turning_it_back_on_copies_what_was_made_while_it_was_off(client, folder
     monkeypatch.setattr(rf, "start_backfill", rf.backfill)  # run the pass inline instead of in a thread
     client.put(URL, json={"enabled": True})
     assert rf.copy_path_for(second.id) is not None
-
-
-def test_changing_the_root_or_the_switch_clears_the_backfill_marker(client, folder_on, db_session, tmp_path):
-    ok = tmp_path / "ok"
-    ok.mkdir()
-    for body in ({"enabled": False}, {"folder": str(ok)}):
-        rf._put(db_session, rf.BACKFILLED_KEY, "marker")
-        db_session.commit()
-        client.put(URL, json=body)
-        assert _row(db_session, rf.BACKFILLED_KEY) is None
-    rf._put(db_session, rf.BACKFILLED_KEY, "marker")
-    db_session.commit()
-    client.put(URL, json={"folder": str(ok)})  # no change
-    assert _row(db_session, rf.BACKFILLED_KEY).value == "marker"

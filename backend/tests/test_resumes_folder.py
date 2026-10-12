@@ -38,7 +38,7 @@ def test_defaults_on_with_the_default_root(folder_on, db_session):
 
 
 def test_settings_are_machine_local(db_session):
-    for key in (rf.ENABLED_KEY, rf.PATH_KEY, rf.BACKFILLED_KEY, rf.LAST_ERROR_KEY, rf.APP_KEY_PREFIX + "ab"):
+    for key in (rf.ENABLED_KEY, rf.PATH_KEY, rf.LAST_ERROR_KEY, rf.APP_KEY_PREFIX + "ab"):
         assert registry.is_profile_row(Setting(key=key, value="x")) is False
 
 
@@ -156,25 +156,20 @@ def test_vanished_custom_root_is_not_recreated(db_session, folder_on, tmp_path):
     assert rf.last_error(db_session)["code"] == "missing"
 
 
-def test_a_failed_copy_clears_the_backfill_marker_so_the_next_start_retries(db_session, folder_on, tmp_path):
+def test_every_start_copies_what_an_earlier_failure_missed(db_session, folder_on, tmp_path):
     custom = tmp_path / "usb"
-    custom.mkdir()
-    db_session.add(Setting(key=rf.PATH_KEY, value=str(custom)))
+    db_session.add(Setting(key=rf.PATH_KEY, value=str(custom)))  # the drive isn't there
     db_session.commit()
     app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
-    assert rf.backfill() == 1  # a clean pass marks the root done
-    db_session.expire_all()
-    assert rf._get(db_session, rf.BACKFILLED_KEY) == str(custom)
-    app.pdf_path = str(make_pdf(tmp_path, "Second.pdf"))  # a later render, now that the drive is gone
-    db_session.commit()
-    custom.rename(tmp_path / "usb-unplugged")
     assert rf.copy_application(app.id) is None
     db_session.expire_all()
     assert rf.last_error(db_session)["code"] == "missing"
-    assert rf._get(db_session, rf.BACKFILLED_KEY) is None
-    (tmp_path / "usb-unplugged").rename(custom)  # drive back
-    assert rf.backfill() == 1  # the next start fills what the failed copy missed
-    assert (next(custom.iterdir()) / "Second.pdf").is_file()
+    assert rf.backfill() == 0  # still unplugged: nothing copied, nothing raised
+    custom.mkdir()  # drive back
+    assert rf.backfill() == 1  # the next start fills it
+    assert (next(custom.iterdir()) / "Riley_Quill_DataScientist_Resume.pdf").is_file()
+    db_session.expire_all()
+    assert rf.last_error(db_session) is None
 
 
 def test_validate_folder_refuses_the_data_folder_in_any_letter_case(folder_on, tmp_path):
@@ -367,30 +362,40 @@ def test_cover_letter_render_copies(db_session, folder_on, tmp_path, monkeypatch
     assert [p.name for p in copies if p.name.endswith("_CoverLetter.pdf")]
 
 
-def test_backfill_copies_all_once_per_root(db_session, folder_on, tmp_path, monkeypatch):
+def test_backfill_copies_everything_and_a_second_pass_writes_nothing(db_session, folder_on, tmp_path, monkeypatch):
     for i in range(3):
         make_application(
             db_session, make_job(db_session, company=f"Co{i}"), pdf=make_pdf(tmp_path, f"R{i}.pdf")
         )
     assert rf.backfill() == 3
     assert len(list(folder_on.iterdir())) == 3
-    calls = []
-    monkeypatch.setattr(rf, "_attempt", lambda i: calls.append(i) or (True, None))
-    assert rf.backfill() == 0 and calls == []  # marker matches the root: nothing to do
+    writes = []
+    real_copyfile = rf.shutil.copyfile
+    monkeypatch.setattr(rf.shutil, "copyfile", lambda *a, **k: (writes.append(a), real_copyfile(*a, **k))[1])
+    assert rf.backfill() == 3  # still covers them all, by stat alone
+    assert writes == []
+
+
+def test_backfill_fills_a_new_root(db_session, folder_on, tmp_path):
+    make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
+    assert rf.backfill() == 1
     custom = tmp_path / "elsewhere"
     custom.mkdir()
     db_session.add(Setting(key=rf.PATH_KEY, value=str(custom)))
     db_session.commit()
-    rf.backfill()
-    assert len(calls) == 3  # a new root fills again
+    assert rf.backfill() == 1
+    assert len(list(custom.rglob("*.pdf"))) == 1
 
 
-def test_backfill_with_a_failure_runs_again_next_time(db_session, folder_on, tmp_path, monkeypatch):
-    make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
-    monkeypatch.setattr(rf, "_attempt", lambda i: (False, None))
-    rf.backfill()
-    db_session.expire_all()
-    assert rf._get(db_session, rf.BACKFILLED_KEY) is None
+def test_backfill_stops_at_the_first_failed_copy(db_session, folder_on, tmp_path, monkeypatch):
+    for i in range(3):
+        make_application(
+            db_session, make_job(db_session, company=f"Co{i}"), pdf=make_pdf(tmp_path, f"R{i}.pdf")
+        )
+    calls = []
+    monkeypatch.setattr(rf, "_attempt", lambda i: calls.append(i) or (False, None))
+    assert rf.backfill() == 0
+    assert len(calls) == 1  # the rest would fail the same way
 
 
 def test_backfill_never_raises(db_session, folder_on, tmp_path, monkeypatch):
@@ -401,8 +406,6 @@ def test_backfill_never_raises(db_session, folder_on, tmp_path, monkeypatch):
 
     monkeypatch.setattr(rf, "_attempt", boom)
     assert rf.backfill() is None
-    db_session.expire_all()
-    assert rf._get(db_session, rf.BACKFILLED_KEY) is None
     assert rf._BACKFILL.acquire(blocking=False)  # the lock was released
     rf._BACKFILL.release()
 
@@ -449,8 +452,6 @@ def test_a_root_change_during_a_pass_is_not_lost(db_session, folder_on, tmp_path
 
     monkeypatch.setattr(rf, "_attempt", attempt)
     rf.backfill()
-    db_session.expire_all()
-    assert rf._get(db_session, rf.BACKFILLED_KEY) == str(second)
     for pdf in pdfs:  # the first application too: the second pass repairs the split
         assert len(list(second.rglob(pdf.name))) == 1
 
@@ -477,46 +478,8 @@ def test_a_root_that_goes_there_and_back_is_filled_in_full(db_session, folder_on
 
     monkeypatch.setattr(rf, "_attempt", attempt)
     rf.backfill()
-    db_session.expire_all()
-    assert rf._get(db_session, rf.BACKFILLED_KEY) == str(a_root)
     for pdf in pdfs:
         assert len(list(a_root.rglob(pdf.name))) == 1
-
-
-def test_a_pass_whose_root_became_unavailable_writes_no_marker(
-    db_session, folder_on, tmp_path, monkeypatch
-):
-    make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
-    real_attempt = rf._attempt
-
-    def attempt(application_id):
-        result = real_attempt(application_id)
-        monkeypatch.setattr(app_settings, "resumes_folder_default", None)
-        return result
-
-    monkeypatch.setattr(rf, "_attempt", attempt)
-    rf.backfill()
-    db_session.expire_all()
-    assert rf._get(db_session, rf.BACKFILLED_KEY) is None
-
-
-def test_a_copy_that_fails_while_a_pass_finishes_keeps_the_marker_cleared(
-    db_session, folder_on, tmp_path, monkeypatch
-):
-    """A render's failed copy lands after the pass's last attempt, before its marker write."""
-    make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
-    real_attempt = rf._attempt
-
-    def attempt(application_id):
-        result = real_attempt(application_id)  # this one succeeded...
-        rf._record_error(OSError("disk full"))  # ...then another request's copy failed
-        return result
-
-    monkeypatch.setattr(rf, "_attempt", attempt)
-    rf.backfill()
-    db_session.expire_all()
-    assert rf._get(db_session, rf.BACKFILLED_KEY) is None
-    assert rf.last_error(db_session) is not None
 
 
 def test_backfill_and_start_backfill_never_raise_from_the_availability_check(monkeypatch):
