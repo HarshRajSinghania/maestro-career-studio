@@ -276,6 +276,17 @@ def _sources(db: Session, application: Application) -> tuple[Path | None, list[P
     return resume, [p for p in (resume, *letters) if p is not None]
 
 
+# Every copy runs inside this one backend process (request threads and the backfill thread), so a
+# process-local lock per application is enough to keep two copies of it from interleaving.
+_APP_LOCKS: dict[UUID, threading.Lock] = {}
+_APP_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(application_id: UUID) -> threading.Lock:
+    with _APP_LOCKS_GUARD:
+        return _APP_LOCKS.setdefault(application_id, threading.Lock())
+
+
 def _stamps(files: list[Path]) -> dict[str, list[int]]:
     """The sources as they are now: {file name: [size, mtime_ns]}."""
     stamps = {}
@@ -311,7 +322,7 @@ def _attempt(
     try:
         if availability() is not None:
             return True, None
-        with SessionLocal() as db:
+        with _lock_for(application_id), SessionLocal() as db:
             if not enabled(db):
                 return True, None
             application = db.get(Application, application_id)
@@ -334,10 +345,18 @@ def _attempt(
             folder = base / _folder_for(db, application, job)
             folder.mkdir(exist_ok=True)
             placed = {src: _place(src, folder) for src in files}
-            _put(db, COPIED_KEY_PREFIX + application_id.hex, json.dumps({"root": str(base), "files": stamps}))
-            if _get(db, LAST_ERROR_KEY) is not None:
-                _put(db, LAST_ERROR_KEY, None)
-            db.commit()
+            record = json.dumps({"root": str(base), "files": stamps})
+            for first_try in (True, False):
+                _put(db, COPIED_KEY_PREFIX + application_id.hex, record)
+                if _get(db, LAST_ERROR_KEY) is not None:
+                    _put(db, LAST_ERROR_KEY, None)
+                try:
+                    db.commit()
+                    break
+                except IntegrityError:  # another process inserted the record first: update it instead
+                    db.rollback()
+                    if not first_try:
+                        raise
             return True, placed.get(resume) if resume is not None else None
     except Exception as exc:  # noqa: BLE001 — never raise into the render (planning decision 8)
         logger.warning("Couldn't save a copy of application %s to the resumes folder%s",

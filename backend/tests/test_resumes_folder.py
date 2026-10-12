@@ -2,10 +2,13 @@
 import builtins
 import os
 import shutil
+import threading
 from datetime import date
 from pathlib import Path
 
 import pytest
+
+from sqlalchemy import select
 
 from app.config import settings as app_settings
 from app.models.qa_entry import QAEntry
@@ -428,6 +431,36 @@ def test_a_failed_copy_writes_no_record_and_the_next_pass_retries(db_session, fo
     assert rf._get(db_session, rf.COPIED_KEY_PREFIX + app.id.hex) is None
     rf.backfill()
     assert rf.copy_path_for(app.id) is not None
+
+
+def test_a_copy_runs_while_holding_its_applications_lock(db_session, folder_on, tmp_path, monkeypatch):
+    app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
+    app_id, seen, real_place = app.id, [], rf._place
+    monkeypatch.setattr(rf, "_place", lambda src, folder: (seen.append(rf._lock_for(app_id).locked()), real_place(src, folder))[1])
+    assert rf.copy_application(app_id) is not None
+    assert seen == [True]
+    assert not rf._lock_for(app_id).locked()  # released afterwards, failure or not
+
+
+def test_two_first_copies_of_one_application_both_succeed_and_leave_one_record(db_session, folder_on, tmp_path):
+    app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
+    app_id, results = app.id, []
+    start = threading.Barrier(2, timeout=10)
+
+    def copy():
+        start.wait()
+        results.append(rf._attempt(app_id))  # each call opens its own session
+
+    threads = [threading.Thread(target=copy) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert [ok for ok, _ in results] == [True, True]
+    db_session.expire_all()
+    records = db_session.scalars(select(Setting).where(Setting.key == rf.COPIED_KEY_PREFIX + app_id.hex)).all()
+    assert len(records) == 1
+    assert rf.last_error(db_session) is None
 
 
 def test_a_root_change_copies_everything_into_the_new_root(db_session, folder_on, tmp_path):
