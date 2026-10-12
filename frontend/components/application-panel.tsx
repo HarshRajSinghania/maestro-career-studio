@@ -17,6 +17,7 @@ import { isSyncQueued } from "@/lib/job-ownership";
 
 import { AtsComparePanel } from "@/components/ats-compare-panel";
 import { useConfirm } from "@/components/confirm-dialog";
+import { ResumesFolderNote, ShowCopyButton } from "@/components/resumes-folder-actions";
 import { PdfPagesPreview } from "@/components/resume-editor/pdf-pages-preview";
 import { Button } from "@/components/ui/button";
 import {
@@ -407,7 +408,9 @@ export function OutputTab({ app, jobId, readOnly = false }: { app: Application; 
                 </a>
               }
             />
+            <ShowCopyButton applicationId={app.id} variant="outline" disabled={!pdfReady} />
           </div>
+          {pdfReady && <ResumesFolderNote applicationId={app.id} />}
           {pdfReady ? (
             <div className="h-[80vh] min-h-[520px] overflow-hidden rounded-corner-md border"
               data-pending={renderPdf.isPending ? "true" : undefined}

@@ -105,6 +105,8 @@ _SITES = [
     # The Resumes folder card: the switch, Save path and Use the default share one guard.
     ("components/settings/resumes-folder-section.tsx", "save"),
     ("components/settings/resumes-folder-section.tsx", "open"),
+    # Show in Finder on the PDF card, its note and the studio header (a double click opened two windows).
+    ("components/resumes-folder-actions.tsx", "reveal"),
 ]
 
 

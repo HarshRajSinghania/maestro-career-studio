@@ -47,6 +47,7 @@ import { ExperienceEditor } from "@/components/resume-editor/experience-editor";
 import { ExtraSectionsEditor } from "@/components/resume-editor/extra-sections-editor";
 import { FormattingPanel } from "@/components/resume-editor/formatting-panel";
 import { PdfPagesPreview } from "@/components/resume-editor/pdf-pages-preview";
+import { ShowCopyButton } from "@/components/resumes-folder-actions";
 import { ProjectEditor } from "@/components/resume-editor/project-editor";
 import {
   RawJsonToggle,
@@ -748,7 +749,7 @@ function StudioEditor({
         storageKey={STUDIO_STORAGE_KEY}
         previewStale={unsaved}
         // Matches the base studio: the preview header is the PDF's own
-        // controls (download, open) and nothing else. The template picker moved
+        // controls (download, open, show in folder) and nothing else. The template picker moved
         // to the toolbar's tools group where base already had it, and "Generate
         // PDF" is gone — Save has always chained straight into render, so the
         // button could only be clicked when the PDF was ALREADY current (it was
@@ -779,6 +780,13 @@ function StudioEditor({
                   <ExternalLink className="size-4" />
                 </a>
               }
+            />
+            <ShowCopyButton
+              applicationId={applicationId}
+              variant="ghost"
+              size="icon-sm"
+              iconOnly
+              disabled={!application.pdf_path}
             />
           </>
         }
