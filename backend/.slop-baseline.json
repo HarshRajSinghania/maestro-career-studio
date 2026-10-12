@@ -1,10 +1,10 @@
 {
   "structure": {
     "root": "backend",
-    "modules": 764,
-    "total_loc": 228908,
-    "src_loc": 65853,
-    "test_loc": 163055,
+    "modules": 766,
+    "total_loc": 229243,
+    "src_loc": 66007,
+    "test_loc": 163236,
     "orphan_modules": [],
     "test_only_reachable": [],
     "orphan_loc": 0,
@@ -234,6 +234,14 @@
         "lines": 42
       },
       {
+        "file": "tests/test_extension_panel.py",
+        "line": 1674,
+        "name": "test_a_loaded_page_renders_as_itself_from_end_to_end",
+        "complexity": 25,
+        "params": 1,
+        "lines": 57
+      },
+      {
         "file": "tests/test_frontend_visual_surfaces.py",
         "line": 110,
         "name": "test_gap_actions_carry_icons_and_explain_once",
@@ -400,17 +408,9 @@
         "complexity": 23,
         "params": 0,
         "lines": 22
-      },
-      {
-        "file": "tests/test_extension_panel_resume.py",
-        "line": 498,
-        "name": "test_quick_tailor_creates_the_application_and_the_rings_say_so",
-        "complexity": 23,
-        "params": 1,
-        "lines": 73
       }
     ],
-    "hotspot_count": 780,
+    "hotspot_count": 781,
     "error_masking": [
       {
         "file": "tests/test_tracing.py",
@@ -495,7 +495,7 @@
     ],
     "error_masking_count": 16,
     "internal_import_edges": 3390,
-    "imports_per_module": 4.44,
+    "imports_per_module": 4.43,
     "entry_points_used": [
       "app.main",
       "app.tools.backup_db",
@@ -512,6 +512,7 @@
       "scripts.health_golden",
       "scripts.live_provider_check",
       "scripts.memory_profile",
+      "scripts.panel_preview",
       "scripts.spike_background_fill",
       "scripts.sync_key",
       "scripts.template_parity"
@@ -616,6 +617,7 @@
       "scripts.memory_profile",
       "scripts.sync_key",
       "scripts.spike_background_fill",
+      "scripts.panel_preview",
       "scripts.template_parity",
       "migrations.env",
       "app.tools.backup_db"
@@ -640,7 +642,7 @@
     {
       "rank": "P2",
       "signal": "complexity_concentration",
-      "detail": "780 function(s) over threshold. worst: mcp_server/tests/test_server.py:596 cc=42",
+      "detail": "781 function(s) over threshold. worst: mcp_server/tests/test_server.py:596 cc=42",
       "why": "Complexity mass concentrating in few functions is the erosion signature.",
       "action": "Decompose the top 3. Do not touch the tail."
     },
@@ -653,16 +655,16 @@
     }
   ],
   "metrics": {
-    "total_loc": 228908,
-    "src_loc": 65853,
-    "test_loc": 163055,
-    "modules": 764,
+    "total_loc": 229243,
+    "src_loc": 66007,
+    "test_loc": 163236,
+    "modules": 766,
     "orphan_loc": 0,
     "duplication_pct": 0.48,
     "duplicated_lines": 381,
     "clone_count": 43,
-    "complexity_hotspots": 780,
+    "complexity_hotspots": 781,
     "error_masking": 16,
-    "imports_per_module": 4.44
+    "imports_per_module": 4.43
   }
 }

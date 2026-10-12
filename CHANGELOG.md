@@ -73,6 +73,14 @@ through a conversation and it still remembers what was said.
 
 ### Changed
 
+- **The Companion has a new look.** A progress bar shows where you are in the
+  four steps, the step you're on is one "Next" card, finished steps shrink to a
+  line with a tick, and Refresh and Open are icon buttons. Nothing it does has
+  changed.
+- **The Companion fills forms in background tabs.** A tab you switch away from,
+  or a window covered by another app, used to slow every field down and drop
+  dropdowns. Chrome slows timers in hidden tabs, and the fill now waits in a way
+  Chrome doesn't slow.
 - **Gemini in the Assistant uses Gemini's own API** instead of Google's
   OpenAI-compatible endpoint, and keeps Gemini 3's thought signatures between
   tool calls.
