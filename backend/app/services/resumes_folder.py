@@ -199,6 +199,7 @@ def _record_error(exc: Exception) -> None:
                 "path": str(path) if path else None,
                 "at": datetime.now(UTC).isoformat(),
             }))
+            _put(db, BACKFILLED_KEY, None)  # a failed copy is owed: the next start fills the root again
             db.commit()
     except Exception:  # noqa: BLE001 — opening the session can raise OSError too (planning decision 8)
         logger.warning("Couldn't record the resumes folder error", exc_info=True)

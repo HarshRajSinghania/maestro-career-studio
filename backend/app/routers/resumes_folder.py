@@ -60,6 +60,7 @@ def get_resumes_folder(db: Annotated[Session, Depends(get_db)]):
             dependencies=[Depends(_require_available)])
 def put_resumes_folder(payload: ResumesFolderUpdate, db: Annotated[Session, Depends(get_db)]):
     before = (rf.enabled(db), rf.root(db))
+    owed = rf.last_error(db) is not None  # Save after reconnecting a drive retries the failed copies
     if "folder" in payload.model_fields_set:
         try:
             chosen = rf.validate_folder(payload.folder) if payload.folder is not None else None
@@ -70,7 +71,7 @@ def put_resumes_folder(payload: ResumesFolderUpdate, db: Annotated[Session, Depe
         rf._put(db, rf.ENABLED_KEY, None if payload.enabled else "off")
     rf._put(db, rf.LAST_ERROR_KEY, None)  # a new choice starts with a clean slate
     db.flush()  # autoflush is off: the reads below must see the staged rows
-    changed = (rf.enabled(db), rf.root(db)) != before
+    changed = owed or (rf.enabled(db), rf.root(db)) != before
     if changed:
         # Copies skipped while it was off, or a root never filled, are owed: forget the "done" marker.
         rf._put(db, rf.BACKFILLED_KEY, None)

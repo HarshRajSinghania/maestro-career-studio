@@ -154,6 +154,27 @@ def test_vanished_custom_root_is_not_recreated(db_session, folder_on, tmp_path):
     assert rf.last_error(db_session)["code"] == "missing"
 
 
+def test_a_failed_copy_clears_the_backfill_marker_so_the_next_start_retries(db_session, folder_on, tmp_path):
+    custom = tmp_path / "usb"
+    custom.mkdir()
+    db_session.add(Setting(key=rf.PATH_KEY, value=str(custom)))
+    db_session.commit()
+    app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
+    assert rf.backfill() == 1  # a clean pass marks the root done
+    db_session.expire_all()
+    assert rf._get(db_session, rf.BACKFILLED_KEY) == str(custom)
+    app.pdf_path = str(make_pdf(tmp_path, "Second.pdf"))  # a later render, now that the drive is gone
+    db_session.commit()
+    custom.rename(tmp_path / "usb-unplugged")
+    assert rf.copy_application(app.id) is None
+    db_session.expire_all()
+    assert rf.last_error(db_session)["code"] == "missing"
+    assert rf._get(db_session, rf.BACKFILLED_KEY) is None
+    (tmp_path / "usb-unplugged").rename(custom)  # drive back
+    assert rf.backfill() == 1  # the next start fills what the failed copy missed
+    assert (next(custom.iterdir()) / "Second.pdf").is_file()
+
+
 def test_off_and_unavailable_copy_nothing(db_session, folder_on, tmp_path, monkeypatch):
     app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
     db_session.add(Setting(key=rf.ENABLED_KEY, value="off"))

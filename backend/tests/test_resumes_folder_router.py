@@ -153,6 +153,16 @@ def test_put_clears_the_last_error(client, folder_on, db_session):
     assert client.put(URL, json={"enabled": True}).json()["last_error"] is None
 
 
+def test_put_after_a_failed_copy_retries_even_if_nothing_changed(client, folder_on, db_session, backfills):
+    """Save after reconnecting a drive: the same folder, but copies are owed."""
+    rf._put(db_session, rf.LAST_ERROR_KEY, '{"code": "missing", "path": null, "at": "2026-10-11T10:00:00+00:00"}')
+    rf._put(db_session, rf.BACKFILLED_KEY, str(folder_on))
+    db_session.commit()
+    assert client.put(URL, json={"enabled": True}).json()["last_error"] is None
+    assert _row(db_session, rf.BACKFILLED_KEY) is None
+    assert backfills == [1]
+
+
 def test_put_without_a_root_change_starts_no_backfill(client, folder_on, backfills):
     client.put(URL, json={"enabled": True})
     assert backfills == []
