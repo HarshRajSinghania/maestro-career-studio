@@ -26,6 +26,13 @@ test("every anchor belongs to exactly one tab", () => {
   }
 });
 
+test("the assistant connection card opens Connected agents after the explainer", () => {
+  const agents = SETTINGS_TABS.find((tab) => tab.value === "agents")!;
+  assert.deepEqual(agents.anchors.slice(0, 2), ["connected-agents", "connect-assistant"]);
+  assert.equal(tabForAnchor("settings", "connect-assistant"), "agents");
+  assert.equal(anchorHref("/settings", "connect-assistant"), "/settings?tab=agents#connect-assistant");
+});
+
 test("a card id resolves to its tab, an id inside the autofill card by prefix", () => {
   assert.equal(tabForAnchor("settings", "api-keys"), "models");
   assert.equal(tabForAnchor("settings", "agent-hints"), "agents");

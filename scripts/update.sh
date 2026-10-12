@@ -3,7 +3,7 @@
 # Update an installed Maestro CS to the newest v* release.
 #
 # Why this exists: an install IS a git checkout. The unpacked extension loads
-# from extension/ and the MCP venv sits over backend/, so checkout and images
+# from extension/ and a legacy stdio MCP venv sits over backend/, so checkout and images
 # must move together. `docker compose pull` alone updates two surfaces of four.
 # This also snapshots the SQLite database (data/maestro_cs.sqlite3) before the
 # one irreversible step (migrations, which run themselves at backend boot) and
@@ -462,7 +462,8 @@ do_update() {
   note "  1. Reload the unpacked extension at chrome://extensions."
   note "     Upgrading from a version before the pinned key: Remove the extension and Load unpacked again — reloading is not enough (see extension/README.md)."
   note "  2. Restart the MCP client so it picks up new tools."
-  note "     If you use MCP, re-run ./scripts/setup-mcp.sh — always, not only if config moved: the editable venv picks up code but not new dependencies."
+  note "     If you still use the legacy stdio setup, re-run ./scripts/setup-mcp.sh to pick up dependencies."
+  note "     URL connections need no setup changes. Reinstall the Claude Desktop bundle once if yours is the older Docker-based one."
 }
 
 main() {
@@ -478,7 +479,7 @@ main() {
 
   # A ZIP unpack cannot update: there is no history to fast-forward.
   # -e, not -d: a worktree's .git is a file.
-  [ -e "$REPO/.git" ] || die "this directory is not a git clone (no .git). ZIP unpacks cannot update — clone from GitHub instead (see the README Quickstart)."
+  [ -e "$REPO/.git" ] || die "this directory is not a git clone (no .git). ZIP unpacks cannot update — clone from GitHub instead (see the README, \"Alternative: run with Docker\")."
 
   warn_if_fork
 

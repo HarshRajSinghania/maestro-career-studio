@@ -1,34 +1,29 @@
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from app.services import llm_capabilities
+from app.services import llm, llm_capabilities
+from app.services.llm_providers import errors
 
 
-def _tool_call_stream():
-    """One chunk carrying a tool call, shaped like the OpenAI streaming delta."""
-    chunk = MagicMock()
-    chunk.choices = [MagicMock(delta=MagicMock(tool_calls=[MagicMock()]))]
-    return [chunk]
+def _capable_fake(monkeypatch, scripts):
+    from tests.fake_provider import FakeProvider, install
 
-
-def _no_tool_stream():
-    chunk = MagicMock()
-    chunk.choices = [MagicMock(delta=MagicMock(tool_calls=None))]
-    return [chunk]
-
-
-def test_probe_reports_all_three_when_model_is_capable(monkeypatch):
     monkeypatch.setattr(llm_capabilities.llm, "get_base_url", lambda: None)
     monkeypatch.setattr(
         llm_capabilities.llm,
         "call_openai",
         lambda **kw: "ok" if kw["response_format"] == "text" else {"ok": True},
     )
-    with patch("app.services.llm._get_client") as get_client:
-        get_client.return_value.chat.completions.create.return_value = _tool_call_stream()
-        report = llm_capabilities.probe("gpt-4o")
+    return install(monkeypatch, FakeProvider(scripts))
+
+
+def test_probe_reports_all_three_when_model_is_capable(monkeypatch):
+    from app.services.llm_providers.types import ToolCallPart
+
+    _capable_fake(monkeypatch, [[[ToolCallPart("c1", "report_ok", {"ok": True})]]])
+
+    report = llm_capabilities.probe("fake-model")
 
     assert (report.text, report.json, report.tools) == (True, True, True)
     assert report.errors == {}
@@ -36,15 +31,10 @@ def test_probe_reports_all_three_when_model_is_capable(monkeypatch):
 
 def test_probe_records_the_reason_a_capability_failed(monkeypatch):
     """A small local model typically clears text+json and fails tools."""
+    _capable_fake(monkeypatch, [["I will not call tools."]])
     monkeypatch.setattr(llm_capabilities.llm, "get_base_url", lambda: "http://localhost:11434/v1")
-    monkeypatch.setattr(
-        llm_capabilities.llm,
-        "call_openai",
-        lambda **kw: "ok" if kw["response_format"] == "text" else {"ok": True},
-    )
-    with patch("app.services.llm._get_client") as get_client:
-        get_client.return_value.chat.completions.create.return_value = _no_tool_stream()
-        report = llm_capabilities.probe("llama3.2:3b")
+
+    report = llm_capabilities.probe("fake-model")
 
     assert (report.text, report.json, report.tools) == (True, True, False)
     assert "tool call" in report.errors["tools"]
@@ -102,125 +92,6 @@ def test_require_names_the_missing_capability(db_session, caplog):
         "AI & models. The Fast, Smart and Assistant models are set separately.")
     # The probe's reason is for a developer: the log keeps it.
     assert "model streamed no tool call" in caplog.text
-
-
-class _RecordingClient:
-    """Records the kwargs of each create() call.
-
-    The MagicMock clients above accept any kwargs silently, so they cannot tell
-    the probe's call apart from the chat agent's — which is exactly how the
-    divergence these tests pin down went unnoticed.
-    """
-
-    def __init__(self, stream):
-        self.calls: list[dict] = []
-        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
-
-    def _create(self, **kwargs):
-        self.calls.append(kwargs)
-        return iter(_tool_call_stream())
-
-
-def test_tools_probe_sends_the_same_per_model_kwargs_as_the_chat_agent(monkeypatch):
-    """gpt-5.6 400s on function tools unless reasoning_effort is "none".
-
-    The chat agent has always sent it; the probe did not, so the probe recorded
-    tools=False for a model whose chat works — and `require` then 422'd chat.
-    """
-    client = _RecordingClient(_tool_call_stream())
-    monkeypatch.setattr(llm_capabilities.llm, "_get_client", lambda: client)
-
-    llm_capabilities._probe_tools("gpt-5.6-luna")
-
-    assert client.calls[0]["reasoning_effort"] == "none"
-
-
-def test_tools_probe_omits_reasoning_effort_for_models_that_reject_it(monkeypatch):
-    client = _RecordingClient(_tool_call_stream())
-    monkeypatch.setattr(llm_capabilities.llm, "_get_client", lambda: client)
-
-    llm_capabilities._probe_tools("gpt-4o")
-
-    assert "reasoning_effort" not in client.calls[0]
-
-
-def _compat_client_recording(constructed: list[dict], stream=None):
-    """OpenAI-SDK stand-in that records constructor kwargs. No kwargs-swallowing."""
-
-    class _CompatClient:
-        def __init__(self, **kwargs):
-            constructed.append(dict(kwargs))
-            self.api_key = kwargs["api_key"]
-            self.base_url = kwargs["base_url"]
-            chunks = stream if stream is not None else _tool_call_stream()
-            self.chat = SimpleNamespace(
-                completions=SimpleNamespace(create=lambda **kw: iter(chunks))
-            )
-
-    return _CompatClient
-
-
-def test_tools_probe_routes_gemini_through_compat_client(monkeypatch):
-    """Hosted Gemini chat uses Google's OpenAI-compat URL, not the global client."""
-    constructed: list[dict] = []
-    monkeypatch.setattr(
-        llm_capabilities.llm, "OpenAI", _compat_client_recording(constructed)
-    )
-    monkeypatch.setattr(llm_capabilities.llm, "get_gemini_key", lambda: "gem-test-key")
-    monkeypatch.setattr(
-        "app.services.model_settings.using_custom_endpoint", lambda session=None: False
-    )
-    monkeypatch.setattr(llm_capabilities.llm, "get_base_url", lambda: None)
-    monkeypatch.setattr(
-        llm_capabilities.llm,
-        "call_openai",
-        lambda **kw: "ok" if kw["response_format"] == "text" else {"ok": True},
-    )
-
-    def boom_global():
-        raise AssertionError("tools probe must not use the global OpenAI client")
-
-    monkeypatch.setattr(llm_capabilities.llm, "_get_client", boom_global)
-    llm_capabilities.llm._chat_clients.clear()
-
-    report = llm_capabilities.probe("gemini-3.5-flash-lite")
-
-    assert constructed == [
-        {
-            "api_key": "gem-test-key",
-            "base_url": llm_capabilities.llm.GEMINI_OPENAI_COMPAT_URL,
-        }
-    ]
-    assert report.tools is True
-    assert report.errors.get("tools") is None
-
-
-def test_tools_probe_custom_endpoint_does_not_hijack_gemini_id(monkeypatch):
-    """A local Ollama model named gemini-* must stay on the custom endpoint."""
-    client = _RecordingClient(_tool_call_stream())
-    monkeypatch.setattr(llm_capabilities.llm, "_get_client", lambda: client)
-    monkeypatch.setattr(
-        "app.services.model_settings.using_custom_endpoint", lambda session=None: True
-    )
-    monkeypatch.setattr(
-        llm_capabilities.llm, "get_base_url", lambda: "http://localhost:11434/v1"
-    )
-    monkeypatch.setattr(
-        llm_capabilities.llm,
-        "call_openai",
-        lambda **kw: "ok" if kw["response_format"] == "text" else {"ok": True},
-    )
-
-    def boom_compat(**kwargs):
-        raise AssertionError(f"must not construct Google compat client: {kwargs}")
-
-    monkeypatch.setattr(llm_capabilities.llm, "OpenAI", boom_compat)
-    llm_capabilities.llm._chat_clients.clear()
-
-    report = llm_capabilities.probe("gemini-3.5-flash-lite")
-
-    assert client.calls, "custom-endpoint Gemini id must use the global client"
-    assert report.tools is True
 
 
 def _fail_with(monkeypatch, message: str):
@@ -293,3 +164,121 @@ def test_a_real_capability_refusal_is_still_recorded(db_session, monkeypatch):
     assert report.reachable is True
     stored = llm_capabilities.load(db_session, "some-local-model")
     assert stored is not None and stored.tools is False
+
+
+def test_anthropic_error_vocabulary_is_unreachable_not_a_capability_no():
+    from app.services.llm_providers.errors import LLMProviderError
+    for sign in ("authentication_error", "permission_error", "rate_limit_error",
+                 "overloaded_error", "Error code: 529", "No Claude API key is set."):
+        exc = LLMProviderError("The AI model didn't answer.", provider_detail=sign)
+        assert llm_capabilities._never_reached_the_model(exc), sign
+
+
+# --- the tools probe goes through the registry (Task 7) --------------------------------------
+
+def test_tools_probe_passes_when_the_adapter_streams_a_tool_call(monkeypatch):
+    from app.services.llm_providers.types import ToolCallPart
+    from tests.fake_provider import FakeProvider, install
+
+    fake = install(monkeypatch, FakeProvider([[[ToolCallPart("c1", "report_ok", {"ok": True})]]]))
+
+    llm_capabilities._probe_tools("fake-model")
+
+    sent = fake.requests[0]
+    assert [t.name for t in sent.tools] == ["report_ok"]
+    assert sent.model.provider == "fake"
+
+
+def test_tools_probe_fails_on_text_only(monkeypatch):
+    from tests.fake_provider import FakeProvider, install
+
+    install(monkeypatch, FakeProvider([["I cannot call tools."]]))
+
+    with pytest.raises(RuntimeError, match="streamed no tool call"):
+        llm_capabilities._probe_tools("fake-model")
+
+
+def test_probe_reports_tools_for_an_anthropic_tagged_model(monkeypatch):
+    from app.services.llm_providers.types import ToolCallPart
+    from tests.fake_provider import FakeProvider, install
+
+    install(monkeypatch, FakeProvider([[[ToolCallPart("c1", "report_ok", {"ok": True})]]]))
+    monkeypatch.setattr(llm_capabilities.llm, "get_base_url", lambda: None)
+    monkeypatch.setattr(
+        llm_capabilities.llm, "call_openai",
+        lambda **kw: "ok" if kw["response_format"] == "text" else {"ok": True})
+
+    report = llm_capabilities.probe("fake-model")
+
+    assert report.tools is True
+
+
+def test_tools_probe_makes_the_chat_call_shape(monkeypatch):
+    """Chat sends system + tools + cache through `provider.ready()` then `stream`; the probe's
+    stream call carries the same switches (SYSTEM.md §12: a probe issues the SAME call)."""
+    from app.services.llm_providers.types import ToolCallPart
+    from tests.fake_provider import FakeProvider, install
+
+    order: list[str] = []
+    fake = FakeProvider([[[ToolCallPart("c1", "report_ok", {"ok": True})]]])
+    real_ready, real_stream = fake.ready, fake.stream
+    fake.ready = lambda: order.append("ready") or real_ready()
+    fake.stream = lambda req: order.append("stream") or real_stream(req)
+    install(monkeypatch, fake)
+
+    llm_capabilities._probe_tools("fake-model")
+
+    assert order == ["ready", "stream"]
+    assert fake.requests[0].cache is True
+
+
+def test_a_provider_that_is_not_ready_is_unreachable_not_a_no(db_session, monkeypatch):
+    from app.services.llm_providers.errors import LLMProviderError
+    from tests.fake_provider import FakeProvider, install
+
+    fake = FakeProvider([])
+
+    def not_ready():
+        raise LLMProviderError("No Gemini API key is set.", provider_detail="No Claude API key is set.")
+
+    fake.ready = not_ready
+    install(monkeypatch, fake)
+    monkeypatch.setattr(llm_capabilities.llm, "get_base_url", lambda: None)
+    monkeypatch.setattr(
+        llm_capabilities.llm, "call_openai",
+        lambda **kw: "ok" if kw["response_format"] == "text" else {"ok": True})
+
+    report = llm_capabilities.probe_and_save(db_session, "fake-model")
+
+    assert report.reachable is False
+    assert llm_capabilities.load(db_session, "fake-model") is None
+
+
+def test_no_adapter_error_is_special_cased_as_unreachable():
+    """The Task 7 NotImplementedError exemption is gone: every adapter streams now."""
+    assert not llm_capabilities._never_reached_the_model(NotImplementedError())
+
+
+@pytest.mark.parametrize("message", [
+    errors.NO_KEY_MESSAGE,
+    errors.NO_GEMINI_KEY_MESSAGE,
+    errors.NO_ANTHROPIC_KEY_MESSAGE,
+    llm.NO_OPENROUTER_KEY_MESSAGE,
+])
+def test_every_no_key_sentence_is_unreachable_and_stores_nothing(db_session, monkeypatch, message):
+    from app.services.llm_providers.errors import LLMProviderError
+    from tests.fake_provider import FakeProvider, install
+
+    fake = FakeProvider([])
+
+    def not_ready():
+        raise LLMProviderError("shown to user", provider_detail=message)
+
+    fake.ready = not_ready
+    install(monkeypatch, fake)
+    monkeypatch.setattr(llm_capabilities.llm, "get_base_url", lambda: None)
+
+    report = llm_capabilities.probe_and_save(db_session, "fake-model")
+
+    assert report.reachable is False
+    assert llm_capabilities.load(db_session, "fake-model") is None

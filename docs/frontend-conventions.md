@@ -1253,12 +1253,12 @@
     Score and tailor tab; the setup step that opens the same dialog (Getting
     started, Profile's setup strip) is labelled **Import resumes**, and so is
     the first-run card, which opens the resume-only dialog "Import your
-    resumes". **ATS score**, spelled out once per surface where it first
-    appears as the app's own estimate: `lib/ats-words.ts` `ATS_SCORE_LEAD`
-    ("An ATS score (0 to 100) is our estimate of how an applicant tracking
-    system would rate each resume for this job.") on Score and tailor, and
+    resumes". **Match score**, explained once per surface where it first
+    appears as the app's own fixed-rules match: `lib/ats-words.ts` `ATS_SCORE_LEAD`
+    ("A match score (0 to 100) uses fixed rules to compare each resume
+    with this job's description.") on Score and tailor, and
     `ATS_SCORE_LEAD_ALL_JOBS` on Analytics; never composite or fit score, and
-    never "rates" as if it were an employer's reading; lift is **Score
+    never a prediction of an employer's score; lift is **Score
     gain**. **job description** (never JD or posting), **job**, **job
     link**, **job post** (the page a job is listed on), **careers page**.
     **Add job** (the sidebar, the tracker, `/new`'s title "Add a job") and
@@ -1397,8 +1397,8 @@
 - **Settings vs Profile — which page and tab does a new setting go on?**
   `/settings` is how the SYSTEM behaves, in tabs (`lib/settings-tabs.ts`):
   **AI & models** (API keys, models, AI instructions), **Tailoring** (Quick tailor
-  settings), **Connected agents** (the explainer, next-step hints,
-  Auto-apply limits), **Appearance** and **About**. `/profile` is who the
+  settings), **Connected agents** (the explainer, Connect an agent app,
+  next-step hints and Auto-apply limits), **Appearance** and **About**. `/profile` is who the
   CANDIDATE is: **About you** (Persona, Where you apply, Job preferences) and
   **Autofill**. A new card goes on the tab whose subject it shares and adds
   its id to that tab's `anchors` (pinned). Both write `/api/settings/*`
@@ -1496,7 +1496,7 @@
   unique key. The rescore starts inside the close handler, so the render that
   drops the prompt already sees the run pending, and the run's `onSuccess`
   returns the refetch, so it stays pending until the list lands: the skeleton
-  hands straight to the cards with no "No ATS scores yet." frame. The dialog
+  hands straight to the cards with no "No match scores yet." frame. The dialog
   renders once, beside the body and never inside the prompt; on close, focus
   returns to that button while the prompt still shows it (Cancel, Escape,
   nothing imported), else to the panel's `tabIndex={-1}` wrapper (`finalFocus`
@@ -1636,7 +1636,7 @@ alone); what changes is that a repeated sentence becomes a glyph, a bar or a dot
   | Data | Primitive |
   | --- | --- |
   | An ordinal step on a short ladder (health evidence, inbox readiness) | `DotMeter` |
-  | One value on a fixed scale (an ATS score, skills covered) | `ScoreBar` |
+  | One value on a fixed scale (a match score, skills covered) | `ScoreBar` |
   | A whole split into counted parts (a lane's jobs by state) | `SegmentedBar` with its legend |
   | How far through a set (3 of 5 answered) | `ProgressCount` |
   | A signed change (+6.2, −1.4, 0.0) | `DeltaChip` |

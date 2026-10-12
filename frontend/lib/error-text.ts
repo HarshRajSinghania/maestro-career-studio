@@ -23,10 +23,12 @@ export function isPlainSentence(text: string): boolean {
 // "<Provider> refused your API key. …" (`_no_answer`) and the older "The AI model
 // didn't answer (your key was refused). …". Both are exported as the one source the
 // Companion's copy is pinned equal to (backend/tests/test_frontend_settings_assistant_words.py).
-export const MISSING_KEY = /\bno (?:openai |gemini )?api key\b|\b[A-Z]+_API_KEY is required\b/i;
+export const MISSING_KEY = /\bno (?:openai |gemini |claude |openrouter )?api key\b|\b[A-Z]+_API_KEY is required\b/i;
 export const REFUSED_KEY =
   /invalid_api_key|incorrect api key|api key not valid|api_key_invalid|error code: 401\b|your key was refused|refused your api key/i;
 // Who refused it, for the sentence: each provider's own words for a refused key.
+const OPENROUTER_WORDS = /openrouter/i;
+const CLAUDE_WORDS = /claude|anthropic|authentication_error/i;
 const GEMINI_WORDS = /gemini|api key not valid|api_key_invalid/i;
 const OPENAI_WORDS = /openai|invalid_api_key|incorrect api key/i;
 
@@ -34,7 +36,16 @@ function refusedKey(message: string): string | undefined {
   if (!REFUSED_KEY.test(message)) return undefined;
   // The server already said who, in a sentence ("OpenAI refused your API key. Check it in …").
   if (/refused your api key/i.test(message) && isPlainSentence(message)) return message;
-  const who = GEMINI_WORDS.test(message) ? "Gemini" : OPENAI_WORDS.test(message) ? "OpenAI" : "The AI provider";
+  // OpenRouter first: it serves Claude models, so its errors can name them too.
+  const who = OPENROUTER_WORDS.test(message)
+    ? "OpenRouter"
+    : CLAUDE_WORDS.test(message)
+      ? "Claude"
+      : GEMINI_WORDS.test(message)
+        ? "Gemini"
+        : OPENAI_WORDS.test(message)
+          ? "OpenAI"
+          : "The AI provider";
   return `${who} refused your API key. Check it in Settings › AI & models.`;
 }
 

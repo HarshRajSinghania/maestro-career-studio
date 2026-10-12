@@ -11,6 +11,7 @@ from app.config import settings
 from app.models.template import Template
 from app.schemas.template import validate_template_id
 from app.services import engines, pdf_render
+from app.services.pdfium_lock import PDFIUM_LOCK
 from app.services.sync import hooks
 
 # The ONE wording for "this LaTeX template cannot be validated on this host".
@@ -18,6 +19,18 @@ from app.services.sync import hooks
 # last_error, and `template_registry._seed_validate` writes it on a LaTeX seed
 # it skips — so the gallery can say "requires TeX" from either path.
 REQUIRES_TEX = "requires TeX (pdflatex not found)"
+
+# The reason a template is refused because its sample PDF draws glyphs on top
+# of each other (see `text_overprints`). When the probe knows an engine bug that
+# causes it, its warning follows after ": ".
+OVERPRINT = "text overprints: words are drawn on top of each other in the PDF"
+
+# Glyph pairs whose boxes overlap by half or more both ways. Punctuation that
+# kerns under a letter (italic "y,") and ligature glyphs are never counted, so a
+# clean render scores ~0 however long it is; the pdfTeX 1.40.27 bug produced
+# hundreds on SAMPLE_RESUME.
+_OVERPRINT_MIN_PAIRS = 10
+_OVERPRINT_IGNORED = frozenset(",.;:") | frozenset(chr(c) for c in range(0xFB00, 0xFB07))
 
 SAMPLE_RESUME: dict = {
     "contact": {
@@ -185,6 +198,64 @@ EXTRA_SECTION_PROBES: list[str] = [
 ]
 
 
+def text_overprints(pdf_path: Path) -> bool | None:
+    """True when glyphs in `pdf_path` sit on top of other glyphs — garbage a
+    reader sees but a text extractor does not (it reads the characters in
+    stream order, so the parse gate passes it). None = could not assess.
+
+    Two glyph boxes "collide" when they overlap by at least half the narrower
+    width AND half the shorter height. Identical boxes are one ligature glyph
+    split into its letters ("fi", "ft"), not a collision."""
+    try:
+        import pypdfium2 as pdfium
+    except ImportError:
+        return None
+    pages: list[list[tuple[float, float, float, float]]] = []
+    with PDFIUM_LOCK:  # PDFium is not thread-safe (see pdfium_lock)
+        try:
+            pdf = pdfium.PdfDocument(str(pdf_path))
+        except Exception:  # noqa: BLE001 — unreadable PDF = not assessed
+            return None
+        try:
+            for page in pdf:
+                textpage = page.get_textpage()
+                boxes = []
+                for i in range(textpage.count_chars()):
+                    char = textpage.get_text_range(i, 1)
+                    if not char.strip() or char in _OVERPRINT_IGNORED:
+                        continue
+                    left, bottom, right, top = textpage.get_charbox(i)
+                    if right - left > 0.5 and top - bottom > 0.5:
+                        boxes.append((left, bottom, right, top))
+                pages.append(boxes)
+        except Exception:  # noqa: BLE001 — a broken page = not assessed
+            return None
+        finally:
+            pdf.close()
+    pairs = 0
+    for boxes in pages:
+        boxes.sort()
+        for a, (l1, b1, r1, t1) in enumerate(boxes):
+            for l2, b2, r2, t2 in boxes[a + 1:]:
+                if l2 >= r1:
+                    break
+                if (l1, b1, r1, t1) == (l2, b2, r2, t2):
+                    continue
+                overlap_x = min(r1, r2) - max(l1, l2)
+                overlap_y = min(t1, t2) - max(b1, b2)
+                if (
+                    overlap_x >= 0.5 * min(r1 - l1, r2 - l2)
+                    and overlap_y >= 0.5 * min(t1 - b1, t2 - b2)
+                ):
+                    pairs += 1
+    return pairs >= _OVERPRINT_MIN_PAIRS
+
+
+def _overprint_reason() -> str:
+    warning = engines.probe_pdflatex().warning
+    return f"{OVERPRINT}: {warning}" if warning else OVERPRINT
+
+
 def _extract_normalized(pdf_path: Path) -> str | None:
     """Extract `pdf_path` with pdfplumber (strict) → whitespace-normalized,
     lowercased text, or None if the extractor is unavailable or the PDF unreadable.
@@ -280,6 +351,11 @@ def compile_against_sample(
             pdf_render.compile_pdf(tex, out_dir, stem="preview")
         except Exception as exc:  # noqa: BLE001
             return str(exc)[-2000:]
+        # LaTeX only: the known cause is a pdfTeX build (engines.
+        # PDFTEX_1_40_27_WARNING). Refused like a compile error — no preview
+        # kept — so `get_usable_template` never renders a document with it.
+        if text_overprints(out_dir / "preview.pdf"):
+            return _overprint_reason()
         if keep_pdf_at is not None:
             keep_pdf_at.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(out_dir / "preview.pdf", keep_pdf_at)
@@ -312,6 +388,11 @@ def validate_template(template_id: str, session: Session) -> dict:
     row.validated_at = datetime.now(UTC)
     row.last_error = None
     report = build_parse_report(preview)
+    if report is not None and row.engine == "latex":
+        # compile_against_sample refuses overprinting LaTeX before this point;
+        # the marker is what `template_registry.
+        # recheck_ready_latex_for_engine_warning` skips on.
+        report["overprint_checked"] = True
     if report is None:
         row.parse_certified = None
         row.parse_report_json = None

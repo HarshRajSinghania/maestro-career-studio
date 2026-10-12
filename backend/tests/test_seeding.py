@@ -1,9 +1,46 @@
 import json
 import logging
+from pathlib import Path
 
 from app.models.base_resume import BaseResume
 from app.models.setting import Setting
 from app.services import seeding
+
+
+def test_first_start_without_tex_renders_the_demo_with_typst(db_session, tmp_path, monkeypatch):
+    from app.services import engines, template_registry
+    from app.models.template import Template
+
+    monkeypatch.setattr(seeding.settings, "base_resumes_dir", tmp_path)
+    monkeypatch.setattr(seeding.settings, "maestro_cs_pdflatex", "/nonexistent")
+    monkeypatch.setattr(seeding.settings, "settings_dir", tmp_path / "settings")
+    monkeypatch.setattr(seeding.settings, "exports_dir", tmp_path / "exports")
+    demo = Path(__file__).resolve().parents[2] / "base_resumes" / "example.json"
+    (tmp_path / "example.json").write_bytes(demo.read_bytes())
+    assert not engines.probe_pdflatex().available
+
+    seeding.seed_startup_data(db_session)
+
+    row = db_session.get(BaseResume, "example")
+    assert row.pdf_rendered_at is not None
+    assert row.render_error is None
+    assert Path(row.pdf_path).read_bytes().startswith(b"%PDF")
+    assert Path(row.tex_path).suffix == ".typ"
+    assert db_session.get(Template, template_registry.TYPST_CLASSIC_ID).status == "ready"
+
+
+def test_seed_render_failure_records_the_reason(db_session, tmp_path, monkeypatch):
+    monkeypatch.setattr(seeding.settings, "base_resumes_dir", tmp_path)
+    (tmp_path / "example.json").write_text('{"contact": {"name": "Sample"}}')
+
+    def fail(slug, db):
+        raise RuntimeError("No ready Typst template is available")
+
+    monkeypatch.setattr(seeding.base_resume_render, "render_base_resume", fail)
+    assert seeding.seed_base_resumes(db_session) == ["example"]
+    row = db_session.get(BaseResume, "example")
+    assert row.pdf_rendered_at is None
+    assert row.render_error == "No ready Typst template is available"
 
 
 def test_seed_base_resumes_inserts_missing_json_files(db_session, tmp_path, monkeypatch):
@@ -133,11 +170,10 @@ def test_seed_startup_data_refreshes_career_export_last(monkeypatch):
     seeding.seed_startup_data(session)
 
     assert calls == [
+        "seed_templates",
         "seed_base_resumes",
         "seed_prompts",
-        "seed_templates",
         "ensure_persona",
         "seed_career_kb",
         "refresh",
     ]
-

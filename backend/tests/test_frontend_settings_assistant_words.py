@@ -380,8 +380,8 @@ def test_a_stream_error_never_shows_raw_server_text():
 def test_the_endpoint_hints_say_which_choice_fixes_what():
     endpoint = _flat(_read("components/settings/llm-endpoint.tsx"))
     # M19: with no address, Gemini models run on Gemini too.
-    assert "Leave empty to use OpenAI and Gemini." in endpoint
-    assert '"Not set. Models run on OpenAI and Gemini."' in endpoint
+    assert "Leave empty to use the providers above." in endpoint
+    assert '"Not set. Models run on the providers whose keys you saved."' in endpoint
     assert "Structured replies" not in endpoint
     assert "<Label htmlFor={jsonModeId}>Strict reply format</Label>" in endpoint
     assert "Leave on Auto. If your server shows errors, choose Off." in endpoint
@@ -398,13 +398,14 @@ def test_a_model_test_names_the_model_and_the_real_cause():
     assert "`Couldn't reach ${provider}, so ${name} wasn't tested. Check your ${provider} API key, then try again.`" in unreachable
     assert "`Couldn't reach your AI server, so ${name} wasn't tested. Check the server address, then try again.`" in unreachable
     # A custom local server needs no key.
-    assert 'description="Lets the app use OpenAI or Gemini. You need one unless you use a custom AI server."' in models
+    assert 'description="Lets the app use OpenAI, Claude, Gemini or OpenRouter. You need one unless you use a custom AI server."' in models
     assert "You need at least one." not in models
 
 
 def test_the_key_fields_say_where_a_key_comes_from():
     models = _flat(_read("components/settings/models-section.tsx"))
-    for host, prefix in (("platform.openai.com", "sk-"), ("aistudio.google.com", "AIza")):
+    for host, prefix in (("platform.openai.com", "sk-"), ("console.anthropic.com", "sk-ant-"),
+                         ("aistudio.google.com", "AIza"), ("openrouter.ai", "sk-or-")):
         assert f">{host}</NewTabLink>. It starts with {prefix}." in models, host
 
 
@@ -429,7 +430,7 @@ def test_profile_and_agent_limits_speak_plainly():
         ("components/settings/auto-apply-section.tsx",
          "hint: `${ATS_SCORE_LEAD_ALL_JOBS} Below this, connected agents ask you which base resume to use.`,"),
         ("components/settings/auto-apply-section.tsx",
-         "Connected agents pick a base resume on their own only when its ATS score leads the next one by this many points."),
+         "Connected agents pick a base resume on their own only when its match score leads the next one by this many points."),
     ):
         assert words in _flat(_read(rel)), (rel, words)
     assert "Proposals per hunt" not in _read("components/settings/auto-apply-section.tsx")
@@ -470,14 +471,21 @@ def test_errors_and_setup_speak_plainly():
     for words in (
         'title: "Add your answers for job forms",',
         'title: "Describe yourself as a candidate (persona)",',
-        '"PDF creation is ready."',
-        '"PDF creation is ready. A few templates need extra software to look their best."',
+        "detail: pdfOutputDetail(status.engines.pdflatex),",
         '`${count(bases, "base resume", "base resumes")}, ${count(items, "item", "items")} in your career history`',
     ):
         assert words in steps, words
+    # The PDF row's words live in lib/pdf-output.ts (lib/pdf-output.test.ts has the cases).
+    pdf_output = _read("lib/pdf-output.ts")
+    for words in (
+        '"PDF creation is ready."',
+        '"PDF creation is ready. A few templates need extra software to look their best."',
+        "`PDF creation is ready, but your TeX needs an update: ${pdflatex.warning}.`",
+    ):
+        assert words in pdf_output, words
     card = _read("components/setup/getting-started-card.tsx")
-    # A PDF step with nothing to do is not a step.
-    assert '!(row.id === "engines" && row.done && status.engines.pdflatex.available)' in card
+    # A PDF step with nothing to do is not a step; a TeX that needs an update is.
+    assert '!(row.id === "engines" && row.done && pdflatex.available && !pdflatex.warning)' in card
     strip = _flat(_read("components/setup/setup-status-strip.tsx"))
     assert '<span className="text-muted-foreground text-label-medium">Setup steps:</span>' in strip
     assert '<Check aria-hidden="true" className="size-3" />' in strip
@@ -495,7 +503,8 @@ def test_a_missing_or_refused_key_says_what_to_do():
     # frontend's MISSING_KEY pattern, so both sides move together.
     missing = re.search(r"const MISSING_KEY = /(.+)/i;", text)
     assert missing, "MISSING_KEY moved"
-    for message in (llm.NO_KEY_MESSAGE, llm.NO_GEMINI_KEY_MESSAGE):
+    for message in (llm.NO_KEY_MESSAGE, llm.NO_GEMINI_KEY_MESSAGE, llm.NO_ANTHROPIC_KEY_MESSAGE,
+                    llm.NO_OPENROUTER_KEY_MESSAGE):
         assert re.search(missing.group(1), message, re.I), message
 
 
@@ -590,7 +599,8 @@ def test_the_key_is_checked_before_the_model_capability():
     """No key: every capability is recorded as No, so the key is the real cause and says so first."""
     router = (_ROOT / "backend/app/routers/chat.py").read_text(encoding="utf-8")
     send = _between(router, "def send_message(", "def event_stream():")
-    assert send.index("client = get_chat_client(model)") < send.index('llm_capabilities.require(db, model, "tools")')
+    # The provider's key (`.ready()` via the registry) is checked before the capability row.
+    assert send.index("provider.ready()") < send.index('llm_capabilities.require(db, model, "tools")')
 
 
 def test_a_key_in_the_wrong_shape_is_refused_at_save():
@@ -607,8 +617,8 @@ def test_a_key_in_the_wrong_shape_is_refused_at_save():
 def test_a_wrong_key_is_never_sent_and_its_field_says_why():
     models = _read("components/settings/models-section.tsx")
     save = _between(models, "  const onSave = (customServer: boolean) => {", "\n  };")
-    assert save.index("if (openaiWrong || geminiWrong) {") < save.index("saveKeysOnce(")
-    assert "return;" in save[save.index("if (openaiWrong || geminiWrong) {"):save.index("saveKeysOnce(")]
+    assert save.index("if (first) {") < save.index("saveKeysOnce(")
+    assert "return;" in save[save.index("if (first) {"):save.index("saveKeysOnce(")]
     assert "toast.success(keysSavedText(patch));" in models
     assert '"API keys saved"' not in models
     # The refusal is the field's description, so focus on the field reads it.
@@ -621,15 +631,39 @@ def test_a_saved_key_is_checked_on_first_use():
     assert ts_map("./lib/api-key-format.ts", "keysSavedText", [
         {"openai_api_key": "sk-a"}, {"gemini_api_key": None},
         {"openai_api_key": "sk-a", "gemini_api_key": "AIza"},
+        {"anthropic_api_key": "sk-ant-a"}, {"openrouter_api_key": "sk-or-a", "anthropic_api_key": None},
     ]) == [
         "API key saved. We'll check it on first use.", "API key removed.",
         "API keys saved. We'll check them on first use.",
+        "API key saved. We'll check it on first use.", "API key saved. We'll check it on first use.",
     ]
 
 
+def test_openrouter_privacy_sentence_is_exact_and_shown_saved_or_not():
+    models = _flat(_read("components/settings/models-section.tsx"))
+    sentence = ("OpenRouter sends requests only to model providers that keep no data. "
+                "OpenRouter itself may keep what you send.")
+    assert models.count(sentence) == 1
+    # Outside the configured/unset branch: still on screen once a key is saved.
+    hint = _between(models, "{configured ? \"Type a new key", "</p>")
+    assert "{note ? <> {note}</> : null}" in hint
+    assert "note?: string;" in models and "note={KEY_FIELDS[p].note}" in models
+
+
+def test_a_missing_key_warning_is_a_field_message_wired_to_the_picker():
+    """docs/frontend-conventions.md, Field error and warning: icon line (useFieldMessage) and
+    the id in the control's aria-describedby, in both the picker and the custom-server input."""
+    models = _flat(_read("components/settings/models-section.tsx"))
+    assert "useFieldMessage({ warning: keyWarning(role.label, model, info), hintId })" in models
+    assert 'describedBy={control["aria-describedby"]}' in models and "message={message}" in models
+    assert models.count("aria-describedby={describedBy ?? hintId}") == 2
+    assert models.count("{message}") >= 2
+    assert 'role="note"' not in models
+
+
 def test_no_screen_says_an_ats_rates_the_resume():
-    """Task 24 found two: an ATS score is our estimate of how a system WOULD rate it
-    (ATS_SCORE_LEAD in lib/ats-words.ts), never a reading from an employer's system."""
+    """The match score compares resumes with jobs using fixed rules
+    (ATS_SCORE_LEAD in lib/ats-words.ts), never an employer's reading."""
     root = Path(__file__).resolve().parents[2] / "frontend"
     hits = [
         p.relative_to(root).as_posix()
@@ -655,10 +689,11 @@ def test_the_web_app_recognises_every_key_sentence_the_server_writes():
     from app.services import llm
 
     missing, refused = _exported_regex("MISSING_KEY"), _exported_regex("REFUSED_KEY")
-    for text in (llm.NO_KEY_MESSAGE, llm.NO_GEMINI_KEY_MESSAGE, "GEMINI_API_KEY is required for Gemini models"):
+    for text in (llm.NO_KEY_MESSAGE, llm.NO_GEMINI_KEY_MESSAGE, llm.NO_ANTHROPIC_KEY_MESSAGE,
+                 llm.NO_OPENROUTER_KEY_MESSAGE, "GEMINI_API_KEY is required for Gemini models"):
         assert missing.search(text), text
     sentences = [str(llm._no_answer(llm._KEY_REFUSED, "detail", provider=who))
-                 for who in ("OpenAI", "Gemini", "Your AI server")]
+                 for who in ("OpenAI", "Gemini", "Claude", "OpenRouter", "Your AI server")]
     sentences.append("The AI model didn't answer (your key was refused). Try again, or check your key in "
                      "Settings › AI & models.")
     sentences += ["Error code: 401 - {'error': {'code': 'invalid_api_key'}}",

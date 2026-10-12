@@ -33,16 +33,14 @@ rather than leaving the combination broken.
 
 **3. The compose project name is fixed and must never move again.**
 `docker-compose.yml` sets `name: maestro-career-studio`, so containers are
-`maestro-career-studio-backend-1`. That container name is a **literal** in the
-shipped plugin manifest (`plugins/maestro-career-studio/.mcp.json`) because
-Codex plugin manifests support no `${VAR}` interpolation — there is nowhere to
-put a variable. Changing the project name therefore breaks marketplace installs
-on every machine at once. (The database is a file in the project folder, so
-the project name does not decide which data you see; `update.sh` still looks
-for the pre-v0.4.0 volume by it, `maestro-career-studio_pgdata`.)
-`COMPOSE_PROJECT_NAME` still overrides it for anyone who needs a second stack
-side by side; that is the supported escape hatch, and such a user configures
-their MCP server with `scripts/setup-mcp.sh` rather than the plugin.
+`maestro-career-studio-backend-1`. The database is a file in the project folder,
+so the project name does not decide which data you see; `update.sh` still looks
+for the pre-v0.4.0 volume by it, `maestro-career-studio_pgdata`.
+The plugin connects by URL to `http://localhost:8001/mcp`, independently of
+container names. `COMPOSE_PROJECT_NAME` still overrides the name for a second
+stack side by side. Give that stack different host ports and use the URL shown
+in Settings › Connected agents › **Connect an agent app**, or
+`claude mcp add --scope user --transport http maestro-career-studio <that-stack-url>`.
 
 ---
 
@@ -67,7 +65,7 @@ They must agree, and most of them will keep lying silently if you forget:
 | `backend/pyproject.toml` | `version = "X.Y.Z"` |
 | `extension/manifest.json` | `"version": "X.Y.Z"` |
 | `CITATION.cff` | `version: "X.Y.Z"` + `date-released` (cffconvert cannot catch a stale one — check by eye) |
-| `mcpb/manifest.json` | `"version": "X.Y.Z"` — what Claude Desktop shows for the installed extension. Re-pack the bundle after editing (`scripts/check_mcpb_bundle.py` fails otherwise) |
+| `mcpb/manifest.json` | `"version": "X.Y.Z"` — what Claude Desktop shows for the installed extension. Re-pack: `cd mcpb && npx @anthropic-ai/mcpb pack . maestro-career-studio.mcpb`, then update `server.json` `fileSha256` (`scripts/check_mcpb_bundle.py` fails otherwise) |
 | `plugins/maestro-career-studio/.claude-plugin/plugin.json` | `"version": "X.Y.Z"` — what `/plugins` shows for the marketplace install |
 | `plugins/maestro-career-studio/.codex-plugin/plugin.json` | `"version": "X.Y.Z"` — its Codex twin; the two must not diverge |
 | `server.json` | `"version"` and the package's `"version"`, plus `vX.Y.Z` inside its `identifier` URL. Its `fileSha256` is re-set after the re-pack: `shasum -a 256 mcpb/maestro-career-studio.mcpb` |
@@ -75,6 +73,10 @@ They must agree, and most of them will keep lying silently if you forget:
 
 The published image tag is the version **without** the `v` (`X.Y.Z`) — the
 workflow strips it. Anything documented as `IMAGE_TAG=vX.Y.Z` is wrong and 404s.
+
+`backend/pyproject.toml` is also the PyPI version: the wheel is that project, so
+there is no ninth row. `.github/workflows/pypi.yml` fails when the tag differs
+from it.
 
 ### 3. Changelog and gates
 
@@ -88,6 +90,13 @@ workflow strips it. Anything documented as `IMAGE_TAG=vX.Y.Z` is wrong and 404s.
   python3 scripts/check_system_md.py
   ```
 - Confirm `SYSTEM.md` describes what is about to ship (its header contract).
+- `backend/requirements.lock` must match `pyproject.toml`. The distribution was
+  renamed, and `psutil`, `python-dotenv` and `nodejs-wheel-binaries` were added, so
+  regenerate it in `python:3.12-slim` (the recipe in `backend/Dockerfile`, plus
+  `--unsafe-package nodejs-wheel-binaries`: containers never run Node). Until it is
+  regenerated, `psutil` and `python-dotenv` are not in the lock, and
+  `nodejs-wheel-binaries` never is, so `dependency-audit` does not cover them
+  (for Node, audit the wheel's pinned version by hand).
 
 ### 4. Tag and push
 
@@ -97,7 +106,17 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The tag push is what fires `.github/workflows/images.yml`. Nothing else does.
+The tag push fires `.github/workflows/images.yml` (the images) and
+`.github/workflows/pypi.yml` (the wheel). `pypi.yml` builds the wheel, installs it
+with uv on macOS, Ubuntu and Windows, runs it, and only then publishes to PyPI
+(trusted publishing, no token). Nothing else fires either.
+
+**Owner, once, before the first tag:** on PyPI, add a *pending trusted publisher*
+for the project `maestro-career-studio` (owner `seinun-ai`, repository
+`maestro-career-studio`, workflow `pypi.yml`, environment `pypi`), and create the
+GitHub environment `pypi` on the repository. Without both, the `publish` job fails
+after the smoke passes. A manual run of `pypi.yml` (workflow_dispatch) builds and
+tests but never publishes.
 
 ### 5. Verify the images before announcing anything
 
@@ -112,6 +131,23 @@ docker buildx imagetools inspect ghcr.io/seinun-ai/maestro-career-studio-fronten
 Expect `linux/amd64` **and** `linux/arm64` in each manifest. A single-arch
 manifest means the merge job took the wrong path — fix it and cut the next
 patch; do not move the tag.
+
+### 5b. Verify the PyPI release
+
+Confirm the `pypi` workflow's `publish` job is green and
+<https://pypi.org/project/maestro-career-studio/> shows `X.Y.Z`. Then, on a machine
+that has never had Maestro (or with `UV_TOOL_DIR`, `UV_TOOL_BIN_DIR` and
+`MAESTRO_HOME` pointed at empty scratch folders):
+
+```bash
+uv tool install --python 3.12 maestro-career-studio==X.Y.Z
+maestro start --no-browser
+maestro status          # backend and web both report X.Y.Z
+maestro stop
+```
+
+PyPI never lets a version be re-uploaded: a bad release is yanked and superseded
+by the next number, like a tag.
 
 ### 6. Create the GitHub Release from the tag
 
@@ -146,6 +182,48 @@ curl -s "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.
 Glama, PulseMCP and Smithery copy from the registry on their own schedule; the
 listing text is the `description` in `server.json` (100 characters at most).
 
+### Chrome Web Store
+
+The owner publishes the Companion separately from the GitHub release. Create
+a Chrome Web Store developer account and complete its registration before
+the first upload. Use [the listing notes](../extension/STORE_LISTING.md) for
+the single purpose, permission explanations, privacy disclosures and five
+1280 x 800 screenshots. Link the public `PRIVACY.md` as the privacy policy.
+
+1. Confirm `extension/manifest.json` and `backend/pyproject.toml` have the same
+   version. For the **first upload only**, run from the repository root:
+
+   ```bash
+   python3 scripts/pack_extension.py --first-upload
+   ```
+
+   Upload `dist/maestro-cs-companion-X.Y.Z.zip`. This flag removes `key` from
+   the manifest inside the zip; the repository's unpacked-install key stays
+   intact until the next step. Developer notes, tests and dotfiles stay out
+   of every upload archive.
+2. Copy the store's public key into `extension/manifest.json`'s `key` and
+   append the store extension ID to both the `maestro_cs_extension_ids`
+   default in `backend/app/config.py` and `MAESTRO_CS_EXTENSION_IDS` in
+   `.env.example`. Keep the existing unpacked ID allowed for one release;
+   users with an explicit environment override must add the store ID too.
+   Verify the key-derived ID and both allowlist entries before release.
+3. **At that key change**, create the `extension-id-swap` row in `SYSTEM.md`
+   §13: old unpacked ID to store ID, with the removal trigger being the
+   release after the store ID ships. Mirror an executable trigger in
+   `.slopledger.json`. The row does not exist before the store assigns an ID.
+   Update the Companion installation docs to explain the new fixed ID and
+   the reload or reinstall steps.
+4. Publish **unlisted first**. Install that store build and test capture,
+   filling and Test connection against a freshly started backend allowing
+   its exact ID. Confirm that an unrelated extension ID remains refused.
+   Submit for public listing only after these checks and owner review.
+5. Update `PRIVACY.md`'s Companion section when the listing goes live.
+
+For later uploads, bump the extension and backend versions together and run
+`python3 scripts/pack_extension.py` without `--first-upload`. The archive
+retains the store public key. `dist/` is gitignored; upload the zip rather
+than committing it.
+
 ### 7. Package visibility, and an unauthenticated pull
 
 ghcr packages default to **private regardless of repository visibility**. Until
@@ -171,6 +249,11 @@ non-default `*_HOST_PORT`s:
 ./scripts/update.sh --check     # reports the new tag as available
 ./scripts/update.sh             # backup → ff-to-tag → pull → healthy
 ```
+
+Then the uv path, on a machine with the *previous* release installed
+(`uv tool install --python 3.12 maestro-career-studio==<previous>`, `maestro start`):
+`maestro update --yes`, then `maestro status`. It must show the new version, and
+`backups/` in the Maestro folder must hold a new snapshot.
 
 Confirm the backup file in `backups/` is non-empty, the checkout lands on the
 new tag, and the stack comes back healthy. This is the step that catches a

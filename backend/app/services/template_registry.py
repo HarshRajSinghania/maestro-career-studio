@@ -210,12 +210,26 @@ STARTER_SOURCE = r"""\documentclass[11pt]{article}
 
 
 def _bootstrap_default(session: Session, *, validate: bool = True) -> Template:
+    # Classic keeps its source even when the user selects another default.
+    # Resync either way, using the same origin + shipped-digest guard as the
+    # other seeds; validation below must describe the replacement bytes.
+    existing = session.get(Template, DEFAULT_ID)
+    if existing is not None:
+        _resync_superseded_seed(
+            session, existing, pdf_render.TEMPLATE_DIR / pdf_render.RESUME_TEMPLATE
+        )
     # Invariant: at most ONE is_default=True row. Only bootstrap a default when
     # none exists (fail closed). Guarding on the DEFAULT_ID row's absence instead
     # would spawn a SECOND default next to a user's chosen default if the seed
     # 'default' row had been deleted after the user re-pointed the default.
     current = session.scalar(select(Template).where(Template.is_default.is_(True)))
     if current is not None:
+        if (
+            validate and current.id != DEFAULT_ID
+            and existing is not None and existing.origin == "seed"
+            and _needs_seed_validation(existing)
+        ):
+            _seed_validate(session, existing)
         # The seed default gets the same "another go on the next ensure" as
         # every other seed (`_bootstrap_seeded`): a first boot without TeX
         # leaves it a draft with "requires TeX", and returning here unconditionally
@@ -224,7 +238,6 @@ def _bootstrap_default(session: Session, *, validate: bool = True) -> Template:
         if validate and current.id == DEFAULT_ID and _needs_seed_validation(current):
             _seed_validate(session, current)
         return current
-    existing = session.get(Template, DEFAULT_ID)
     if existing is not None:
         # The seed row exists but nothing is marked default: promote it rather
         # than insert a duplicate id.
@@ -355,7 +368,7 @@ def _needs_seed_validation(tmpl: Template) -> bool:
 # never resynced ("untouched applies to the SOURCE", ensure_seed_templates), so
 # it is safe to replace with the current bundle; a user-edited row matches
 # nothing and is left alone. Pinned literals, checked against the frozen bytes
-# under tests/fixtures/templates_superseded/<seed_id>/<n>.tex.j2 — a wrong
+# under tests/fixtures/templates_superseded/<seed_id>/<n>.tex.j2 or <n>.typ — a wrong
 # digest is a silent no-op. Seed-time rather than alembic because rows that
 # v0.4.0 imported verbatim from the old Postgres database never passed through
 # a SQLite migration, and only seeding — which runs on every boot — ever sees
@@ -363,6 +376,14 @@ def _needs_seed_validation(tmpl: Template) -> bool:
 # become a version that shipped: freeze them as the next fixture and pin here
 # (CURRENT_SEED_DIGESTS below fails a test until that is done).
 SUPERSEDED_SEED_DIGESTS: dict[str, frozenset[str]] = {
+    "default": frozenset({
+        # e81696be, ba30bf9b, c4b40be0 and c27b05d4: all Classic sources
+        # before the complete template attribution header.
+        "abba04679c464b623c5c31e27f1d8518f3cce94476739def18c16b12451764de",
+        "0657e3937030a7ff6b2f9d5cdb9f80ad12578defeaff2c67f83fc8d7af6dc3d6",
+        "1a7350623f5d5a005eb66f91986c54819da18885444a09b357a2695ded647aaf",
+        "f2b36dc16a62b61267dbab0d59da9155e368b92707372c0edc73dbdf9e9d5997",
+    }),
     "carlito_dense": frozenset({
         # e81696be, c4b40be0, c27b05d4 (last change on main; identical at
         # main's tip). All three pass \href targets through latex_escape,
@@ -373,6 +394,8 @@ SUPERSEDED_SEED_DIGESTS: dict[str, frozenset[str]] = {
         # 590cb2d5: \href targets fixed; the name line still ended an empty
         # line when contact.name was blank (the web Blank tab).
         "7a7484a25d6f93db395899e63084ad1f9f9d317f6c8f727ef475df8979102b8e",
+        # Source before the template attribution headers.
+        "f6f0203fc1d6ab08a03827d20172118edc417989e4d893a9aba2af68c2bb38ea",
     }),
     "harshibar": frozenset({
         # e81696be, c4b40be0, c27b05d4 (last change on main; identical at
@@ -384,6 +407,8 @@ SUPERSEDED_SEED_DIGESTS: dict[str, frozenset[str]] = {
         # 590cb2d5: \href fixed; a contact line with nothing on it still
         # ended with a bare \\ (the web Blank tab).
         "4ec93a33152635603d7d8d2281cf5e8c23db964cd36ac818f22c9346493473c6",
+        # Source before the template attribution headers.
+        "d9853145206988204e1b8e9b15838d64efefc5bbbc49ae99655b29426586023c",
     }),
     "xcharter_serif": frozenset({
         # e81696be, c4b40be0, c27b05d4 (identical at 8878731d): all three end
@@ -391,6 +416,12 @@ SUPERSEDED_SEED_DIGESTS: dict[str, frozenset[str]] = {
         "3b69c685a8f9ca528886432fc16a71bd36b4ae3720cd39f99b8f306915aae0a6",
         "6fbbb40605eaefd3994104866540dc297a827292edcb955709db05f637a7f979",
         "7f577cd106ad0bbe6e2ccff58131d68da3c967597c802215d10dcb9d0ce4f289",
+        # Source before the template attribution headers.
+        "a06c8ecba153c566efeab09470152d931bc3dab1b737830dad583bbc25797e45",
+    }),
+    "xcharter_serif_typst": frozenset({
+        # Typst port before the inherited template attribution header.
+        "539815b940267de984338042350d0d8e3c91e7bd6ad7656cdaccf782dc4c7350",
     }),
 }
 
@@ -401,9 +432,11 @@ SUPERSEDED_SEED_DIGESTS: dict[str, frozenset[str]] = {
 # release will carry, and the resync can only recognise what was pinned.
 # Update it LAST, after the fixture and the SUPERSEDED_SEED_DIGESTS entry.
 CURRENT_SEED_DIGESTS: dict[str, str] = {
-    "carlito_dense": "f6f0203fc1d6ab08a03827d20172118edc417989e4d893a9aba2af68c2bb38ea",
-    "harshibar": "d9853145206988204e1b8e9b15838d64efefc5bbbc49ae99655b29426586023c",
-    "xcharter_serif": "a06c8ecba153c566efeab09470152d931bc3dab1b737830dad583bbc25797e45",
+    "default": "50d3c956907885899dad3ffd13e45754222230aeaf96ca7f65634beabcbea5c2",
+    "carlito_dense": "6585a38def5fd891416d27014c40c0ef9e88a0c722620ae4904438d5433a1667",
+    "harshibar": "122996d28e6937e74a0f3571bbba22a8a680bd5f12f95f3b83ced5f397e0cb4c",
+    "xcharter_serif": "1dd50d7a9253d090f48e5ad4241e456e1da6f024b24fdd6d616023a4c38798e7",
+    "xcharter_serif_typst": "84710581bbe696e3c32f2970b0edf929552b90b12114f3f3083845f2b0a22a53",
 }
 
 
@@ -598,6 +631,40 @@ def ensure_seed_templates(session: Session, *, validate: bool = True) -> None:
     _bootstrap_default(session, validate=validate)
     _bootstrap_typst_classic(session, validate=validate)
     _bootstrap_bundled(session, validate=validate)
+    if validate:
+        recheck_ready_latex_for_engine_warning(session)
+
+
+def recheck_ready_latex_for_engine_warning(session: Session) -> None:
+    """On a pdflatex the probe warns about (pdfTeX 1.40.27 overprints words),
+    re-validate every ready LaTeX template whose validation predates the
+    overprint check — seeds AND the user's — so one validated before it stops
+    rendering garbage: it turns draft with the reason instead. Once per
+    template: a pass leaves `overprint_checked` in its parse report, a failure
+    leaves it draft. Best-effort like `_seed_validate`; startup only."""
+    from app.services import template_validation  # lazy: avoid import cycle
+
+    status = engines.probe_pdflatex()
+    if not status.available or status.warning is None:
+        return
+    rows = session.scalars(
+        select(Template).where(
+            Template.engine == "latex",
+            Template.status == "ready",
+            Template.archived_at.is_(None),
+        )
+    ).all()
+    for row in rows:
+        if (row.parse_report_json or {}).get("overprint_checked"):
+            continue
+        if row.id in _SEED_VALIDATION_ATTEMPTED:
+            continue
+        _SEED_VALIDATION_ATTEMPTED.add(row.id)
+        try:
+            template_validation.validate_template(row.id, session)
+        except Exception:  # noqa: BLE001 -- a recheck must not break seeding
+            logger.exception("%s overprint recheck failed; left as it was", row.id)
+            session.rollback()
 
 
 def get(session: Session, template_id: str) -> Template | None:

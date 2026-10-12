@@ -128,6 +128,9 @@ def test_seed_career_kb_without_provider_key_defers_cleanly(
     db_session.commit()
     monkeypatch.setattr(seeding.llm, "get_openai_key", lambda: None)
     monkeypatch.setattr(seeding.llm, "get_gemini_key", lambda: None)
+    monkeypatch.setattr(seeding.llm, "get_anthropic_key", lambda: None)
+    monkeypatch.setattr(seeding.llm, "get_openrouter_key", lambda: None)
+    monkeypatch.setattr(seeding.llm, "get_base_url", lambda: None)
     monkeypatch.setattr(
         seeding.kb_consolidation,
         "consolidate",
@@ -140,6 +143,24 @@ def test_seed_career_kb_without_provider_key_defers_cleanly(
     assert _count(db_session, KBPoint) == 0
     assert db_session.get(KBProfile, 1) is None
     assert "KB seed deferred: no LLM key configured" in caplog.text
+
+
+def test_seed_career_kb_with_only_a_claude_key_seeds(db_session, monkeypatch):
+    db_session.add(BaseResume(slug="data_scientist", data_json=_resume()))
+    db_session.commit()
+    for name in ("get_openai_key", "get_gemini_key", "get_openrouter_key", "get_base_url"):
+        monkeypatch.setattr(seeding.llm, name, lambda: None)
+    monkeypatch.setattr(seeding.llm, "get_anthropic_key", lambda: "sk-ant-x")
+
+    def fake_consolidate(session, sources, *, commit):
+        session.add(KBEntity(kind="project", title="P", detail_json={}))
+        return ConsolidationReport(entities_created=1)
+
+    monkeypatch.setattr(seeding.kb_consolidation, "consolidate", fake_consolidate)
+
+    seeding.seed_career_kb(db_session)
+
+    assert _count(db_session, KBEntity) == 1
 
 
 def test_seed_career_kb_uses_every_active_source_in_stable_chronological_order(

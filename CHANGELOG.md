@@ -28,18 +28,136 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ## [Unreleased]
 
+Until now Maestro spoke two AI dialects, OpenAI and Gemini, so a Claude key
+could only watch from the side. This release adds Claude, talking to Anthropic
+directly, and OpenRouter, with zero data retention switched on for you. A Claude
+key alone now runs the whole app, the Assistant included. Your chats are saved in
+a format that belongs to no single provider, so you can change models halfway
+through a conversation and it still remembers what was said.
+
 ### Breaking changes
 
+- **A built-in Gemini model now always goes to Google, even with a Custom AI
+  server set.** Before, the Assistant sent a role set to `gemini-3.5-flash-lite`
+  or `gemini-3.7-flash` to the custom server; now it uses your Gemini key, or
+  says that no Gemini key is set. With a custom server and a Gemini key, any
+  `gemini-*` Assistant model also goes to Google. If you serve a local model
+  under one of those names, give it an id that is not in the built-in list
+  (for example `gemini-local`): ids Maestro does not list still go to your
+  server.
+
+### Added
+
+- **Claude as an AI provider.** Add a Claude API key in Settings › AI & models
+  (or `ANTHROPIC_API_KEY` in `.env` / `maestro.env`). Claude Haiku 5.5, Sonnet 5.5
+  and Opus 5.5 are listed in the model pickers, and **Find Claude models** lists
+  the rest; no role switches to Claude on its own. Calls go to Anthropic's own API
+  through the official `anthropic` SDK, not its OpenAI-compatible endpoint. The
+  Assistant caches its long system prompt and tool list between turns, and when a
+  Claude safety check declines a request on Opus 5.5 or Sonnet 5.5, Anthropic
+  retries it on another Claude model.
+- **OpenRouter as an AI provider.** Add an OpenRouter key in Settings › AI &
+  models (or `OPENROUTER_API_KEY`). Every request asks OpenRouter to use only
+  providers that keep no data and collect none, and this cannot be turned off.
+  **Find OpenRouter models** lists only models with such a provider. OpenRouter
+  itself may keep what you send; [PRIVACY.md](PRIVACY.md) says what goes where.
+- **Switch providers mid-conversation.** Assistant messages are saved in a
+  provider-neutral form. A chat started on one provider continues on another,
+  and each provider's private reasoning data is sent back only to that provider.
+- Settings › AI & models warns when a role's model belongs to a provider with no
+  key saved ("Fast model uses OpenAI, but no OpenAI key is saved").
+- Key checks for Claude (`sk-ant-`) and OpenRouter (`sk-or-`) keys, and a warning
+  when a Claude or OpenRouter key is pasted into the OpenAI field.
+- `backend/scripts/live_provider_check.py`, a manual check that runs the app's
+  own one-shot, tool-calling and provider-switch paths against real keys.
+
+### Changed
+
+- **Gemini in the Assistant uses Gemini's own API** instead of Google's
+  OpenAI-compatible endpoint, and keeps Gemini 3's thought signatures between
+  tool calls.
+- The pinned resume and selections for an Assistant message are saved with that
+  message instead of being rebuilt on every later turn.
+- The setup checklist's AI key step, and the Career KB's first-start seeding,
+  count a key for any of the four providers or a Custom AI server.
+- **Test** next to a model runs the same streaming, tool-calling request the
+  Assistant makes, for every provider.
+- New dependency: `anthropic` (1.13 or later, which brings `httpx2`). The Docker
+  lock also gains `psutil`, which 0.9.0 added to the package but not the lock.
+- `maestro.env`, `.env.example` and `docker-compose.yml` list `ANTHROPIC_API_KEY`
+  and `OPENROUTER_API_KEY`. Like the other keys, a key saved in the app wins over
+  one from the environment.
+- A database migration adds `parts`, `provider` and `model` to `chat_messages`
+  and fills `parts` from every existing message when the backend starts. The old
+  `tool_calls` and `tool_call_id` columns stay for one more release.
+
+### Fixed
+
+- GPT-5.4, GPT-5.5 and GPT-6 models (including `openai/…` ids on OpenRouter) can
+  call tools in the Assistant: Maestro now sends `reasoning_effort: "none"` for
+  them, which OpenAI requires on Chat Completions. Before, only GPT-5.6 got it.
+- Gemini 3 Assistant turns that need two tool steps in a row no longer lose the
+  thought signature Google requires on the second request.
+- A Claude account with no API credit reads "your account is out of credit"
+  instead of "The AI model didn't answer (error 400)", and the model test does
+  not record it as a failed model.
+
+## [0.9.0] — 2026-10-10
+
+This release is about getting Maestro out of its box. AI agents now reach it by
+URL instead of reaching into a container, and the whole app installs with two
+commands and no Docker at all. If you already run the Docker version,
+`maestro import-docker` brings your data across in one go.
+
+### Breaking changes
+
+- **Claude Code and Codex plugins now connect to `http://localhost:8001/mcp`**
+  instead of running `docker exec`. They need v0.9.0 images: earlier images
+  have no `/mcp` endpoint. If you changed `BACKEND_HOST_PORT`, use Settings ›
+  Connected agents › **Connect an agent app** instead of the plugin.
 - **Pre-rename environment variables are now ignored silently:**
   `CAREER_STUDIO_EXTENSION_IDS`, `CAREER_STUDIO_MCP_PROFILE`,
   `CAREER_STUDIO_MCP_CLIENT`, `CAREER_STUDIO_PDF_DIR`,
   `CAREER_STUDIO_UPLOAD_DIR` and `RESUME_TAILOR_PDF_DIR`.
   Use the `MAESTRO_CS_*` names. Leaving these set without their replacements
-  means an unpacked Companion id loses API access, the MCP profile falls back
+  means an unpacked Companion id loses API write access, the MCP profile falls back
   to `full`, and PDFs/uploads go to the default folders.
+- **Nothing in the uv install work needs an action from a Docker install.** The
+  Docker images, `docker-compose.yml`, `.env`, ports and `scripts/update.sh` work as
+  before (the Changed list below says what moved inside the images).
 
 ### Added
 
+- Career history imports PowerPoint decks (.pptx), including speaker notes.
+- **`maestro import-docker CHECKOUT`** moves a Docker install's data into the uv
+  install, once: the database (with stored file locations rewritten), resumes,
+  applications, knowledge-base files, settings, the sync key and the settings in
+  its `.env` that Maestro understands. It reads the Docker folder and changes
+  nothing in it, saves a snapshot of the uv database first, and puts back the
+  database, sync key, settings and `maestro.env` if anything fails. `--dry-run` shows the plan. See `docs/UPDATING.md`.
+- **A Docker-free install with uv, and the `maestro` command.**
+  `uv tool install --python 3.12 maestro-career-studio` installs Maestro (published
+  to PyPI on every release tag, with the web app and Node inside the package) on
+  macOS, Linux and Windows x64. `maestro start`, `stop`, `restart`, `status`,
+  `logs`, `open`, `update`, `backup`, `migrate`, `check`, `autostart on|off|status`,
+  `connect` and `mcp` run it from one per-user folder with one settings file,
+  `maestro.env`. `maestro update` saves a verified snapshot of your data before it
+  changes anything and prints the changelog's breaking changes first. See the
+  README, `docs/GETTING_STARTED.md` and `docs/UPDATING.md`.
+- **`maestro connect`** adds Maestro to Claude Desktop (waiting until you quit it,
+  because it rewrites its settings while running), Claude Code, Codex, Cursor and
+  VS Code. `maestro mcp` is the stdio bridge it points Claude Desktop at; on a uv
+  install the connect card's Claude Desktop row shows the command instead of the
+  bundle download.
+- CI builds the wheel, installs it with uv on macOS, Ubuntu and Windows, smoke-tests
+  it, and upgrade-tests one version to the next (`docs/RELEASING.md` has the
+  one-time PyPI setup).
+- **HTTP MCP inside the backend** at `/mcp`, with `full`, `hunt`, `apply`,
+  `explore`, `templates` and `career` tool profiles on the same port and
+  Host/Origin boundary as REST.
+- **Connect an agent app** on Settings › Connected agents: choose a **Tool set**,
+  copy a command or URL, open a client install link or download the Claude Desktop bundle.
+- **Companion options page** to set the backend and app addresses and test the connection.
 - **Copy setup prompt** on Settings › Connected agents › Second copy, and a
   guide for running an always-on bot (`docs/always-on-bot.md`). The button
   copies a setup prompt for a fresh always-on copy. It fills in the laptop's
@@ -52,6 +170,36 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ### Changed
 
+- The app calls its score the match score (it was labelled ATS score).
+- README rewritten: shorter top screen, the uv install leads the Quickstart; the manual moved to `docs/USING_MAESTRO.md` and `docs/SETUP_REFERENCE.md`.
+- **The backend's Python distribution is renamed** `maestro-career-studio-backend`
+  to `maestro-career-studio` (it is the PyPI name). The setup scripts uninstall the
+  old name; nothing to do. `pyproject.toml` is also the PyPI version.
+- **The frontend image runs `node server.js`** from Next's standalone output
+  instead of `next start`, with image optimization off (nothing uses it) and no
+  `sharp`. `npm start` does the same outside Docker. Same ports, same behavior.
+- **Any venv that installs the backend now also pulls Node 24** through
+  `nodejs-wheel-binaries` (about 200 MB installed): the native always-on scripts,
+  the stdio MCP server, and `pip install -e backend` for development.
+- `/health/memory` and the sync file reads work on Windows. On Windows, a sync file
+  read no longer refuses a symlink at open (there is no `O_NOFOLLOW`); the
+  regular-file check and the packer's symlink check still apply.
+- The Claude Code command on the connect card and in the docs is
+  `claude mcp add --scope user …`, so Maestro shows up in every folder, not only
+  the one you ran it in.
+- `PRIVACY.md` names the scoring model's first download (Hugging Face) and the
+  `maestro` command's PyPI and changelog requests; both are only made when you run
+  them or on first start. Contributors: CI installs now also download
+  `nodejs-wheel-binaries` (about 60 MB); `requirements.lock` leaves it out.
+- The Claude Desktop **`.mcpb` bundle is a Node stdio-to-HTTP bridge**.
+  Reinstall it if you used the older Docker-based bundle. Claude needs no
+  Docker or Python on its side; the bundle supports macOS, Windows and Linux.
+  Claude Code and Codex plugins connect by URL.
+- **`mcp` is now a core dependency.** The `[mcp]` extra remains as an empty
+  compatibility alias for existing install commands.
+- **The Codex plugin asks before consequential tools**, including consent,
+  submission, login and upload hand-offs, restores, health-gate waivers,
+  KB approval and sync, in addition to Maestro's own consent gates.
 - Langfuse tracing is an optional `tracing` extra. Docker and native installs still
   include it; a source/dev install gets it with `pip install -e ".[tracing]"` from
   `backend/`.
@@ -62,8 +210,24 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 - The web build ships only the Monaco editor files the JSON and LaTeX editors
   load, cutting `frontend/public/monaco` from about 25 MB to 11 MB.
 
+### Deprecated
+
+- **`scripts/setup-mcp.sh` and the host stdio venv** remain for one release and
+  are removed in v0.10.0. Existing `maestro-career-studio-mcp` connections keep
+  working as a compatibility fallback.
+
+### Security
+
+- Typst renders can no longer download packages, including through a computed import path. LaTeX compiles each run in its own temporary folder, so a template cannot read or overwrite another resume's source.
+
 ### Fixed
 
+- PyPI wheels include the project license and notices; untouched Classic templates receive the complete attribution header on upgrade.
+- Bundled resume templates carry complete MIT attribution, including Harshibar;
+  third-party notices list all six seeded designs and both cover-letter sources.
+- The glossary and package description use match score; the social preview restores Inter Medium.
+- First starts without TeX render the demo resume with Typst; a failed seed render shows its reason.
+- Windows child processes keep the system environment needed for networking, including backup and update commands.
 - Failed startup base-resume renders and artifact file deletions log warnings
   with tracebacks; missing files and folder-pruning failures stay quiet.
 - Prompt reads that open their own session use the file default without writing

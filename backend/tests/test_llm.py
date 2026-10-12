@@ -91,7 +91,7 @@ def test_call_openai_routes_gemini_json(tmp_path, monkeypatch):
         captured["timeout"] = timeout
         return FakeResponse()
 
-    monkeypatch.setattr(llm, "urlopen", fake_urlopen)
+    monkeypatch.setattr("app.services.llm_providers.gemini.urlopen", fake_urlopen)
 
     result = llm.call_openai(
         prompt="hi",
@@ -126,7 +126,7 @@ def test_call_openai_routes_gemini_pro_with_high_thinking(tmp_path, monkeypatch)
         captured["request"] = request
         return FakeResponse()
 
-    monkeypatch.setattr(llm, "urlopen", fake_urlopen)
+    monkeypatch.setattr("app.services.llm_providers.gemini.urlopen", fake_urlopen)
 
     result = llm.call_openai(
         prompt="hi",
@@ -299,7 +299,6 @@ def test_a_provider_failure_is_never_stored_as_a_missing_capability(
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     monkeypatch.setattr(llm, "_get_client", lambda: client)
-    monkeypatch.setattr(llm, "get_chat_client", lambda *_a, **_k: client)
 
     with pytest.raises(llm.LLMProviderError) as raised:
         llm._call_model("hi", "gpt-4o-mini", "text")
@@ -393,7 +392,7 @@ def test_a_gemini_timeout_is_passed_and_running_out_is_a_provider_error(monkeypa
         seen["timeout"] = timeout
         raise TimeoutError("timed out")
 
-    monkeypatch.setattr(llm, "urlopen", slow)
+    monkeypatch.setattr("app.services.llm_providers.gemini.urlopen", slow)
     with pytest.raises(llm.LLMProviderError):
         llm.call_openai(prompt="hi", model="gemini-3-flash-preview", timeout=2.0, max_retries=0)
     assert seen["timeout"] == 2.0
@@ -419,7 +418,7 @@ def test_both_providers_say_a_timeout_the_same_way(monkeypatch, tmp_path):
     with pytest.raises(llm.LLMProviderError) as openai_err:
         llm.call_openai(prompt="hi", model="gpt-4o-mini", timeout=2.0, max_retries=0)
     monkeypatch.setattr(llm.settings, "gemini_api_key", "gemini-test")
-    monkeypatch.setattr(llm, "urlopen", lambda request, timeout: (_ for _ in ()).throw(TimeoutError("slow")))
+    monkeypatch.setattr("app.services.llm_providers.gemini.urlopen", lambda request, timeout: (_ for _ in ()).throw(TimeoutError("slow")))
     with pytest.raises(llm.LLMProviderError) as gemini_err:
         llm.call_openai(prompt="hi", model="gemini-3-flash-preview", timeout=2.0, max_retries=0)
     assert "(it timed out)" in str(openai_err.value)

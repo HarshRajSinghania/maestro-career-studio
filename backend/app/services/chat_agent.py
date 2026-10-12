@@ -1,9 +1,9 @@
 """Multi-turn, tool-calling, streaming chat agent.
 
-Separate from `llm.call_openai` (single-shot, JSON-mode, Gemini-capable): chat
-needs a message array, a tools loop, and token streaming. Chat therefore
-requires an endpoint that speaks the OpenAI streaming tool-call wire shape
-(OpenAI or Gemini's compat layer).
+Separate from `llm.call_openai` (single-shot, JSON-mode): chat needs a message
+array, a tools loop, and token streaming. It runs on any provider through
+`llm_providers` (OpenAI-compatible, Claude, Gemini): history is neutral parts
+(`transcript`), re-shaped per target by `replay`, and sent through the adapter's `stream`.
 
 `run_turn` is a sync generator of event dicts; the router formats them as SSE:
   {"type": "delta", "text": ...}                    streamed assistant tokens
@@ -25,9 +25,22 @@ from typing import Any, Iterator
 from sqlalchemy.orm import Session
 
 from app.models.chat import ChatAttachment, ChatMessage, ChatSession
-from app.services import model_settings, persona as persona_service, prompts
-from app.services.chat_tools import ToolContext, execute_tool, openai_tool_specs
-from app.services.llm import completion_extras, get_chat_client
+from app.services import model_settings, persona as persona_service, prompts, tracing, transcript
+from app.services.chat_tools import TOOL_SPECS, ToolContext, execute_tool
+from app.services.llm_providers import registry, replay
+from app.services.llm_providers.types import (
+    Finish,
+    Message,
+    Part,
+    Provider,
+    Request,
+    TextDelta,
+    TextPart,
+    ToolResultPart,
+    ToolSpec,
+    dump_parts,
+    is_anthropic_thinking_part,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +65,7 @@ def _describe_selection(sel: dict[str, Any]) -> str:
 
 
 def _context_block(db: Session, context: dict[str, Any] | None) -> str | None:
-    """Ephemeral system message describing pinned target/selections/attachments."""
+    """Text describing pinned target/selections/attachments; persisted as the user row's first part."""
     if not context:
         return None
     parts: list[str] = []
@@ -84,55 +97,11 @@ def _context_block(db: Session, context: dict[str, Any] | None) -> str | None:
     return "\n".join(parts) if parts else None
 
 
-def _replay_messages(session_row: ChatSession) -> list[dict[str, Any]]:
-    messages: list[dict[str, Any]] = []
-    for m in session_row.messages:
-        entry: dict[str, Any] = {"role": m.role, "content": m.content or ""}
-        if m.role == "assistant" and m.tool_calls:
-            entry["tool_calls"] = m.tool_calls
-            entry["content"] = m.content or None
-        if m.role == "tool":
-            entry["tool_call_id"] = m.tool_call_id
-        messages.append(entry)
-    return messages
-
-
 def _persist(db: Session, session_row: ChatSession, **kwargs) -> ChatMessage:
     row = ChatMessage(session_id=session_row.id, **kwargs)
     db.add(row)
     db.flush()
     return row
-
-
-def _accumulate_stream(stream) -> Iterator[dict[str, Any]]:
-    """Yield delta events; final yield is {"type": "_final", content, tool_calls}."""
-    content_parts: list[str] = []
-    tool_calls: dict[int, dict[str, Any]] = {}
-    for chunk in stream:
-        if not chunk.choices:
-            continue
-        delta = chunk.choices[0].delta
-        if delta is None:
-            continue
-        if delta.content:
-            content_parts.append(delta.content)
-            yield {"type": "delta", "text": delta.content}
-        for tc in delta.tool_calls or []:
-            slot = tool_calls.setdefault(
-                tc.index, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
-            )
-            if tc.id:
-                slot["id"] = tc.id
-            if tc.function:
-                if tc.function.name:
-                    slot["function"]["name"] = tc.function.name
-                if tc.function.arguments:
-                    slot["function"]["arguments"] += tc.function.arguments
-    yield {
-        "type": "_final",
-        "content": "".join(content_parts),
-        "tool_calls": [tool_calls[i] for i in sorted(tool_calls)] or None,
-    }
 
 
 def run_turn(
@@ -141,84 +110,92 @@ def run_turn(
     user_content: str,
     context: dict[str, Any] | None = None,
     *,
-    client: Any = None,
+    provider: Provider | None = None,
     model: str | None = None,
 ) -> Iterator[dict[str, Any]]:
     model = model or model_settings.get_chat_model(db)
-    client = client or get_chat_client(model)
+    ref = registry.resolve(model)
+    provider = provider or registry.get(ref.provider)
 
+    # The context block is PERSISTED as the first part of this user row and replayed unchanged on
+    # every later turn: replayed history is append-only (editing an earlier turn invalidates
+    # Claude thinking). `content` stays the raw text the UI shows.
+    context_block = _context_block(db, context)
+    user_parts: list[Part] = ([TextPart(context_block + "\n\n")] if context_block else [])
+    user_parts.append(TextPart(user_content))
     user_msg = _persist(
-        db, session_row, role="user", content=user_content, meta_json=context or None
+        db, session_row, role="user", content=user_content, meta_json=context or None,
+        parts=dump_parts(user_parts),
     )
     if not session_row.title:
         session_row.title = user_content.strip()[:60] or "New chat"
     db.commit()
     yield {"type": "message", "id": str(user_msg.id), "role": "user"}
 
-    messages: list[dict[str, Any]] = [{"role": "system", "content": _system_prompt(db)}]
-    messages.extend(_replay_messages(session_row))
-    context_block = _context_block(db, context)
-    if context_block:
-        # Ephemeral: injected each turn from the message's meta, never persisted.
-        messages.insert(-1, {"role": "system", "content": context_block})
-
+    history = transcript.history(session_row)
+    system = _system_prompt(db)
+    tools = [ToolSpec(s["name"], s["description"], s["parameters"]) for s in TOOL_SPECS]
     ctx = ToolContext(
         db=db, message_id=str(user_msg.id), selections=(context or {}).get("selections") or []
     )
 
     try:
         for _ in range(MAX_TOOL_ROUNDS):
-            stream = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=openai_tool_specs(),
-                stream=True,
-                **completion_extras(model),
+            request = Request(
+                model=ref, system=system, tools=tools, cache=True,
+                messages=replay.for_provider(history, ref),
             )
-            final: dict[str, Any] = {}
-            for event in _accumulate_stream(stream):
-                if event["type"] == "_final":
-                    final = event
-                else:
-                    yield event
-
-            if not final.get("tool_calls"):
-                assistant = _persist(
-                    db, session_row, role="assistant", content=final.get("content") or ""
+            # Gemini's stream is a generator that raises a missing key only when first pulled.
+            provider.ready()
+            finish: Finish | None = None
+            with tracing.generation(
+                "chat-step", model=model, prompt=user_content, metadata={"provider": ref.provider}
+            ) as record:
+                for event in provider.stream(request):
+                    if isinstance(event, TextDelta):
+                        yield {"type": "delta", "text": event.text}
+                    else:
+                        finish = event
+                record(
+                    finish.message.text if finish else "",
+                    finish.usage.as_langfuse() if finish and finish.usage else None,
                 )
-                db.commit()
+            if finish is None:
+                raise RuntimeError("The model's reply ended without finishing. Try again.")
+
+            if finish.reasoning_dropped:
+                # The provider rejected stored reasoning signatures and the adapter retried
+                # without them: strip them from this session so the 400 is paid once.
+                transcript.drop_reasoning(db, session_row)
+                db.commit()  # drop_reasoning only flushes
+                history = [
+                    Message(m.role, [p for p in m.parts if not is_anthropic_thinking_part(p)])
+                    for m in history
+                ]
+            reply = finish.message
+            # Tools run when the reply holds calls, whatever the stop reason says (OpenAI
+            # "tool_calls", Claude "tool_use", Gemini "stop").
+            calls = reply.tool_calls
+            assistant = _persist(
+                db, session_row, role="assistant",
+                content=(reply.text or None) if calls else reply.text,
+                parts=dump_parts(reply.parts), provider=ref.provider, model=finish.model,
+            )
+            db.commit()
+            history.append(reply)
+
+            if not calls:
                 yield {"type": "message", "id": str(assistant.id), "role": "assistant"}
                 yield {"type": "done", "session_id": str(session_row.id)}
                 return
 
-            assistant = _persist(
-                db,
-                session_row,
-                role="assistant",
-                content=final.get("content") or None,
-                tool_calls=final["tool_calls"],
-            )
-            db.commit()
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": final.get("content") or None,
-                    "tool_calls": final["tool_calls"],
-                }
-            )
+            for call in calls:
+                yield {"type": "tool_start", "name": call.name, "arguments": call.arguments}
 
-            for call in final["tool_calls"]:
-                name = call["function"]["name"]
-                try:
-                    arguments = json.loads(call["function"]["arguments"] or "{}")
-                except json.JSONDecodeError:
-                    arguments = None
-                yield {"type": "tool_start", "name": name, "arguments": arguments}
-
-                if arguments is None:
+                if call.arguments is None:
                     result: Any = {"error": "Tool arguments were not valid JSON"}
                 else:
-                    result = execute_tool(ctx, name, arguments)
+                    result = execute_tool(ctx, call.name, call.arguments)
 
                 card_key = next(
                     (
@@ -231,15 +208,13 @@ def run_turn(
                 meta = {card_key: result[card_key]} if card_key else None
 
                 result_text = json.dumps(result, default=str)
+                result_part = ToolResultPart(call.id, result_text)
                 # Persist BEFORE emitting the card so the event can carry the
                 # tool row's id — the handle card_state resolutions stamp onto.
+                # The call id stays the provider's own; `replay` normalizes on the way out.
                 tool_msg = _persist(
-                    db,
-                    session_row,
-                    role="tool",
-                    content=result_text,
-                    tool_call_id=call["id"],
-                    meta_json=meta,
+                    db, session_row, role="tool", content=result_text, meta_json=meta,
+                    parts=dump_parts([result_part]),
                 )
                 db.commit()
                 if card_key:
@@ -249,17 +224,15 @@ def run_turn(
                         "message_id": str(tool_msg.id),
                     }
                 yield {"type": "message", "id": str(tool_msg.id), "role": "tool"}
-                messages.append(
-                    {"role": "tool", "content": result_text, "tool_call_id": call["id"]}
-                )
+                history.append(Message("tool", [result_part]))
 
         # Tool-round budget exhausted: surface it rather than looping forever.
+        budget_text = (
+            "I stopped because this took too many steps. Try asking for one thing at a time."
+        )
         assistant = _persist(
-            db,
-            session_row,
-            role="assistant",
-            content="I stopped because this took too many steps. Try asking for one thing "
-            "at a time.",
+            db, session_row, role="assistant", content=budget_text,
+            parts=dump_parts([TextPart(budget_text)]),
         )
         db.commit()
         yield {"type": "message", "id": str(assistant.id), "role": "assistant"}

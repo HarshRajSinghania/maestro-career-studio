@@ -90,7 +90,7 @@ function EndpointDisclosure(props: EndpointProps) {
               Using <code className="font-mono text-body-small">{info.base_url}</code>
             </>
           ) : (
-            "Not set. Models run on OpenAI and Gemini."
+            "Not set. Models run on the providers whose keys you saved."
           )}
         </p>
         <Button
@@ -133,7 +133,7 @@ function EndpointControls({ info, draft, onDraft, saving, onSave }: EndpointProp
             below says whenever the address is not local. */}
         <p id={endpointHintId} className="text-muted-foreground text-body-small">
           The address of a model server on your computer, such as Ollama or LM
-          Studio. It usually ends in /v1. Leave empty to use OpenAI and Gemini.
+          Studio. It usually ends in /v1. Leave empty to use the providers above.
         </p>
         <div className="flex gap-2">
           <Input

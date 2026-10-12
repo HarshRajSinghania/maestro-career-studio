@@ -1,76 +1,76 @@
 {
   "_comment": [
-    "Merge the entries you want into the `mcpServers` map of your own",
-    "claude_desktop_config.json, then replace every <PLACEHOLDER>:",
-    "  <MAESTRO_CS_MCP>  absolute path to the maestro-career-studio-mcp console script,",
-    "                       e.g. <REPO>/backend/.venv/bin/maestro-career-studio-mcp",
-    "  <REPO>               absolute path to your clone of this repository",
-    "  <HOME>               your home directory",
-    "  <NODE>               absolute path to node, e.g. /usr/local/bin/node",
-    "BACKEND_URL must be the HOST port compose publishes (8001 by default),",
-    "NOT the container's internal 8000.",
-    "Enable ONE profile per chat: running `full` alongside a scoped profile",
-    "registers the same tool twice and the model has to guess which to call.",
-    "MAESTRO_CS_MCP_CLIENT is an optional provenance label used only when the",
-    "MCP client does not announce its own name; KB writes are recorded with it.",
-    "Claude Desktop normally takes the .mcpb extension (Settings -> Extensions);",
-    "use an entry here only if that fails. To avoid a host Python entirely, use the same",
-    "command the shipped plugin uses -- command \"docker\", args [\"exec\", \"-i\",",
-    "\"-e\", \"BACKEND_URL=http://localhost:8000\", \"-e\",",
-    "\"MAESTRO_CS_MCP_PROFILE=full\", \"maestro-career-studio-backend-1\",",
-    "\"python\", \"-m\", \"mcp_server.server\"] -- which runs the server inside the",
-    "backend container and needs nothing installed on the host.",
-    "Quit Claude Desktop fully (Cmd+Q) before editing: the app writes this",
-    "file too and can discard an edit made while it is open. Easier still,",
-    "run scripts/setup-mcp.sh --print-only, which prints this block with every",
-    "path filled in."
+    "The easier Claude Desktop route is to download the .mcpb from Settings > Connected agents > Connect an agent app and double-click it.",
+    "For manual setup, merge the entries you want into your claude_desktop_config.json mcpServers map.",
+    "Replace <REPO> with the absolute path to your clone. The bridge needs Node.js >=18; if node is not on the app PATH, use its absolute path.",
+    "MAESTRO_CS_BACKEND_URL is the local backend address (compose publishes port 8001 by default). Never publish that port or proxy /mcp beyond this computer.",
+    "Enable ONE Maestro profile per chat: full includes every scoped tool set.",
+    "The bridge forwards the assistant clientInfo, so Career KB timeline rows keep the client name.",
+    "For the optional Playwright server, replace <NODE> and <HOME> with the absolute Node path and your home directory. Browser output paths and Maestro upload staging must agree; see the MCP server guide.",
+    "Quit Claude Desktop fully before editing its config file, then restart it."
   ],
   "mcpServers": {
     "maestro-career-studio": {
-      "command": "<MAESTRO_CS_MCP>",
+      "command": "node",
+      "args": [
+        "<REPO>/mcpb/server/index.js"
+      ],
       "env": {
-        "BACKEND_URL": "http://localhost:8001",
+        "MAESTRO_CS_BACKEND_URL": "http://localhost:8001",
         "MAESTRO_CS_MCP_PROFILE": "full"
       }
     },
     "maestro-career-studio-hunt": {
-      "command": "<MAESTRO_CS_MCP>",
+      "command": "node",
+      "args": [
+        "<REPO>/mcpb/server/index.js"
+      ],
       "env": {
-        "BACKEND_URL": "http://localhost:8001",
+        "MAESTRO_CS_BACKEND_URL": "http://localhost:8001",
         "MAESTRO_CS_MCP_PROFILE": "hunt"
       }
     },
     "maestro-career-studio-apply": {
-      "command": "<MAESTRO_CS_MCP>",
+      "command": "node",
+      "args": [
+        "<REPO>/mcpb/server/index.js"
+      ],
       "env": {
-        "BACKEND_URL": "http://localhost:8001",
-        "MAESTRO_CS_MCP_PROFILE": "apply",
-        "MAESTRO_CS_UPLOAD_DIR": "<REPO>/.playwright-mcp/uploads"
+        "MAESTRO_CS_BACKEND_URL": "http://localhost:8001",
+        "MAESTRO_CS_MCP_PROFILE": "apply"
       }
     },
     "maestro-career-studio-explore": {
-      "command": "<MAESTRO_CS_MCP>",
+      "command": "node",
+      "args": [
+        "<REPO>/mcpb/server/index.js"
+      ],
       "env": {
-        "BACKEND_URL": "http://localhost:8001",
+        "MAESTRO_CS_BACKEND_URL": "http://localhost:8001",
         "MAESTRO_CS_MCP_PROFILE": "explore"
       }
     },
-        "maestro-career-studio-templates": {
-            "command": "<MAESTRO_CS_MCP>",
-            "env": {
-                "BACKEND_URL": "http://localhost:8001",
-                "MAESTRO_CS_MCP_PROFILE": "templates"
-            }
-        },
-        "maestro-career-studio-career": {
-            "command": "<MAESTRO_CS_MCP>",
-            "env": {
-                "BACKEND_URL": "http://localhost:8001",
-                "MAESTRO_CS_MCP_PROFILE": "career",
-                "MAESTRO_CS_MCP_CLIENT": "Claude Desktop"
-            }
-        },
-        "playwright": {
+    "maestro-career-studio-templates": {
+      "command": "node",
+      "args": [
+        "<REPO>/mcpb/server/index.js"
+      ],
+      "env": {
+        "MAESTRO_CS_BACKEND_URL": "http://localhost:8001",
+        "MAESTRO_CS_MCP_PROFILE": "templates"
+      }
+    },
+    "maestro-career-studio-career": {
+      "command": "node",
+      "args": [
+        "<REPO>/mcpb/server/index.js"
+      ],
+      "env": {
+        "MAESTRO_CS_BACKEND_URL": "http://localhost:8001",
+        "MAESTRO_CS_MCP_PROFILE": "career"
+      }
+    },
+    "playwright": {
       "command": "<NODE>",
       "args": [
         "<HOME>/.maestro-cs/mcp/node_modules/@playwright/mcp/cli.js",

@@ -21,8 +21,8 @@ Three steps: [install it](#1-what-you-need) → [add your resumes](#3-your-first
 - **Career history** — one organized record of your work, built from your resumes. Each job, project or school in it is an **item**; each line is a **bullet**.
 - **Base resume** — your main resume for one kind of role, such as Data Scientist.
 - **Tailoring** — adjusting a base resume to one job, using only things you actually did.
-- **Match score** — Maestro's comparison of your resume with a saved job description. It is not an employer's score or a prediction of an interview. The app labels it **ATS score**.
-- **AI service** — OpenAI or Gemini, whichever you choose; you add its key in Settings › AI & models.
+- **Match score** — Maestro's comparison of your resume with a saved job description. It is not an employer's score or a prediction of an interview.
+- **AI service** — OpenAI, Gemini or Claude (Anthropic), whichever you choose; you add its key in Settings › AI & models.
 - **Companion** — the Maestro CS browser extension, a side panel in Chrome.
 - **Assistant** — the chat inside the app. **Connected agents** are AI assistants outside it (Claude, Codex, ChatGPT desktop) that use the app over MCP.
 
@@ -32,6 +32,10 @@ them at any time: the **Companion**, a browser extension for saving and filling 
 assistant** ([§5](#5-connect-your-ai-assistant-optional)).
 
 ## 1. What you need
+
+> **Comfortable in a terminal and want no Docker?** Skip this list and use the
+> [uv route](#or-install-with-uv-no-docker-no-git) in step 2. It needs only
+> [uv](https://docs.astral.sh/uv/), which installs Python for you.
 
 - **Docker.** Docker is a free program that runs Maestro in a self-contained
   box on your computer, so you don't install anything else. On macOS or
@@ -50,11 +54,11 @@ assistant** ([§5](#5-connect-your-ai-assistant-optional)).
   ([below](#on-windows-use-wsl)). On Linux, use your
   package manager.
 - **Disk space.** About a 1 GB download, which takes roughly 3–4 GB once
-  unpacked ([details](../README.md#prerequisites)).
-- **An AI key — optional for now.** OpenAI or Gemini (or a local
+  unpacked ([details](SETUP_REFERENCE.md#prerequisites)).
+- **An AI key — optional for now.** OpenAI, Gemini or Claude (or a local
   OpenAI-compatible server). You add it inside the app after it starts.
   Without one, scoring, PDFs and tracking still work
-  ([No-Key Mode](../README.md#do-you-need-an-api-key)).
+  ([No-Key Mode](SETUP_REFERENCE.md#do-you-need-an-api-key)).
 
 You do **not** need Python or Node.
 
@@ -105,7 +109,7 @@ and adds a demo resume so you have something to look at.
 Don't put your AI key in `.env`. Add it in the app (Settings › AI & models), which
 is step 3 below. A key saved in the app always wins over one in `.env`. Use
 `.env` only for a setup with no browser: paste the key after `OPENAI_API_KEY=`
-(or `GEMINI_API_KEY=`) and don't also save one in the app.
+(or `GEMINI_API_KEY=`, `ANTHROPIC_API_KEY=`, `OPENROUTER_API_KEY=`) and don't also save one in the app.
 
 **Already use a coding agent** (Claude Code, the Codex CLI)? Install Docker
 and Git yourself, run the `git clone` command, open the agent in that folder,
@@ -120,7 +124,7 @@ Want to build the app from source instead? See [CONTRIBUTING.md](../CONTRIBUTING
 | You see | It means | Do |
 | --- | --- | --- |
 | `Cannot connect to the Docker daemon` | Docker isn't running | Start Docker Desktop, wait until it says running, run the command again |
-| `port is already allocated` | Another program uses a port the app needs | Change the `*_HOST_PORT` values in `.env` ([details](../README.md#troubleshooting--common-questions)) |
+| `port is already allocated` | Another program uses a port the app needs | Change the `*_HOST_PORT` values in `.env` ([details](SETUP_REFERENCE.md#troubleshooting--common-questions)) |
 | The page loads but everything shows errors | The app is still starting | Wait a minute. It is ready when <http://localhost:8001/health> shows `{"status":"ok"}` |
 | You added a key to `.env` after starting | Keys are read at start | Run `docker compose restart backend` |
 | AI features fail although Settings says "Configured" | An old key is being used | Enter the key again in Settings › AI & models and press **Test** |
@@ -147,13 +151,95 @@ anywhere else.
   rm -rf data/*
   ```
 
+### Or install with uv (no Docker, no Git)
+
+uv installs Maestro as a command, and Python 3.12 with it. The package carries the
+web app and its own Node, so there is nothing else to install. It runs on macOS,
+Linux and Windows (x64), natively; on Windows you do not need WSL for this route.
+
+1. **Install uv, once.** On macOS or Linux:
+
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+   On Windows, in PowerShell:
+
+   ```powershell
+   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
+
+   Then **open a new terminal** so the `uv` command is found.
+2. **Install Maestro and start it:**
+
+   ```bash
+   uv tool install --python 3.12 maestro-career-studio
+   maestro start
+   ```
+
+   `maestro start` runs Maestro in the background and opens
+   **<http://localhost:3000>**. Closing the terminal does not stop it. The first
+   start downloads the scoring model (about 100 MB, once) from Hugging Face,
+   so give it a minute or two. If the terminal says `maestro` is not found, run
+   `uv tool update-shell` and open another new terminal.
+
+   Best effort, untested: on **Windows ARM64** the PDF engine (typst) has no ARM64 wheel, so use
+   `uv tool install --python cpython-3.12-windows-x86_64-none maestro-career-studio`
+   (x64 Python under emulation). **Alpine and other musl Linux** are not supported; use a glibc distro or Docker.
+
+Then carry on with step 3. The commands you will use:
+
+| Command | What it does |
+| --- | --- |
+| `maestro status` | Tells you whether Maestro is running and which version (`--offline` skips the check for a newer release) |
+| `maestro stop` / `maestro restart` | Stop it; stop and start it again (needed after you edit `maestro.env`) |
+| `maestro open` | Opens the app in your browser |
+| `maestro logs` | Shows the end of the backend log (`maestro logs web`, `supervisor` or `update` for the others; `-f` follows) |
+| `maestro autostart on` | Starts Maestro every time you log in (`off` and `status` too) |
+| `maestro backup` | Saves a snapshot of your data now |
+| `maestro update` | Saves a snapshot, updates and restarts ([step 7](#7-keeping-it-up-to-date)) |
+| `maestro connect` | Adds Maestro to your AI assistant ([step 5](#5-connect-your-ai-assistant-optional)) |
+
+**Your data** sits in one folder, not in a project folder:
+
+| System | Folder |
+| --- | --- |
+| macOS | `~/Library/Application Support/Maestro Career Studio` |
+| Windows | `%APPDATA%\Maestro Career Studio` |
+| Linux | `$XDG_DATA_HOME/maestro-career-studio` (default `~/.local/share/maestro-career-studio`) |
+
+It holds the database, your resumes and settings, `backups/`, `logs/` and
+`maestro.env`, the one settings file (API keys and, if ever needed, port
+overrides; `maestro restart` after editing it). To uninstall, run
+`maestro autostart off` and `maestro stop` first (otherwise the login item keeps
+retrying a launcher that is gone), then `uv tool uninstall maestro-career-studio`.
+That leaves the folder; deleting the folder deletes your data. Add your AI key in the app (Settings › AI & models), as in the
+Docker route.
+
+- **Don't run a Docker install and a uv install at the same time.** They are
+  separate copies with separate data, and both use ports 8001 and 3000. Coming
+  from Docker? `maestro import-docker` moves your data over once
+  ([steps](UPDATING.md#move-from-docker-to-the-uv-install)).
+- **The Companion needs no changes**: it expects the same ports. Load it from
+  the repository's `extension` folder ([step 4](#4-the-companion-browser-extension-optional)).
+- **PDFs** render with the Typst engine that ships inside. LaTeX templates need
+  TeX on your computer; without it Maestro builds them through Typst and says so.
+  TeX Live 2025 needs its pdfTeX update (1.40.28 or later): on 1.40.27 a
+  template whose words would print on top of each other is refused. Install
+  MacTeX 2026, or update TeX Live 2025 from its final repository:
+  `sudo tlmgr option repository https://ftp.math.utah.edu/pub/tex/historic/systems/texlive/2025/tlnet-final && sudo tlmgr update --self --all`
+- **Something wrong?** `maestro status` and `maestro logs` come first. A port in
+  use is named in the message. `maestro check` prints the install's facts as JSON
+  to paste into an issue; it makes no network call.
+
 ## 3. Your first tailored resume
 
 Five steps from nothing to a PDF:
 
 1. **Import your resumes.** Follow the setup screen, or go to **Career history**
    and click **Import resumes and documents**. You can add up to 10 files at a time (PDF, DOCX, Markdown or
-   text). Add old versions too — they all hold useful experience.
+   text). Add old versions too — they all hold useful experience. Use the **Other documents** tab for
+   PowerPoint decks (.pptx), certificates and reports; these add draft bullets to career history.
 2. **Review and approve bullets in your career history.** Imported bullets arrive as
    drafts under **Drafts to review**. Only *approved* bullets ever appear on a resume. Merge duplicates
    while you're there.
@@ -185,7 +271,7 @@ Five steps from nothing to a PDF:
 - **Track your applications** — mark them applied and record outcomes. After
   about 10 saved jobs, **Analytics** shows what employers keep asking for.
 - **Choose your models** — see
-  [choosing models](../README.md#5-choose-your-models-deliberately).
+  [choosing models](USING_MAESTRO.md#5-choose-your-models-deliberately).
 
 ## 4. The Companion browser extension (optional)
 
@@ -205,132 +291,148 @@ folder to your `C:` drive from the Ubuntu window and load the copy instead:
 `cp -r extension /mnt/c/Users/<your-windows-user>/maestro-extension`. The copy
 doesn't update itself, so repeat that command after every update.
 
+On a uv install there is no project folder, because the package does not carry the
+extension: run `maestro --version`, then on GitHub open Releases › that version
+(`vX.Y.Z`) › **Source code** and download it. Unpack it and load its `extension`
+folder, so the Companion matches the Maestro you run. It then works unchanged
+against Maestro on the default ports.
+
 There is nothing to set up if you kept the default ports. If you changed the
-ports in `.env`, the extension's addresses are set in `extension/sw.js`
-(`DEFAULTS`), or can be overridden in the extension's stored settings.
+ports in `.env`, open `chrome://extensions` → **Details** on the Maestro CS
+Companion card → **Extension options**. Set **Backend address** and **App address**,
+press **Test connection**, then **Save**. Close and reopen the panel to use them.
 
 The Companion records which form fields it could fill, and keeps that on your
 computer. There is no on/off switch in the panel: to turn it off, set
 `telemetryEnabled` to `false` in the extension's stored settings
 (`chrome.storage.sync`). **Analytics → Autofill coverage → Clear data** deletes
 what was collected. Full detail: [`extension/README.md`](../extension/README.md)
-and the [README's Companion section](../README.md#the-companion-browser-extension).
+and the [Companion section of Using Maestro CS](USING_MAESTRO.md#the-companion-browser-extension).
 
 ## 5. Connect your AI assistant (optional)
 
-MCP is a connector that lets Claude, ChatGPT or Codex use the app for you, by
-chat instead of clicking. The app must be running (`docker compose up -d`).
+MCP lets an AI assistant use Maestro by chat. Keep the app running. HTTP MCP
+clients connect to the backend on this computer; claude.ai and chatgpt.com web
+connectors are outside this setup.
 
-It works in the **desktop and command-line apps** — Claude Desktop, Claude
-Code, the Codex CLI and the ChatGPT desktop app — not in claude.ai or
-chatgpt.com in a web browser.
+Open Settings › Connected agents › **Connect an agent app**. Its **Tool set**
+selector defaults to `full` (all 88 tools). Choose one set per chat.
 
-### Claude
+### On a uv install: `maestro connect`
 
-Settings → **Extensions** → **Install Extension**, then select
-`maestro-career-studio/mcpb/maestro-career-studio.mcpb` inside your project
-folder. Leave the fields as they are. One install covers Claude Desktop and
-Claude Code sessions inside the Claude app. It works on macOS and Windows; on
-Windows with WSL, the file is at
-`\\wsl.localhost\Ubuntu\home\<your-user>\maestro-career-studio\mcpb\maestro-career-studio.mcpb`.
+If you installed with uv, one command per app does the setup, and it needs
+Maestro's folder and nothing else:
 
-Do **not** use Settings → Connectors → Add custom connector — that is for
-online services, and this runs on your computer.
+```bash
+maestro connect                    # lists the apps and which already have Maestro
+maestro connect claude-desktop
+maestro connect claude-code        # also: codex, cursor, vscode, other
+```
 
-### Codex / ChatGPT desktop
+`claude-code` and `codex` run that app's own `mcp add` command for you (with
+`--scope user` for Claude Code, so Maestro shows up in every folder); `cursor` and
+`vscode` open the install link; `other` prints the URL. `claude-desktop` edits
+Claude Desktop's settings file with the **full path** to the `maestro` command
+(Desktop does not see your terminal's PATH) and keeps a `.bak` copy of the old
+file. Desktop rewrites that file while it runs, so if it is open the command waits
+in the background and writes after you quit Desktop; `--now` writes at once, and
+`--print` shows the entry without changing anything. Add `--profile hunt` (or
+`apply`, `explore`, `templates`, `career`) for a smaller tool set. Restart the
+app afterwards so it sees the tools.
 
-Settings → **Plugins** → **Add** → **Add plugin marketplace**, with:
+### Claude Desktop
+
+On a Docker install, download `maestro-career-studio.mcpb` from the card or the
+[release](https://github.com/seinun-ai/maestro-career-studio/releases), then
+double-click it to install in Claude Desktop. You can also use Settings →
+**Extensions** → **Install Extension** and select the downloaded file.
+
+The bundle is a Node stdio-to-HTTP bridge to Maestro on this computer. It needs
+no Docker or Python on Claude's side and works on macOS, Windows and Linux.
+Leave **Maestro address** at `http://localhost:8001` unless you changed the
+backend port. The bundle's **Tool profile** selects the tool set. If you used
+the older Docker-based bundle, reinstall this one.
+
+### URL clients: Claude Code, Codex, Cursor and VS Code
+
+The card copies a command for Claude Code or Codex CLI, opens an install link
+for Cursor or VS Code, and copies the URL for any other HTTP MCP client. With
+the default Docker install, the commands are:
+
+```bash
+claude mcp add --scope user --transport http maestro-career-studio http://localhost:8001/mcp
+codex mcp add maestro-career-studio --url http://localhost:8001/mcp
+```
+
+Use `/mcp` exactly — no trailing slash (`POST /mcp/` redirects with 307).
+`--scope user` makes Maestro available in every folder; without it, Claude Code adds it to the current project only.
+Scoped tool sets use `/mcp/hunt`, `/mcp/apply`, `/mcp/explore`, `/mcp/templates`
+or `/mcp/career`. If you changed the backend port, copy the card's values.
+
+For the Codex app, open **Plugins** › **Add** › **Create custom MCP server**,
+choose **Server URL**, paste the URL and set **Authentication** to **No authentication**. Leave
+**Tunnel** off: it would share your unauthenticated local Maestro.
+
+For the Codex plugin route, choose **Add a marketplace** with:
 
 | field | value |
 | --- | --- |
 | Source | `seinun-ai/maestro-career-studio` |
-| Git ref | `main` |
-| Sparse paths | *leave empty* |
+| Git ref | the release tag you are installing, for example `v0.9.0` |
+| Sparse paths | `.agents/plugins` and `plugins` |
 
-Then open the **Maestro Career Studio** entry and press **Install**. From a
-terminal instead:
+Install **Maestro Career Studio**. The CLI equivalent is (replace `v0.9.0`
+with your release tag):
 
 ```bash
-codex plugin marketplace add seinun-ai/maestro-career-studio
-```
-```bash
+codex plugin marketplace add seinun-ai/maestro-career-studio --ref v0.9.0 --sparse .agents/plugins --sparse plugins
 codex plugin add maestro-career-studio@maestro-career-studio
 ```
 
-A standalone Claude Code CLI uses the same marketplace:
-`claude plugin marketplace add https://github.com/seinun-ai/maestro-career-studio`.
+For a Claude Code plugin install, use the release-tag local checkout in the
+[plugin guide](../plugins/maestro-career-studio/README.md#install).
+Choose one connection route per client so tools appear once.
 
-### Other apps: the setup script
-
-For Cursor, Windsurf and other apps, run this from the project folder. It
-needs **Python 3.12 or newer** on your computer, and prints the settings to
-paste into each app:
-
-```bash
-./scripts/setup-mcp.sh
-```
-
-On Windows, skip the script: it writes Linux paths that Windows apps can't
-run. Use the extension, the plugin, or the config below.
-
-### If the install did not work: write the config by hand
-
-Both apps read a plain config file, and adding the server there always
-works. Use it **instead of** the extension or plugin, never alongside it —
-otherwise every tool shows up twice.
-
-<details><summary><b>Claude Desktop</b> — claude_desktop_config.json</summary>
-
-Open the file from **Settings → Developer → Edit Config**. It lives at
-`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS
-and `%APPDATA%\Claude\claude_desktop_config.json` on Windows.
-
-**Fully quit Claude first** (Cmd+Q on macOS; on Windows, right-click the Claude
-icon by the clock and choose Quit — closing the window is not enough), or
-your edit may be lost. Add to `mcpServers`:
-
-```json
-"maestro-career-studio": {
-  "command": "docker",
-  "args": ["exec", "-i",
-           "-e", "BACKEND_URL=http://localhost:8000",
-           "-e", "MAESTRO_CS_MCP_PROFILE=full",
-           "maestro-career-studio-backend-1",
-           "python", "-m", "mcp_server.server"]
-}
-```
-
-Reopen Claude and check that it is listed under **Settings → Connectors**.
-
-</details>
-
-<details><summary><b>Codex / ChatGPT desktop</b> — ~/.codex/config.toml</summary>
-
-Open the file from **Settings → Configuration → open config.toml** (labels
-vary between versions). It lives at `~/.codex/config.toml`
-(`%USERPROFILE%\.codex\config.toml` on Windows). Append:
+**Hand-config fallback.** Codex CLI and the Codex app share
+`~/.codex/config.toml`. Append:
 
 ```toml
 [mcp_servers.maestro-career-studio]
-command = "docker"
-args = ["exec", "-i",
-        "-e", "BACKEND_URL=http://localhost:8000",
-        "-e", "MAESTRO_CS_MCP_PROFILE=full",
-        "maestro-career-studio-backend-1",
-        "python", "-m", "mcp_server.server"]
+url = "http://localhost:8001/mcp"
 enabled = true
 ```
 
-Restart the app and check that it is listed under **Settings → MCPs**. You
-can also enter the same command and arguments in **MCPs → Connect to a custom
-MCP**, type **STDIO**.
+Claude Code and Cursor use an HTTP entry in their `mcpServers` map:
 
-</details>
+```json
+{
+  "mcpServers": {
+    "maestro-career-studio": {
+      "type": "http",
+      "url": "http://localhost:8001/mcp"
+    }
+  }
+}
+```
 
-If the tools don't appear, check that the app is running (`docker compose ps`).
-Leave the tool profile on `full`. Every tool, the other profiles and more
-troubleshooting are in
-[`backend/mcp_server/README.md`](../backend/mcp_server/README.md).
+VS Code's `.vscode/mcp.json` uses `servers` instead of `mcpServers`, with the
+same `type` and `url`. Claude Desktop uses the bundle above; its manual Node
+bridge fallback is in the [MCP guide](../backend/mcp_server/README.md#by-hand).
+
+`/mcp` has no authentication by design: a local process can already reach REST.
+It sits behind the same Host/Origin checks as REST. Never publish port 8001 or
+proxy `/mcp` beyond this computer.
+
+### Legacy stdio (one release)
+
+Existing stdio connections keep working for one release. If your client only
+speaks stdio, use [`scripts/setup-mcp.sh`](../scripts/setup-mcp.sh). The script
+and host stdio venv are deprecated and removed in v0.10.0; the
+`maestro-career-studio-mcp` entry point remains as a compatibility fallback.
+
+If tools do not appear, check that Maestro is running and that your URL uses
+its backend port. Every tool, profile and troubleshooting step is in the
+[MCP guide](../backend/mcp_server/README.md).
 
 ## 6. Where it can go next
 
@@ -364,7 +466,14 @@ To keep that work going while your laptop is off, see
 
 ## 7. Keeping it up to date
 
-From the project folder:
+**Installed with uv?** Run `maestro update`. It checks PyPI, shows any breaking
+changes from the changelog, saves a snapshot of your data to `backups/` in your
+Maestro folder, and only then stops Maestro, updates it and starts it again
+(on Windows, quit Claude Desktop first, since it keeps `maestro mcp` running; the update finishes in the background in about a minute: watch
+`logs\update.log` in your Maestro folder for `finished`, then run `maestro status`). The reload-the-extension and restart-your-assistant steps below
+apply here too. [UPDATING.md](UPDATING.md#updating-a-uv-install) has the detail.
+
+**On Docker**, from the project folder:
 
 ```bash
 ./scripts/update.sh
@@ -380,9 +489,11 @@ there is anything new, run `./scripts/update.sh --check` — it changes nothing.
   upgraded. The script tells you it is waiting.
 - **Two things are manual:** reload the extension at `chrome://extensions`
   (and reload any job tab that was already open), and restart your AI
-  assistant app (re-running `./scripts/setup-mcp.sh` if you used it). The
-  script reminds you of both.
+  assistant app. If you still use the legacy stdio setup, re-run
+  `./scripts/setup-mcp.sh`; URL connections need no setup changes. Reinstall the
+  Claude Desktop bundle once if yours is the older Docker-based one. The script
+  reminds you of these steps.
 
-Updating from an older version? Read [UPDATING.md](UPDATING.md) first. The
-[README's Updating section](../README.md#updating) covers the manual steps,
-choosing a specific version, and rolling back.
+Updating from an older version? Read [UPDATING.md](UPDATING.md) first. It covers
+the manual steps, choosing a specific version, and rolling back. The README's
+[Updating section](../README.md#updating) has the short version.

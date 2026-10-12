@@ -511,16 +511,18 @@ def test_saved_key_is_a_hint_not_a_placeholder():
     src = _src("components/settings/models-section.tsx")
     assert "Saved · type to replace" not in src
     # Only a configured key has the hint line; the inputs align at the bottom.
-    assert re.search(r'className="grid items-end gap-4 @lg/setting:grid-cols-2">\s*<KeyField', src)
+    assert re.search(r'className="grid items-end gap-4 @lg/setting:grid-cols-2">\s*\{PROVIDERS.map\(\(p\) => \(\s*<KeyField', src)
     # The format is a hint while no key is saved; the field itself stays blank.
     # …and where to get one (lane 9 first-read): the hint is words and a link, never a value.
     assert ">platform.openai.com</NewTabLink>. It starts with sk-." in src
     assert ">aistudio.google.com</NewTabLink>. It starts with AIza." in src
+    assert ">console.anthropic.com</NewTabLink>. It starts with sk-ant-." in src
+    assert ">openrouter.ai</NewTabLink>. It starts with sk-or-." in src
     assert "placeholder=" not in src
     _order(
         src,
         '{configured ? "Type a new key to replace the saved one." : hintUnset}',
-        "aria-describedby={hintId}",
+        "aria-describedby={describedBy ?? hintId}",
     )
 
 

@@ -882,7 +882,7 @@ def test_score_all_bases_is_the_one_compute_call_and_it_says_what_it_found(tmp_p
     assert rows["resume"]["state"] == "active"
     assert _by_class(settled["identity"], "ring")[0]["text"] == "72"
     [note] = _by_class(settled["foot"], "note")
-    assert note["text"] == "Best match: AI/ML Engineer (ATS score 72)."
+    assert note["text"] == "Best match: AI/ML Engineer (match score 72)."
     assert note["class"] == "note"
 
 
@@ -1118,8 +1118,7 @@ def test_the_count_is_of_the_rows_the_ranking_shows(tmp_path):
 
 # ---------- the header's numbers, in words (Task 25) ----------
 
-ATS_LEAD = ("An ATS score (0 to 100) is our estimate of how an applicant "
-            "tracking system would rate each resume for this job.")
+ATS_LEAD = "A match score (0 to 100) uses fixed rules to compare each resume with this job's description."
 
 
 def test_the_header_names_the_base_resume_score_in_plain_words(tmp_path):
@@ -1137,19 +1136,19 @@ def test_the_header_names_the_base_resume_score_in_plain_words(tmp_path):
 def test_an_unscored_header_says_so_as_a_sentence(tmp_path):
     out = _score(tmp_path, api={"GET /api/ats-scores": _reply([])})
     [ats] = _by_class(out["loaded"]["identity"], "ats")
-    assert [label["text"] for label in _by_class(ats, "lbl")] == ["ATS score"]
+    assert [label["text"] for label in _by_class(ats, "lbl")] == ["Match score"]
     assert [hint["text"] for hint in _by_class(ats, "hint")] == ["Not scored yet."]
 
 
 def test_the_base_list_explains_the_ats_score_once(tmp_path):
-    """The glossary's rule: ATS score is spelled out once per surface, as the
-    app's own estimate, where the numbers first appear. In the Companion that
+    """The glossary's rule: Match score is explained once per surface, as the
+    app's own fixed-rules match, where the numbers first appear. In the Companion that
     is the Job step's base list, which shows one number per base resume; the
     web app's Score and tailor tab says the same sentence (`ATS_SCORE_LEAD`)."""
     out = _score(tmp_path, reopen="job")
     lines = [line["text"] for line in _by_class(out["loaded"]["rail"], "sub")]
     assert lines.count(ATS_LEAD) == 1
-    assert _text(out["loaded"]["rail"]).count("our estimate") == 1
+    assert _text(out["loaded"]["rail"]).count("uses fixed rules") == 1
     web = (EXTENSION.parent / "frontend" / "lib" / "ats-words.ts").read_text(
         encoding="utf-8")
     assert ATS_LEAD in web.replace('"\n  + "', "").replace("\n", " ")

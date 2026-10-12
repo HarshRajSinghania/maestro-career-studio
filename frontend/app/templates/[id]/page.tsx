@@ -27,9 +27,33 @@ import { useRefreshFailedNotice } from "@/hooks/use-refresh-failed-notice";
 import { apiFetch, apiUrlForBrowserPdf } from "@/lib/api";
 import { couldnt, loadErrorDetail } from "@/lib/error-text";
 import { isLoadFailure } from "@/lib/query-state";
-import { NEEDS_TEX_WORDS, REQUIRES_TEX_REASON } from "@/lib/template-status";
+import { compileErrorView, NEEDS_TEX_WORDS, REQUIRES_TEX_REASON } from "@/lib/template-status";
 import { FORMATTING_DEFAULTS, type ResumeFormatting } from "@/lib/formatting";
 import type { TemplateDetail, TemplateValidationResult } from "@/lib/types";
+
+function CompileErrorNotice({ error }: { error: string }) {
+  const view = compileErrorView(error);
+  return (
+    <div className="m-2 space-y-2">
+      <p
+        className={
+          view.kind === "tex" ? "text-foreground text-title-small" : "text-muted-foreground text-body-small"
+        }
+      >
+        {view.heading}
+      </p>
+      {view.note && <p className="text-muted-foreground text-body-small">{view.note}</p>}
+      <pre className="bg-error-container text-on-error-container max-h-full overflow-auto rounded-corner-md p-2 text-body-small break-words whitespace-pre-wrap">
+        {view.message}
+      </pre>
+      {view.command && (
+        <code className="bg-surface-container text-foreground block rounded-corner-md p-2 text-body-small break-all select-all">
+          {view.command}
+        </code>
+      )}
+    </div>
+  );
+}
 
 export default function TemplateEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -373,14 +397,7 @@ export default function TemplateEditorPage() {
         compileError === REQUIRES_TEX_REASON ? (
           <p className="text-muted-foreground m-2 text-body-medium">{NEEDS_TEX_WORDS}</p>
         ) : compileError ? (
-          <div className="m-2 space-y-1">
-            <p className="text-muted-foreground text-body-small">
-              The template has an error. Fix the code, then update the preview.
-            </p>
-            <pre className="bg-error-container text-on-error-container max-h-full overflow-auto rounded-corner-md p-2 text-body-small">
-              {compileError}
-            </pre>
-          </div>
+          <CompileErrorNotice error={compileError} />
         ) : isReady ? (
           <PdfPagesPreview
             basePath={`/api/templates/${id}`}

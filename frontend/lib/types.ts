@@ -1,4 +1,5 @@
 import { humanizeSlug } from "./humanize-slug";
+import type { Provider } from "./model-catalog";
 
 export type UUID = string;
 
@@ -372,7 +373,7 @@ export interface CapabilityReport {
 export interface DiscoveredModel {
   id: string;
   label: string;
-  provider: "openai" | "gemini";
+  provider: Provider;
   in_catalog: boolean;
 }
 
@@ -395,10 +396,14 @@ export interface OpenAIInfo {
   api_key_configured: boolean;
   // The API never returns key material — only whether a key is configured.
   gemini_api_key_configured: boolean;
+  anthropic_api_key_configured: boolean;
+  openrouter_api_key_configured: boolean;
   /** Where the effective key comes from — one saved in the app ("settings")
    *  beats one from .env ("env"). */
   openai_key_source: "settings" | "env" | "none";
   gemini_key_source: "settings" | "env" | "none";
+  anthropic_key_source: "settings" | "env" | "none";
+  openrouter_key_source: "settings" | "env" | "none";
   model_options: ModelOption[];
   /** The OpenAI-compatible endpoint. A location, not a secret, so it is echoed. */
   base_url: string | null;
@@ -475,6 +480,27 @@ export interface JobSiteLoginStatus {
   password_set: boolean;
 }
 
+/** GET /api/setup/connect: the backend composes every client's connection value. */
+export interface ConnectClient {
+  id: "claude-code" | "codex" | "codex-app" | "cursor" | "vscode" | "claude-desktop" | "other";
+  label: string;
+  kind: "command" | "deeplink" | "url" | "download" | "steps";
+  value: string;
+}
+
+export interface ConnectProfile {
+  name: "full" | "hunt" | "apply" | "explore" | "templates" | "career";
+  url: string;
+}
+
+export interface ConnectInfo {
+  backend_url: string;
+  mcp_url: string;
+  profiles: ConnectProfile[];
+  bundle_available: boolean;
+  clients: ConnectClient[];
+}
+
 interface SetupStep {
   done: boolean;
   detail: Record<string, unknown>;
@@ -486,6 +512,8 @@ interface EngineProbe {
   version: string | null;
   path: string | null;
   reason: string | null;
+  /** Available, with a known defect worth fixing (e.g. pdfTeX 1.40.27). */
+  warning: string | null;
 }
 
 export interface SetupStatus {

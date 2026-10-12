@@ -26,7 +26,7 @@ def test_a_file_that_cannot_be_read_says_so_in_words():
     try:
         extract_text("notes.xyz", "application/x-thing", b"data")
     except UnreadableFile as exc:
-        assert plain_read_error(exc) == "Use a PDF, Word, text or image file."
+        assert plain_read_error(exc) == "Use a PDF, Word, PowerPoint, text or image file."
     else:
         raise AssertionError("an unknown type must be refused")
 

@@ -9,7 +9,7 @@ licenses require.
 **This file is part of the required attribution.** Apache 2.0 §4(d) obliges
 anyone redistributing this work to carry the `NOTICE` file forward, and `NOTICE`
 points here. Redistributing Maestro CS without this file leaves the bundled
-LaTeX template, font and model unattributed.
+resume templates, font and model unattributed.
 
 ---
 
@@ -23,6 +23,11 @@ Used in:
 - `backend/app/templates/resume.tex.j2`
 - `backend/app/templates/_header.tex.j2`
 - `backend/app/templates/cover_letter.tex.j2` (preamble)
+- `backend/app/templates/cover_letter.typ` (port of the shared header layout)
+- `backend/app/templates/user/carlito_dense.tex.j2`
+- `backend/app/templates/user/xcharter_serif.tex.j2`
+- `backend/app/templates/user/xcharter_serif.typ` (port of the LaTeX design)
+- `backend/app/templates/user/harshibar.tex.j2` (through Harshibar's adaptation)
 
 The document structure, section formatting, and the `\resumeItem` /
 `\resumeSubheading` / `\resumeSubHeadingListStart` / `\resumeItemListStart`
@@ -32,12 +37,105 @@ command set derive from this template, as does the
 Modifications: converted to Jinja2 with custom delimiters (`((* *))`,
 `((( )))`, `((# #))`), parameterized through the `fmt.*` formatting knobs,
 extended with `extra_sections` rendering, and refactored so the header is a
-shared partial used by both the resume and cover-letter templates.
+shared partial used by both the resume and cover-letter templates. Carlito Dense
+changes the font, section case and spacing; XCharter Serif changes the font,
+heading weights and spacing. Their `\resumeSubheading` / `\resumeProjectHeading`
+`tabular*` definitions and paired list macros retain Jake's distinctive command
+structure. XCharter's Typst source explicitly describes its calibrated LaTeX
+port. The Typst cover letter explicitly mirrors the LaTeX header layout.
+
+Jake's upstream source credits `sb2nov/resume`; that inherited attribution and
+license are preserved below. The copyright year here matches the upstream
+[`LICENSE`](https://github.com/jakegut/resume/blob/master/LICENSE).
 
 ```
 MIT License
 
-Copyright (c) 2021 Jake Gutierrez
+Copyright (c) 2020 Jake Gutierrez
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+## Harshibar's resume (LaTeX resume template)
+
+**Source:** https://github.com/harshibar/resume
+**Author:** Harshibar (upstream copyright holder: Harshi)
+**License:** MIT
+
+Used in `backend/app/templates/user/harshibar.tex.j2`, seeded as `harshibar`.
+The matching `light-grey` / `dark-grey` / `text-grey` values, FiraMono scale,
+`\ebseries` / `\texteb` declarations, grey date columns in
+`\resumeSubheading`, and 2pt grey section rule identify the upstream design;
+the name alone is not the provenance evidence. Upstream `main.tex` also
+credits Jake Gutierrez and `sb2nov/resume`.
+
+Modifications: Jinja2 data binding and formatting controls, geometry margins,
+Helvetica-style font substitution, simplified underline, optional sections,
+and section-order dispatch. License text comes from the upstream
+[`LICENSE`](https://github.com/harshibar/resume/blob/main/LICENSE).
+
+```
+MIT License
+
+Copyright (c) 2021 Harshi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+## Sourabh Bajaj's resume (ancestor of Jake's Resume)
+
+**Source:** https://github.com/sb2nov/resume
+**Author:** Sourabh Bajaj
+**License:** MIT
+
+Jake's and Harshibar's upstream LaTeX headers explicitly credit this template.
+The inherited four-argument `\resumeSubheading` with a two-column `tabular*`,
+`\resumeSubItem`, paired heading/item list helpers, and section-rule layout
+remain in the bundled adaptations listed above. The notice preserves the
+[original license](https://github.com/sb2nov/resume/blob/23a4c800c668a79edcea4746ff004143ace00179/LICENSE)
+from before Jake's adaptation; the upstream repository later changes its
+copyright year.
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2015 Sourabh Bajaj
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -205,20 +303,61 @@ please open an issue.
 
 ---
 
+## Bundled template inventory
+
+All nine template source files under `backend/app/templates/` ship as package data
+(`backend/pyproject.toml` includes `templates/*` and `templates/**/*`).
+`template_registry.ensure_seed_templates` inserts the two classics and the
+four entries in `BUNDLED_TEMPLATES` on a fresh install. The directory named
+`user/` contains bundled sources, not private user data.
+
+| Name / id | Engine | Source file(s) | Seeded on fresh install | Provenance |
+|---|---|---|---|---|
+| Classic / `default` | LaTeX | `backend/app/templates/resume.tex.j2`; shared `backend/app/templates/_header.tex.j2` | Yes; default | Jake's Resume / Sourabh Bajaj |
+| Typst Classic / `typst-classic` | Typst | `backend/app/templates/typst_classic.typ` | Yes | Original implementation; no evidence of third-party template code |
+| XCharter Serif / `xcharter_serif` | LaTeX | `backend/app/templates/user/xcharter_serif.tex.j2` | Yes | Jake's command structure / Sourabh Bajaj |
+| XCharter Serif (Typst) / `xcharter_serif_typst` | Typst | `backend/app/templates/user/xcharter_serif.typ` | Yes | Explicit port of the preceding LaTeX design |
+| Carlito Dense / `carlito_dense` | LaTeX | `backend/app/templates/user/carlito_dense.tex.j2` | Yes | Jake's command structure / Sourabh Bajaj |
+| Harshibar / `harshibar` | LaTeX | `backend/app/templates/user/harshibar.tex.j2` | Yes | Harshibar / Jake Gutierrez / Sourabh Bajaj |
+| Cover letter | LaTeX | `backend/app/templates/cover_letter.tex.j2`; shared `backend/app/templates/_header.tex.j2` | No separate row; renderer uses it | Jake-derived preamble and shared header |
+| Cover letter | Typst | `backend/app/templates/cover_letter.typ` | No separate row; renderer uses it | Port of the Jake-derived shared header layout |
+| Template license | N/A | `backend/app/templates/LICENSE-resume-templates.txt` | No; bundled package data | Full MIT terms and all three copyright notices |
+| New-template starter / `STARTER_SOURCE` | LaTeX | `backend/app/services/template_registry.py` | No; copied when a draft has no source | Original minimal skeleton (`\sectiontitle`, no Jake command set) |
+
+Repository history: the initial public commit `e81696be` (Ajey Dhayashanker
+Loganathan, "Maestro Career Studio") contains all resume sources and the
+original attribution for Classic and its shared LaTeX header/preamble. It
+also contains the XCharter Typst port comments. Commit `086b6449` by the same
+author ("feat(templates): seed the four bundled designs, earn ready, and
+archive") adds the four designs to automatic seeding. Commit `8b1f5e5e` by
+the same author ("feat(cover-letter): render on the resume's engine; bundled
+cover_letter.typ") adds the Typst cover letter. These commits establish the
+bundling and port history; the source headers and distinctive structures
+establish third-party provenance, rather than the public importer name.
+
+The frontend gallery has no independent seed list: `frontend/app/templates/page.tsx`
+fetches `/api/templates`, and `frontend/components/templates/template-gallery.tsx`
+renders those rows and their runtime thumbnails. `docs/assets/templates.png`
+is a gallery screenshot, not a template source or seed. No template PDF, TeX
+or Typst preview is tracked under `base_resumes/` or `docs/`.
+`base_resumes/example.json` is synthetic resume data, not a template source.
+`base_resumes/template_previews/` is ignored runtime output; validation writes
+`<template_id>.pdf` there. Historical `harshibar.pdf` previews are not seeded
+assets, but the current Harshibar source **ships and seeds**.
+
 ## Notes for maintainers
 
-- `backend/app/templates/typst_classic.typ` is original work — no third-party
-  attribution needed.
-- The dependency inventory below closes the item that used to read "a full
-  dependency license inventory is still outstanding" (2026-08-03).
-- **Resolved 2026-07-26:** `base_resumes/template_previews/` is no longer
-  tracked. It is a runtime output directory — template validation writes
-  `<template_id>.pdf` into it — and un-ignoring it had been committing previews
-  of whatever templates a developer had created locally. One of those
-  (`harshibar.pdf`) was a preview of a user-created LaTeX template whose name
-  suggests third-party provenance; it was never a seeded asset, and no code,
-  test, or seed reads the committed copies. Only `default` and `typst-classic`
-  ship as templates, and both are covered above.
-- When adding a template derived from someone else's work, add the notice here
-  AND a comment banner in the file itself. A pointer in only one place is not
-  compliance.
+- `backend/app/templates/typst_classic.typ` is an original implementation;
+  using the same resume data contract or font does not establish third-party
+  template provenance. Font licenses apply separately: the vendored XCharter
+  notice and full font terms are in
+  `backend/app/assets/fonts/xcharter/LICENSE-XCharter.txt`.
+- Every derived template carries a comment banner with its copyright notice,
+  MIT license name, upstream source and pointers to this file and the full
+  `backend/app/templates/LICENSE-resume-templates.txt`. The latter ships beside
+  the sources as package data, including in wheels that omit root documents.
+  Preserve the license with the templates and this file with repository copies.
+- When changing bundled seed source bytes, freeze the old source and update
+  `SUPERSEDED_SEED_DIGESTS` / `CURRENT_SEED_DIGESTS` so untouched installed
+  copies receive the current attribution too. Frozen test fixtures retain
+  their historical bytes; the notices above also cover those copies.

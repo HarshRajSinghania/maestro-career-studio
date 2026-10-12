@@ -931,7 +931,7 @@ function ProposalRow({
               {base ? (
                 <span className="text-muted-foreground hidden shrink-0 items-center gap-2 text-body-small sm:inline-flex">
                   {baseName}
-                  {score != null ? <ScoreBar value={score} label="ATS score" valueText={score.toFixed(1)} /> : null}
+                  {score != null ? <ScoreBar value={score} label="Match score" valueText={score.toFixed(1)} /> : null}
                 </span>
               ) : null}
               {/* D5: To review, Queued and Applying rows all share one status, so the lane says it. */}

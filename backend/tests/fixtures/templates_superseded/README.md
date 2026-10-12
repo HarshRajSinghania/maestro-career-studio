@@ -1,8 +1,8 @@
 # Bundled user-template sources, frozen before each seed-time resync
 
-These are byte-exact copies of `backend/app/templates/user/<seed_id>.tex.j2`
+These are byte-exact copies of `backend/app/templates/user/` LaTeX and Typst sources
 as they stood at each `main` commit that changed the file. Each version is
-`<n>.tex.j2` (oldest first) under `templates_superseded/<seed_id>/`.
+`<n>.tex.j2` or `<n>.typ` (oldest first) under `templates_superseded/<seed_id>/`.
 
 `template_registry.SUPERSEDED_SEED_DIGESTS` pins the sha256 of these bytes.
 A seeded row whose source digest is in that set is ours and never user-edited,
@@ -17,7 +17,7 @@ recognises; a mistyped pin simply never matches. That is why
 
 When a bundled user template's bytes change:
 
-1. Freeze the old bytes as the next `<n>.tex.j2` in this directory (do not
+1. Freeze the old bytes as the next `<n>.tex.j2` or `<n>.typ` in this directory (do not
    edit earlier versions).
 2. Add that file's sha256 to `SUPERSEDED_SEED_DIGESTS` for the seed id.
 3. Update `CURRENT_SEED_DIGESTS` to the new bundled source's digest last —

@@ -124,7 +124,7 @@ export function AtsComparePanel({
       await runAtsScoreTarget(jobId, "application", app.id, "tailored");
     },
     onSuccess: () => {
-      toast.success("ATS scores updated");
+      toast.success("Match scores updated");
       invalidate();
     },
     onError: (err: Error) => toast.error(couldnt("update the scores", err)),
@@ -133,7 +133,7 @@ export function AtsComparePanel({
   const rescoreTailored = useMutation({
     mutationFn: () => runAtsScoreTarget(jobId, "application", app.id, "tailored"),
     onSuccess: () => {
-      toast.success("ATS score updated");
+      toast.success("Match score updated");
       invalidate();
     },
     onError: (err: Error) => toast.error(couldnt("update the score", err)),
@@ -149,7 +149,7 @@ export function AtsComparePanel({
     return (
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle>ATS score before and after</CardTitle>
+          <CardTitle>Match score before and after</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-muted-foreground text-body-medium">{couldnt("compare the scores", err)}</p>
@@ -186,7 +186,7 @@ export function AtsComparePanel({
     <Card>
       {/* Wraps: at 375 the title kept one word per line beside the button. */}
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 pb-2">
-        <CardTitle>ATS score before and after</CardTitle>
+        <CardTitle>Match score before and after</CardTitle>
         <Button
           variant="outline"
           size="sm"

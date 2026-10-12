@@ -1,172 +1,149 @@
 #!/usr/bin/env node
-// Stdio proxy: Claude Desktop <-> the MCP server inside the backend container.
-//
-// Why a shim rather than `"command": "docker"` straight in the manifest: the
-// MCPB spec allows a command that is a binary on PATH, but it also requires
-// `entry_point` to reference a file actually inside the bundle. A stub entry
-// point that never runs satisfies the letter and not the intent, and a shell
-// script would need platform_overrides for the .sh/.cmd split. This file is
-// both the entry point and the command, matching the spec's own Node example.
-//
-// It runs on the Node that ships inside Claude Desktop and has no dependencies,
-// so the packed bundle stays small enough to commit alongside the repo.
+// Claude Desktop stdio ↔ Maestro's HTTP MCP endpoint. Node ≥ 18; no dependencies.
 "use strict";
 
-const { spawn } = require("node:child_process");
-const fs = require("node:fs");
+const readline = require("node:readline");
+const http = require("node:http");
+const https = require("node:https");
 
-// A user_config field the user never filled in arrives as its LITERAL
-// placeholder — "${user_config.docker_path}", not an empty string — so every
-// value read here must be screened before it is believed. Treating one as real
-// input is what made this extension refuse to start: the docker override was
-// "not an executable file", and before that the container name was a string no
-// container could ever match.
+const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+const TIMEOUT_MESSAGE = "Maestro Career Studio did not answer within 10 minutes. The request may still finish in the app.";
+
+function postBody(url, headers, line, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let timer;
+    const finish = (error, response) => {
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(response);
+    };
+    try {
+      const target = new URL(url);
+      const transport = target.protocol === "http:" ? http : target.protocol === "https:" ? https : null;
+      if (!transport) throw Object.assign(new Error("Invalid MCP URL"), { code: "ERR_INVALID_URL" });
+      const request = transport.request(target, { method: "POST", headers }, (response) => {
+        let text = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => { text += chunk; });
+        response.on("error", finish);
+        response.on("aborted", () => finish(Object.assign(new Error("Response interrupted"), { code: "ECONNRESET" })));
+        response.on("end", () => finish(null, {
+          status: response.statusCode, sessionId: response.headers["mcp-session-id"], text,
+        }));
+      });
+      request.on("error", finish);
+      // One deadline covers DNS, connection, headers and the complete body.
+      timer = setTimeout(() => {
+        const error = Object.assign(new Error(TIMEOUT_MESSAGE), { code: "MAESTRO_CS_BRIDGE_TIMEOUT" });
+        finish(error);
+        request.destroy(error);
+      }, timeoutMs);
+      request.end(line);
+    } catch (error) {
+      finish(error);
+    }
+  });
+}
+
+// Unfilled user_config values can arrive as literal placeholders.
 const setting = (name) => {
   const raw = (process.env[name] || "").trim();
   return /^\$\{.*\}$/.test(raw) ? "" : raw;
 };
 
-// Write synchronously: a message queued on process.stderr can be lost when the
-// process exits in the same tick, and the host only shows us what it received.
-const fail = (message) => {
-  fs.writeSync(2, `\n[maestro-career-studio] ${message}\n`);
-};
+const mcpUrl = (
+  backendUrl = setting("MAESTRO_CS_BACKEND_URL") || "http://localhost:8001",
+  profile = setting("MAESTRO_CS_MCP_PROFILE") || "full",
+) => `${backendUrl.replace(/\/+$/, "")}/mcp${profile === "full" ? "" : `/${profile}`}`;
 
-// Claude Desktop launches extensions with PATH=/usr/bin:/bin:/usr/sbin:/sbin —
-// a GUI app does not inherit your shell PATH — and Docker installs to
-// /usr/local/bin. A bare `docker` therefore fails with ENOENT and no output,
-// which is exactly why setup-mcp.sh resolves absolute paths for GUI clients.
-// Look where Docker Desktop actually puts things, then PATH, and let
-// user_config override. Windows gets its own list: none of the POSIX paths
-// exist there, and its HOME is USERPROFILE.
-const dockerCandidates = (platform, env) => {
-  if (platform === "win32") {
-    const programFiles = env.ProgramFiles || "C:\\Program Files";
-    const programData = env.ProgramData || "C:\\ProgramData";
-    return [
-      `${programFiles}\\Docker\\Docker\\resources\\bin\\docker.exe`,
-      `${programData}\\DockerDesktop\\version-bin\\docker.exe`,
-      ...(env.USERPROFILE ? [`${env.USERPROFILE}\\.docker\\bin\\docker.exe`] : []),
-    ];
-  }
-  return [
-    "/usr/local/bin/docker",
-    "/opt/homebrew/bin/docker",
-    "/Applications/Docker.app/Contents/Resources/bin/docker",
-    ...(env.HOME ? [`${env.HOME}/.docker/bin/docker`] : []),
-    "/usr/bin/docker",
-  ];
-};
+async function main() {
+  const backendUrl = setting("MAESTRO_CS_BACKEND_URL") || "http://localhost:8001";
+  const url = mcpUrl(backendUrl);
+  const configuredTimeout = Number(setting("MAESTRO_CS_BRIDGE_TIMEOUT_MS"));
+  const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+    ? configuredTimeout : DEFAULT_TIMEOUT_MS;
+  let sessionId;
+  let initializeLine;
+  let initializedLine;
 
-// Last resort after the fixed list: whatever PATH the client did pass on.
-const onPath = (platform, env) => {
-  const exe = platform === "win32" ? "docker.exe" : "docker";
-  const sep = platform === "win32" ? ";" : ":";
-  const join = platform === "win32" ? "\\" : "/";
-  return (env.PATH || env.Path || "").split(sep).filter(Boolean)
-    .map((dir) => dir.replace(/[\\/]+$/, "") + join + exe);
-};
-
-const runnable = (p) => {
-  try { fs.accessSync(p, fs.constants.X_OK); return true; } catch { return false; }
-};
-
-const main = () => {
-  const container = setting("MAESTRO_CS_CONTAINER") || "maestro-career-studio-backend-1";
-  const profile = setting("MAESTRO_CS_MCP_PROFILE") || "full";
-  const override = setting("MAESTRO_CS_DOCKER");
-  const candidates = dockerCandidates(process.platform, process.env);
-
-  // An explicit setting is not a hint. If it is wrong, say so rather than quietly
-  // running a different docker than the one the user asked for.
-  if (override && !runnable(override)) {
-    fail(
-      `the "Docker path" setting points at ${override}, which is not an ` +
-      "executable file. Correct it, or clear it to search the usual locations."
-    );
-    process.exit(1);
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.on(signal, () => process.exit(0));
   }
 
-  const dockerBin = override || [...candidates, ...onPath(process.platform, process.env)]
-    .find(runnable);
-
-  if (!dockerBin) {
-    const locate = process.platform === "win32" ? "where docker" : "which docker";
-    fail(
-      "could not find the `docker` executable. Claude Desktop runs extensions " +
-      "with a minimal PATH, so Docker must be located by absolute path. Looked " +
-      `in: ${candidates.join(", ")}, and on PATH. Set this extension's "Docker ` +
-      `path" setting to what \`${locate}\` prints in a terminal.`
-    );
-    process.exit(1);
-  }
-
-  // BACKEND_URL is the CONTAINER-internal address: the app listens on 8000 inside
-  // the container regardless of which host port compose published. That is why
-  // this transport cannot get the 8000-vs-8001 confusion wrong.
-  const args = [
-    "exec", "-i",
-    "-e", "BACKEND_URL=http://localhost:8000",
-    "-e", `MAESTRO_CS_MCP_PROFILE=${profile}`,
-    container,
-    "python", "-m", "mcp_server.server",
-  ];
-
-  // Pipe explicitly rather than inheriting fds. Claude Desktop runs extensions in
-  // Electron's Node, where the parent's stdin/stdout are not guaranteed to be
-  // ordinary inheritable descriptors — `stdio: "inherit"` connected the container
-  // to nothing and the transport closed the moment the server tried to answer.
-  // Explicit streams work the same in both runtimes.
-  const child = spawn(dockerBin, args, { stdio: ["pipe", "pipe", "pipe"] });
-
-  process.stdin.pipe(child.stdin);
-  child.stdout.pipe(process.stdout);
-
-  // The client going away closes our stdin, which closes the container's; neither
-  // side should die with an unhandled EPIPE on the way out.
-  const ignoreEpipe = (stream) => {
-    stream.on("error", (err) => { if (err && err.code !== "EPIPE") throw err; });
+  const write = (body) => process.stdout.write(JSON.stringify(body) + "\n");
+  const fail = (request, message) => {
+    const requests = Array.isArray(request) ? request : [request];
+    const errors = requests.filter((item) => item && Object.hasOwn(item, "method") && Object.hasOwn(item, "id"))
+      .map(({ id }) => ({ jsonrpc: "2.0", id, error: { code: -32000, message } }));
+    if (errors.length) write(Array.isArray(request) ? errors : errors[0]);
   };
-  ignoreEpipe(process.stdin);
-  ignoreEpipe(process.stdout);
-  ignoreEpipe(child.stdin);
 
-  // Forward the server's stderr (clients surface it as logs) while keeping a copy,
-  // so a startup failure can be reported as a sentence instead of a Docker error.
-  let stderr = "";
-  child.stderr.on("data", (chunk) => {
-    stderr += chunk.toString();
-    process.stderr.write(chunk);
-  });
-
-  child.on("error", (err) => {
-    if (err.code === "ENOENT") {
-      fail(`could not run ${dockerBin}. Is Docker Desktop installed and running?`);
-    } else {
-      fail(`could not start docker: ${err.message}`);
+  async function post(line) {
+    const headers = {
+      Accept: "application/json, text/event-stream",
+      "Content-Type": "application/json",
+    };
+    if (sessionId) headers["Mcp-Session-Id"] = sessionId;
+    let response;
+    try {
+      response = await postBody(url, headers, line, timeoutMs);
+    } catch (error) {
+      const connectionFailure = ["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ERR_INVALID_URL", "ERR_INVALID_PROTOCOL"].includes(error.code);
+      const message = error.code === "MAESTRO_CS_BRIDGE_TIMEOUT" ? TIMEOUT_MESSAGE : connectionFailure
+        ? `Maestro Career Studio is not running at ${backendUrl}. Start it (docker compose up -d, or open the app) and try again.`
+        : "Maestro Career Studio could not complete the request. The request may still finish in the app.";
+      process.stderr.write(message + "\n");
+      throw new Error(message);
     }
-    process.exit(1);
-  });
-
-  child.on("exit", (code, signal) => {
-    if (code !== 0 && /No such container|is not running/i.test(stderr)) {
-      fail(
-        `the container "${container}" is not running. Start the app with ` +
-        "`docker compose up -d` from your Maestro CS checkout. If your stack " +
-        "uses a different COMPOSE_PROJECT_NAME, set this extension's " +
-        "\"Container name\" setting to what `docker ps` reports."
-      );
+    let body;
+    if (response.status === 200) {
+      try { body = JSON.parse(response.text); }
+      catch { throw new Error("Maestro Career Studio returned an invalid JSON response."); }
     }
-    process.exit(signal ? 1 : code === null ? 1 : code);
-  });
-
-  // A client that goes away should not leave a docker exec behind.
-  for (const sig of ["SIGINT", "SIGTERM"]) {
-    process.on(sig, () => { child.kill(sig); });
+    return { status: response.status, sessionId: response.sessionId, body };
   }
-};
 
-// Run when launched; stay inert when a test requires the file for its helpers.
+  function accepted(response) {
+    if (response.status !== 200 && response.status !== 202) {
+      throw new Error(`Maestro Career Studio returned HTTP ${response.status}.`);
+    }
+    return response;
+  }
+
+  const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity, terminal: false });
+  // Await each complete response, including a session replay, before reading on.
+  for await (const line of lines) {
+    if (!line.trim()) continue;
+    let request;
+    try { request = JSON.parse(line); }
+    catch {
+      write({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
+      continue;
+    }
+    if (request === null || typeof request !== "object") {
+      process.stderr.write("The MCP message must be a JSON object or array.\n");
+      continue;
+    }
+    if (request.method === "initialize") initializeLine = line;
+    if (request.method === "notifications/initialized") initializedLine = line;
+    try {
+      let response = await post(line);
+      if (response.status === 404 && sessionId && initializeLine) {
+        // A restarted backend must see a fresh handshake without the stale id.
+        sessionId = undefined;
+        const initialized = accepted(await post(initializeLine));
+        sessionId = initialized.sessionId;
+        if (initializedLine) accepted(await post(initializedLine));
+        response = await post(line);
+      }
+      accepted(response);
+      if (request.method === "initialize") sessionId = response.sessionId;
+      if (response.status === 200) write(response.body);
+    } catch (error) {
+      fail(request, error.message);
+    }
+  }
+}
+
+module.exports = { mcpUrl, setting, main };
 if (require.main === module) main();
-
-module.exports = { dockerCandidates, onPath };

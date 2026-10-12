@@ -116,3 +116,17 @@ test("the server's own refused-key sentences keep the fix, whichever wording it 
     "The AI provider refused your API key. Check it in Settings › AI & models.",
   );
 });
+
+test("Claude and OpenRouter key failures are named", () => {
+  assert.equal(errorDetail(new Error("No Claude API key is set. Add one in Settings › AI & models.")), "Add an API key in Settings › AI & models.");
+  assert.equal(errorDetail(new Error("No OpenRouter API key is set. Add one in Settings › AI & models.")), "Add an API key in Settings › AI & models.");
+  assert.equal(
+    errorDetail(new Error("Claude request failed: Error code: 401 - {'type': 'authentication_error'}")),
+    "Claude refused your API key. Check it in Settings › AI & models.",
+  );
+  // OpenRouter serves Claude models: it is named first.
+  assert.equal(
+    errorDetail(new Error("OpenRouter request failed for anthropic/claude-x: Error code: 401")),
+    "OpenRouter refused your API key. Check it in Settings › AI & models.",
+  );
+});

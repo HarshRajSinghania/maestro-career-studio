@@ -20,14 +20,19 @@ FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# The same server the uv install runs: Next's standalone output, started with
+# `node server.js` (no node_modules or package.json copy; the bundle carries
+# the few packages it traces). A container must listen on all interfaces or
+# the published port cannot reach it; docker-compose.yml binds only the HOST
+# side to 127.0.0.1, so nothing is exposed beyond loopback.
+ENV HOSTNAME=0.0.0.0 PORT=3000
 # `node` (uid 1000) ships with the base image. Running the server as root buys
-# nothing — it serves a prebuilt bundle and owns no persistent state — and costs
-# the usual root-in-container blast radius. --chown so `next start` can still
+# nothing: it serves a prebuilt bundle and owns no persistent state, and costs
+# the usual root-in-container blast radius. --chown so the server can still
 # write its own cache under .next/.
-COPY --from=builder --chown=node:node /app/.next ./.next
-COPY --from=builder --chown=node:node /app/node_modules ./node_modules
-COPY --from=builder --chown=node:node /app/package.json ./package.json
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 COPY --from=builder --chown=node:node /app/public ./public
 USER node
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["node", "server.js"]

@@ -8,12 +8,11 @@ failure.
 
 ## Surfaces and files
 
-There is no popup and no in-page widget. The **side panel** (`panel/`) is the
-extension's one surface. Both the toolbar icon (`openPanelOnActionClick`) and
-the keyboard shortcut — `Alt+Shift+J` by default — open it, and it binds to the
-tab you are on. The extension is that panel document, a set of ordered
-content-script modules that read the page and do the field work, and a service
-worker:
+There is no popup or in-page widget. The **side panel** (`panel/`) captures and
+fills; the toolbar icon (`openPanelOnActionClick`) and `Alt+Shift+J` open it,
+bound to the current tab. **Extension options** edits the connection addresses.
+Ordered content scripts read the page and fill fields; the service worker
+proxies their API requests:
 
 | file | runs | does |
 |---|---|---|
@@ -44,7 +43,8 @@ worker:
 | `panel/icons.js` | the side panel | `ns.icon(name, {size, label})`: inline Lucide svg built with `createElementNS` (never `innerHTML`), `aria-hidden` unless labelled, `data-icon` names it; one glyph per concept as in the web app's `lib/concept-icons.ts`; no emoji or text glyph in panel code (`test_extension_panel_icons.py`); `panel.js` throws at boot when it is missing, and stage bodies reach it as `build.icon` |
 | `panel/stages/*.js` + `panel/stages.js` | the side panel | one file per rail stage — a body is handed a per-render snapshot (`stageContext`), never the store, and `card` is never published — gathered by a roster that throws when a script tag is missing |
 | `panel/actions/*.js` + `panel/actions.js` | the side panel | one file per concern (save job and score its bases, pick a draft, quick tailor + base as is, fill this form, submit one pause-row answer, ask one question, mark draft/applied), each handed one `write(patch)` door (`actionStore` refuses a key the store lacks); `actions/during.js` is the `busy` span they all read, and `busy` covers everything an action writes including its learn tail |
-| `sw.js` | the extension | every backend call, the frame fan-out, the one sanctioned injection, the hotkey, and giving the toolbar icon to the side panel |
+| `sw.js` | the extension | panel/content API calls, frame fan-out, sanctioned injection, hotkey, and toolbar-to-panel binding |
+| `options.html`, `options.js` | extension options | load `read_settings`, validate and save `backendUrl`/`appUrl` to `storage.sync`; Test connection fetches `/health` directly, with no new permission (`test_extension_options.py`) |
 
 ## The gate
 
@@ -154,7 +154,7 @@ it armed. Three rules hold the shape up:
 
 Above the rail sits the panel's whole header, and it is one block: the job's
 identity and the match chip ("Not saved yet" for a job Maestro CS does not
-have, "Saved", or the application's status), the Base → Tailored ATS rings
+have, "Saved", or the application's status), the Base → Tailored match score rings
 under them (read from stored scores, never computed here; with one ring, "Base
 resume score" and "Tailoring can raise it."; with none, "Not scored yet."), and
 one deep link on the last line, right-aligned, with **Refresh** at that line's
@@ -231,7 +231,7 @@ asking permission of itself.
   the DOM of pages that carry no form yet, and the form verdict at bind time is
   false anyway on a late SPA render, so requiring a form would refuse exactly
   the flow the picker exists for.
-- **The base resumes are RANKED by this job's own ATS scores**, best first, each
+- **The base resumes are RANKED by this job's own match scores**, best first, each
   row showing its number — the same per-base scores the Score and tailor tab is
   built on, so the choice (and the number Quick tailor reports afterwards) is not
   blind. **Saving the job scores the bases in the same press** (`addJob` then
@@ -241,9 +241,9 @@ asking permission of itself.
   never loops and a tab round trip never re-asks; Refresh asks again. The cost is the deterministic ATS engine, one local pass
   per base resume and no model call; the web app's Score and tailor tab spends
   it the same way on a first visit. Scores are otherwise READ (cheap, computes
-  nothing). The base list is also where the panel says, once, what an ATS score
-  is: the web app's `ATS_SCORE_LEAD` sentence, our estimate and not an
-  employer's reading. A resume with no score says "not scored" rather than zero
+  nothing). The base list is also where the panel says, once, what a match score
+  is: the web app's `ATS_SCORE_LEAD` sentence, a fixed-rules comparison with the
+  job description. A resume with no score says "not scored" rather than zero
   and sorts last, the scored best is preselected until you pick another, and a
   pick made by hand wins over the ranking permanently. For a saved job with no
   application the scores are a stage input, so `loadContext` reads them before
@@ -1418,10 +1418,10 @@ database and refuses the live file.
 
 - **Settings have one home.** `DEFAULTS` in `sw.js` (`backendUrl`, `appUrl`,
   `telemetryEnabled`, `fillMode`) is the one place a default lives; stored values
-  in `chrome.storage.sync` override it. The panel asks for them over
-  `read_settings` rather than keeping a copy, and there is no settings screen in
-  the panel. The panel writes `fillMode` to `chrome.storage.sync` directly —
-  writes need no defaults.
+  in `chrome.storage.sync` override it. The panel and options page load
+  `read_settings` rather than copying defaults. The panel writes `fillMode`;
+  options writes `backendUrl`/`appUrl`, requiring an http(s) host and optional
+  port, with no path, query, fragment or credentials. Writes need no defaults.
 - **The shortcut needs Chrome 116**, where `chrome.sidePanel.open()` landed,
   while `minimum_chrome_version` is 114: everything else including the toolbar
   click works on 114, and raising the minimum would lock out a browser whose
@@ -1474,13 +1474,13 @@ comma-separated.
 
 ## Maintainer notes
 
-- **Every fetch goes through the service worker**, because a content script's
+- **Panel and content API calls go through the service worker**, because a content script's
   fetch presents the *page's* origin, which the backend's CORS list does not
   admit — and widening it to admit arbitrary ATS hosts is the trade this avoids.
   The panel is an extension page and *could* fetch directly; it routes through
-  the same door anyway, so there is one fetch site and one place the backend URL
-  is read. Nothing leaves the machine except the LLM calls the backend itself
-  makes.
+  the same door anyway. Options makes only its own `/health` connection check,
+  from the extension origin behind the same backend CORS gate; it sends no
+  career data. Only the backend's AI calls leave the machine.
 - The panel runs in no page at all; the fill engine runs in **every** frame. One
   dead frame (an ad iframe, a frame that navigated away) does not fail the run,
   and the reason it failed is kept in the console.

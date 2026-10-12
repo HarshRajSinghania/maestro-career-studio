@@ -660,7 +660,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "analytics_base_summaries",
         "description": (
-            "Per-base-resume performance: health grade, average base ATS, average "
+            "Per-base-resume performance: health grade, average base match score, average "
             "tailoring lift, application counts, in-flight, last activity."
         ),
         "parameters": {"type": "object", "properties": {}, "required": []},

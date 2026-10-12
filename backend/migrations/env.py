@@ -28,8 +28,9 @@ if make_url(DATABASE_URL).get_backend_name() != "sqlite":
     raise RuntimeError("migrations/: this chain is SQLite only")
 
 if config.config_file_name is not None:
-    # disable_existing_loggers defaults to TRUE and would silence the app's own
-    # loggers: seeding.run_startup() runs `alembic upgrade head` in-process.
+    # Reached by the alembic CLI and by Config(alembic.ini) callers; startup's
+    # run_migrations() sets no ini file. disable_existing_loggers defaults to TRUE
+    # and would silence the app's own loggers when run in-process.
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata

@@ -84,6 +84,9 @@ native_load_env() {
     MAESTRO_PORT="$((10#$MAESTRO_PORT))"
     (( MAESTRO_PORT > 0 && MAESTRO_PORT <= 65535 )) \
         || native_error 'MAESTRO_PORT must be a port number from 1 to 65535.'
+    export BACKEND_URL="http://127.0.0.1:$MAESTRO_PORT"
+    export MAESTRO_CS_PUBLIC_BACKEND_URL="http://127.0.0.1:$MAESTRO_PORT"
+    export MCPB_BUNDLE_PATH="${NATIVE_BACKEND%/*}/mcpb/maestro-career-studio.mcpb"
 }
 
 native_read_pid() {

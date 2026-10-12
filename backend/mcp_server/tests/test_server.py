@@ -82,6 +82,52 @@ def test_all_tools_registered():
     assert expected <= names
 
 
+@pytest.mark.parametrize("profile", ["full", "hunt", "apply", "explore", "templates", "career"])
+def test_listing_a_profile_preserves_the_shared_registry(monkeypatch, profile):
+    from mcp_server.profiles import allowed_tools
+
+    monkeypatch.setenv("MAESTRO_CS_MCP_PROFILE", "hunt")
+    registered = {tool.name for tool in srv.mcp._tool_manager.list_tools()}
+    allow = allowed_tools(profile)
+    assert set(srv.list_registered_tool_names(profile)) == (
+        registered if allow is None else allow
+    )
+    assert {tool.name for tool in srv.mcp._tool_manager.list_tools()} == registered
+
+
+def test_listing_without_a_profile_uses_the_env(monkeypatch):
+    from mcp_server.profiles import HUNT_TOOLS
+
+    monkeypatch.setenv("MAESTRO_CS_MCP_PROFILE", "hunt")
+    assert set(srv.list_registered_tool_names()) == HUNT_TOOLS
+
+
+def test_stdio_main_filters_before_serving(monkeypatch):
+    from mcp.server.fastmcp import FastMCP
+
+    stdio = FastMCP("stdio-profile-test")
+
+    @stdio.tool()
+    def list_jobs() -> str:
+        return "jobs"
+
+    @stdio.tool()
+    def create_template_draft() -> str:
+        return "template"
+
+    events = []
+    monkeypatch.setenv("MAESTRO_CS_MCP_PROFILE", "hunt")
+    monkeypatch.setattr(srv, "mcp", stdio)
+    monkeypatch.setattr(srv.http_client, "repair_proxy_env", lambda: events.append("repair"))
+
+    def run():
+        events.append({tool.name for tool in stdio._tool_manager.list_tools()})
+
+    monkeypatch.setattr(stdio, "run", run)
+    srv.main()
+    assert events == ["repair", {"list_jobs"}]
+
+
 async def test_sync_now_is_an_annotated_hunt_and_apply_tool():
     from mcp_server.profiles import APPLY_TOOLS, HUNT_TOOLS
 

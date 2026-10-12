@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.setting import Setting
+from app.services.sync.files import _read_flags
 
 MACHINE_ID_KEY = "sync.machine_id"
 STATE_KEY = "sync.state"
@@ -44,7 +45,7 @@ def read_key() -> str | None:
     path = key_path()
     fd = None
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = os.open(path, _read_flags())
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             return None
         with os.fdopen(fd, "r", encoding="utf-8") as handle:

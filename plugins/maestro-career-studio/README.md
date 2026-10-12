@@ -1,6 +1,6 @@
 # Maestro Career Studio plugin
 
-Lets Claude drive [Maestro Career Studio](https://github.com/seinun-ai/maestro-career-studio),
+Lets your assistant drive [Maestro Career Studio](https://github.com/seinun-ai/maestro-career-studio),
 a free, open-source job-application copilot that runs on your own computer.
 Your assistant reads a job posting, scores it against your resumes, suggests
 tailoring edits, renders the PDF and tracks the application. The app keeps your
@@ -8,44 +8,84 @@ data; the plugin is the connector between it and your assistant.
 
 ## Before you install
 
-The plugin needs the Maestro CS app running on the same computer:
-
-```bash
-git clone https://github.com/seinun-ai/maestro-career-studio.git
-cd maestro-career-studio && cp .env.example .env
-docker compose up -d
-```
-
-Docker must be installed and on the `PATH` of the app you use. Setup, updating
-and troubleshooting are in the
+The plugin needs Maestro running on the same computer at
+`http://localhost:8001`. It connects to `http://localhost:8001/mcp` and needs
+no Docker or Python on the assistant's side. Setup, updating and troubleshooting
+are in the
 [repository README](https://github.com/seinun-ai/maestro-career-studio#readme).
 
 ## Install
 
+For Claude Code, add a local marketplace from a release-tag checkout. Replace
+`v0.9.0` with the release you are installing:
+
 ```bash
-claude plugin marketplace add https://github.com/seinun-ai/maestro-career-studio
+git clone --branch v0.9.0 --depth 1 https://github.com/seinun-ai/maestro-career-studio.git maestro-career-studio-v0.9.0
+claude plugin marketplace add ./maestro-career-studio-v0.9.0
 claude plugin install maestro-career-studio@maestro-career-studio
 ```
 
+Claude Code's marketplace-add help accepts local paths and
+`--sparse <paths...>`, but shows no Git ref option. The tagged checkout above
+pins the release without relying on an undocumented ref syntax.
+
+In the Codex app, choose **Add a marketplace** and enter:
+
+- **Source:** `seinun-ai/maestro-career-studio`
+- **Git ref:** the release tag you are installing, for example `v0.9.0`
+- **Sparse paths:** `.agents/plugins` and `plugins`
+
+Install **Maestro Career Studio** from that marketplace. Pin the Git ref to
+a release tag so updates are deliberate.
+
+The Codex CLI equivalent (replace `v0.9.0` with your release tag) is:
+
+```bash
+codex plugin marketplace add seinun-ai/maestro-career-studio --ref v0.9.0 --sparse .agents/plugins --sparse plugins
+codex plugin add maestro-career-studio@maestro-career-studio
+```
+
+For a direct URL connection in Claude Code or Codex CLI, open Maestro's
+Settings › Connected agents › **Connect an agent app**, or run:
+
+```bash
+claude mcp add --scope user --transport http maestro-career-studio http://localhost:8001/mcp
+codex mcp add maestro-career-studio --url http://localhost:8001/mcp
+```
+
+On a uv install (`uv tool install --python 3.12 maestro-career-studio`), `maestro connect`
+runs these for you, and `maestro connect claude-desktop` sets up Claude Desktop.
+
+Choose one connection route per client. The Codex plugin's approval prompts
+below apply to the plugin route.
+
 ## Where it runs
 
-The plugin declares one local (stdio) MCP server. Local MCP servers in plugins
-run in **Claude Code** and in **Cowork** sessions that run on your computer. They
-do not run in claude.ai chat. The Claude Desktop extension and other clients are
-covered in the
+The plugin declares one HTTP MCP connection to your local app. Claude Code
+reads [`.mcp.json`](.mcp.json); Codex reads [`.codex-mcp.json`](.codex-mcp.json).
+Claude Desktop uses the `.mcpb` bundle: download it from **Connect an agent app**
+and double-click it. Other clients are covered in the
 [MCP server README](https://github.com/seinun-ai/maestro-career-studio/blob/main/backend/mcp_server/README.md).
 
 ## What it runs and what it sends
 
-The plugin runs one command: `docker exec` into the backend container of your
-own Maestro CS stack (`maestro-career-studio-backend-1`), which starts the MCP
-server (`python -m mcp_server.server`) inside it. The command is in
-[`.mcp.json`](.mcp.json). It sets two environment variables, the backend address
-(`http://localhost:8000`, inside the container) and the tool profile.
+The plugin connects by URL to `http://localhost:8001/mcp`, served inside
+Maestro's backend. It starts no subprocess. Never publish port 8001 or proxy
+`/mcp` beyond this computer: the local backend has no authentication.
 
-- **The plugin itself sends nothing.** The MCP server talks only to your local
-  backend. It makes no other network connection, and the plugin has no
-  telemetry, no accounts and no credentials.
+The Codex plugin asks for approval before these tools:
+`mark_submitted`, `record_consent`, `record_decision`, `get_job_site_login`,
+`prepare_application_pdf_upload`, `report_failure`, `waive_health_gate`,
+`restore_resume_version`, `record_triage`, `kb_approve_points`, and `sync_now`.
+These can record a durable decision, waive a health gate, share a login,
+stage an upload, replace resume content, or sync data to your paired copy.
+The client prompts are
+**in addition to Maestro's own consent gates**. Other tools have no per-tool
+client prompt in this configuration.
+
+- **The connection stays local.** MCP requests and responses travel between
+  your assistant and Maestro's local backend. The plugin has no telemetry,
+  accounts or credentials.
 - **Tool results go to your assistant.** A tool exists to hand information to
   the assistant that called it: job postings, resume text, your career history
   and saved answers. They are then handled under your assistant provider's
@@ -83,9 +123,9 @@ and analytics across your saved jobs.
 
 The plugin loads the `full` profile (all 88 tools). Scoped profiles are subsets
 that keep a chat focused: `hunt` (21 tools), `apply` (50), `explore` (11),
-`templates` (12), `career` (18). To use one, edit `MAESTRO_CS_MCP_PROFILE` in
-the plugin's `.mcp.json`, or use the setup script in the repository. Enable one
-profile at a time.
+`templates` (12), `career` (18). Choose a tool set in **Connect an agent app**,
+or change the URL in your client's declaration to `/mcp/hunt`, `/mcp/apply`,
+`/mcp/explore`, `/mcp/templates`, or `/mcp/career`. Enable one profile at a time.
 
 ## Privacy policy
 

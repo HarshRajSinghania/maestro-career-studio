@@ -110,3 +110,38 @@ def test_career_profile_can_finish_the_arc_it_starts():
 def test_scoped_profiles_stay_read_only_on_the_kb():
     for allowlist in (HUNT_TOOLS, APPLY_TOOLS, EXPLORE_TOOLS, TEMPLATES_TOOLS):
         assert not {tool for tool in allowlist if tool.startswith("kb_")}
+
+
+def test_importing_the_server_never_deletes_tools():
+    """A stdio profile env var must not shrink the shared HTTP tool registry.
+
+    Use a subprocess because HTTP consumers hold the registry by reference.
+    """
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    import mcp_server.server as srv
+
+    out = subprocess.run(
+        [sys.executable, "-c",
+         "import mcp_server.server as s; print(len(s.mcp._tool_manager.list_tools()))"],
+        env={**os.environ, "MAESTRO_CS_MCP_PROFILE": "hunt"},
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert int(out) == len(srv.list_registered_tool_names("full"))
+
+
+def test_the_request_profile_wins_over_the_env_for_hints(monkeypatch):
+    import mcp_server.server as srv
+    from mcp_server.profiles import allowed_tools
+
+    monkeypatch.setenv("MAESTRO_CS_MCP_PROFILE", "full")
+    token = srv.CURRENT_PROFILE.set("hunt")
+    try:
+        assert srv._active_allowed_tools() == allowed_tools("hunt")
+    finally:
+        srv.CURRENT_PROFILE.reset(token)
+    assert srv._active_allowed_tools() == allowed_tools("full")

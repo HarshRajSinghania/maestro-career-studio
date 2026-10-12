@@ -71,6 +71,7 @@ if [ -z "$BACKEND_URL" ]; then
   fi
   BACKEND_URL="http://localhost:$port"
 fi
+warn "setup-mcp.sh is deprecated and leaves in the next release. Connect by URL instead: open Settings › Connected agents › Connect an agent app, or run: claude mcp add --scope user --transport http maestro-career-studio $BACKEND_URL/mcp"
 note "backend url: $BACKEND_URL"
 
 # ---------------------------------------------------------------------------
@@ -123,12 +124,20 @@ if [ "$SKIP_INSTALL" -eq 0 ]; then
   fi
   note "installing the mcp extra (quiet; this can take a minute on a cold venv)"
   "$VENV/bin/pip" install -q --upgrade pip
+  # Old name of this package: left in place it shares bin/maestro-career-studio-mcp with the
+  # new one, and uninstalling it later would delete the working command.
+  "$VENV/bin/pip" uninstall -y maestro-career-studio-backend >/dev/null 2>&1 || true
   ( cd "$BACKEND" && "$VENV/bin/pip" install -q -e ".[mcp]" )
 fi
 
 MCP_BIN="$VENV/bin/maestro-career-studio-mcp"
-[ -x "$MCP_BIN" ] || die "expected the console script at $MCP_BIN but it is missing or not executable — re-run without --skip-install"
-ok "server binary: $MCP_BIN"
+if [ -x "$MCP_BIN" ]; then
+  ok "server binary: $MCP_BIN"
+elif [ "$PRINT_ONLY" -eq 1 ] && [ "$SKIP_INSTALL" -eq 1 ]; then
+  warn "console script is not installed at $MCP_BIN — showing the path for a future install"
+else
+  die "expected the console script at $MCP_BIN but it is missing or not executable — re-run without --skip-install"
+fi
 
 # ---------------------------------------------------------------------------
 # 3. Claude Code — two routes, belt and braces. They are INDEPENDENT: each
@@ -242,9 +251,8 @@ cat <<EOF
 ────────────────────────────────────────────────────────────────────────
 Claude Desktop — nothing to paste. It installs an extension instead:
   Settings → Extensions → Install Extension → mcpb/maestro-career-studio.mcpb
-That runs the same server inside your backend container, so it needs neither
-this venv nor a host Python, and nothing has to be quit. Claude Code sessions
-running inside the Claude app are served by that extension too.
+That bridges to your local backend over HTTP, so it needs neither this venv
+nor a host Python or Docker on the assistant's side.
 
 ────────────────────────────────────────────────────────────────────────
 ────────────────────────────────────────────────────────────────────────
@@ -287,6 +295,6 @@ This script keeps .mcp.json to a single profile, but registrations made with
 'claude mcp add' are yours to manage — list them with 'claude mcp list' and
 drop the extras with 'claude mcp remove <name>'.
 
-Keep the transport STDIO. The HTTP option means exposing a deliberately
-unauthenticated backend that holds your full employment history.
+Never publish port 8001 or proxy /mcp beyond this computer. The local backend
+has no authentication and holds your full employment history.
 EOF

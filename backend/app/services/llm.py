@@ -1,4 +1,3 @@
-import base64
 import hashlib
 import json
 import logging
@@ -7,15 +6,24 @@ from datetime import UTC, datetime
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Literal
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 from uuid import uuid4
 
-import openai
 from openai import OpenAI
 
 from app.config import settings
 from app.services import tracing
+from app.services.llm_providers.errors import (  # noqa: F401 — re-exported; callers use llm.*
+    _KEY_REFUSED,
+    _TIMED_OUT,
+    NO_ANTHROPIC_KEY_MESSAGE,
+    NO_GEMINI_KEY_MESSAGE,
+    NO_KEY_MESSAGE,
+    LLMProviderError,
+    _gemini_reason,
+    _no_answer,
+    _openai_reason,
+    _status_reason,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,112 +31,19 @@ logger = logging.getLogger(__name__)
 ResponseFormat = Literal["json", "text"]
 
 
-class LLMProviderError(RuntimeError):
-    """The upstream model provider failed us — outage, quota, auth, missing key.
-
-    Subclasses RuntimeError so the routers that already map RuntimeError → 502
-    by hand (career_kb) keep their behavior, while `app.main` can map THIS type
-    globally without also swallowing the render/compile RuntimeErrors raised by
-    pdf_render and typst_compiler, which are not gateway failures.
-
-    `str()` is a sentence for the user (the 502 detail, the Assistant's error
-    event); `provider_detail` keeps what the provider actually said, for the
-    log and for `llm_capabilities`' reachability check, which reads it.
-    """
-
-    def __init__(self, message: str, provider_detail: str | None = None) -> None:
-        super().__init__(message)
-        self.provider_detail = provider_detail or message
-
-
-NO_KEY_MESSAGE = (
-    "No API key is set. Add one in Settings › AI & models › API keys. To use a model "
-    "on your computer instead, add its address in Settings › AI & models › Custom AI server."
-)
-NO_GEMINI_KEY_MESSAGE = "No Gemini API key is set. Add one in Settings › AI & models."
-
-
-_KEY_REFUSED = "your key was refused"
-# One wording for a request that ran out of time, whichever provider it was.
-_TIMED_OUT = "it timed out"
-
-
-def _no_answer(reason: str, provider_detail: str, provider: str = "OpenAI") -> LLMProviderError:
-    """The one sentence for a provider that failed a request. A refused key is not
-    worth retrying, so its sentence names who refused it and the fix, nothing else."""
-    logger.warning("model provider failed: %s", provider_detail)
-    if reason == _KEY_REFUSED:
-        return LLMProviderError(
-            f"{provider} refused your API key. Check it in Settings › AI & models.",
-            provider_detail=provider_detail,
-        )
-    return LLMProviderError(
-        f"The AI model didn't answer ({reason}). Try again, or check your key in "
-        "Settings › AI & models.",
-        provider_detail=provider_detail,
-    )
-
-
 def _openai_provider() -> str:
     """Who the OpenAI SDK is talking to, as the refused-key sentence names it."""
     return "Your AI server" if get_base_url() else "OpenAI"
-
-
-def _gemini_reason(status: int, body: str) -> str:
-    """Gemini refuses a bad key with a 400 whose body says API_KEY_INVALID."""
-    if "API_KEY_INVALID" in body:
-        return _KEY_REFUSED
-    return _status_reason(status)
-
-
-# A provider's error code or HTTP status in words, for the sentence a user
-# reads. The raw code stays in `provider_detail` (the log and the capability
-# probe read it); a code in the sentence ("insufficient_quota") is developer text
-# and the web app hides the whole message for it (`isPlainSentence`).
-_CODE_WORDS = {
-    "invalid_api_key": _KEY_REFUSED,
-    "insufficient_quota": "your account is out of credit",
-    "model_not_found": "that model wasn't found",
-    "rate_limit_exceeded": "too many requests",
-}
-_STATUS_WORDS = {
-    401: _KEY_REFUSED,
-    404: "that model wasn't found",
-    429: "too many requests",
-}
-
-
-def _status_reason(status: int, code: object = None) -> str:
-    """The code's words, else the status's, else "error {status}"."""
-    if isinstance(code, str) and code in _CODE_WORDS:
-        return _CODE_WORDS[code]
-    return _STATUS_WORDS.get(status, f"error {status}")
-
-
-def _openai_reason(exc: Exception) -> str:
-    """A few words for what went wrong, never the provider's body or code."""
-    status = getattr(exc, "status_code", None)
-    if isinstance(status, int):
-        return _status_reason(status, getattr(exc, "code", None))
-    if isinstance(exc, openai.APITimeoutError):
-        return _TIMED_OUT
-    if isinstance(exc, openai.APIConnectionError):
-        return "no connection"
-    return "unknown error"
 
 
 # Langfuse usage_details shape: {"input": prompt tokens, "output": completion
 # tokens}. None when the provider response has no usable counts (e.g. mocks).
 Usage = dict[str, int] | None
 
-# Google's OpenAI-compatible chat completions URL. Code-owned constant — never
-# a user-set base_url (that value decides where the OpenAI key is sent).
-GEMINI_OPENAI_COMPAT_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-
 _client: OpenAI | None = None
 _client_key: tuple[str | None, str | None] | None = None
-# Chat-scoped clients keyed by (provider, key). Separate from `_client` so a
-# Gemini chat turn cannot repoint the JSON-services client.
+# OpenRouter clients keyed by (provider, key). Separate from `_client` so an
+# OpenRouter call cannot repoint the JSON-services client.
 _chat_clients: dict[tuple[str, str], OpenAI] = {}
 
 
@@ -148,21 +63,61 @@ def get_gemini_key() -> str | None:
     return model_settings.get_gemini_api_key() or settings.gemini_api_key or None
 
 
-def completion_extras(model: str) -> dict[str, Any]:
-    """Per-model kwargs for chat.completions.create, for every caller of it.
+def get_anthropic_key() -> str | None:
+    from app.services import model_settings
+    return model_settings.get_api_key("anthropic") or settings.anthropic_api_key or None
 
-    The GPT-5.6 family rejects function tools on /v1/chat/completions unless
-    reasoning_effort is "none" (400 otherwise); older models like gpt-4o reject
-    the reasoning_effort parameter entirely, so it must stay conditional.
 
-    This lives here, next to the client, because the chat agent is not the only
-    caller that passes tools: the capability probe does too, and when it carried
-    its own copy of the rule (it carried none) it measured a call the app never
-    makes and reported a working chat model as tool-incapable.
-    """
-    if model.startswith("gpt-5.6"):
-        return {"reasoning_effort": "none"}
-    return {}
+def get_openrouter_key() -> str | None:
+    from app.services import model_settings
+    return model_settings.get_api_key("openrouter") or settings.openrouter_api_key or None
+
+
+def any_model_key_configured() -> bool:
+    """Some provider can be called: any of the four keys, or a custom server (which needs none,
+    see `_get_client`). The ONE definition for setup status, KB seeding and the startup log."""
+    return bool(get_base_url() or get_openai_key() or get_gemini_key()
+                or get_anthropic_key() or get_openrouter_key())
+
+
+ANTHROPIC_BASE_URL = "https://api.anthropic.com"  # explicit: never ANTHROPIC_BASE_URL from a shell
+
+_anthropic_clients: dict[str, Any] = {}
+
+
+def _get_anthropic_client():
+    """Built with an explicit key AND base URL. A zero-argument client would pick up a user's
+    ANTHROPIC_AUTH_TOKEN, `ant auth` profile or ANTHROPIC_BASE_URL from their shell (native
+    installs inherit it) and bill or route somewhere the user never chose."""
+    import anthropic  # lazy: keeps the SDK out of app startup
+
+    key = get_anthropic_key()
+    if not key:
+        raise LLMProviderError(NO_ANTHROPIC_KEY_MESSAGE)
+    client = _anthropic_clients.get(key)
+    if client is None:
+        client = anthropic.Anthropic(api_key=key, base_url=ANTHROPIC_BASE_URL)
+        _anthropic_clients.clear()
+        _anthropic_clients[key] = client
+    return client
+
+
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"  # code-owned; the key goes nowhere else
+# Forced on every OpenRouter request; not a setting (design §2, PRIVACY.md).
+OPENROUTER_PRIVACY = {"provider": {"data_collection": "deny", "zdr": True}}
+NO_OPENROUTER_KEY_MESSAGE = "No OpenRouter API key is set. Add one in Settings › AI & models."
+
+
+def _get_openrouter_client() -> OpenAI:
+    """No attribution headers (HTTP-Referer, X-Title): the request names nobody."""
+    key = get_openrouter_key()
+    if not key:
+        raise LLMProviderError(NO_OPENROUTER_KEY_MESSAGE)
+    cached = _chat_clients.get(("openrouter", key))
+    if cached is None:
+        cached = OpenAI(api_key=key, base_url=OPENROUTER_BASE_URL)
+        _chat_clients[("openrouter", key)] = cached
+    return cached
 
 
 def _get_client() -> OpenAI:
@@ -188,144 +143,10 @@ def _get_client() -> OpenAI:
     return _client
 
 
-def get_chat_client(model: str) -> OpenAI:
-    """OpenAI-SDK client for the chat/tools surface.
-
-    Custom endpoints win first so a locally served `gemini-*` id is not
-    hijacked to Google. Hosted Gemini ids go to Google's OpenAI-compat URL
-    with the Gemini key. Everything else shares `_get_client()`. Never
-    mutates the global `_client` — that client is shared by every JSON service.
-    """
-    from app.services import model_settings
-
-    if model_settings.using_custom_endpoint():
-        return _get_client()
-    if _is_gemini_model(model):
-        gemini_key = get_gemini_key()
-        if not gemini_key:
-            raise LLMProviderError(NO_GEMINI_KEY_MESSAGE)
-        cache_key = ("gemini", gemini_key)
-        cached = _chat_clients.get(cache_key)
-        if cached is None:
-            cached = OpenAI(api_key=gemini_key, base_url=GEMINI_OPENAI_COMPAT_URL)
-            _chat_clients[cache_key] = cached
-        return cached
-    return _get_client()
-
-
-def _message_content(response: Any) -> str:
-    return response.choices[0].message.content or ""
-
-
 def _usage_details(input_tokens: Any, output_tokens: Any) -> Usage:
     if isinstance(input_tokens, int) and isinstance(output_tokens, int):
         return {"input": input_tokens, "output": output_tokens}
     return None
-
-
-def _openai_usage(response: Any) -> Usage:
-    usage = getattr(response, "usage", None)
-    return _usage_details(
-        getattr(usage, "prompt_tokens", None),
-        getattr(usage, "completion_tokens", None),
-    )
-
-
-def _gemini_usage(response: dict[str, Any]) -> Usage:
-    meta = response.get("usageMetadata") or {}
-    return _usage_details(meta.get("promptTokenCount"), meta.get("candidatesTokenCount"))
-
-
-def _gemini_text(response: dict[str, Any]) -> str:
-    candidates = response.get("candidates") or []
-    if not candidates:
-        return ""
-    parts = candidates[0].get("content", {}).get("parts") or []
-    return "".join(part.get("text", "") for part in parts)
-
-
-def _gemini_model_name(model: str) -> str:
-    return model.removeprefix("models/")
-
-
-def _is_gemini_model(model: str) -> bool:
-    return _gemini_model_name(model).startswith("gemini-")
-
-
-def _gemini_thinking_level(model: str) -> str | None:
-    normalized = _gemini_model_name(model)
-    if not normalized.startswith("gemini-3"):
-        return None
-    if "pro" in normalized:
-        return "high"
-    return "low"
-
-
-def _gemini_generation_config(model: str, response_format: ResponseFormat) -> dict[str, Any]:
-    config: dict[str, Any] = {}
-    if response_format == "json":
-        config["responseMimeType"] = "application/json"
-
-    thinking_level = _gemini_thinking_level(model)
-    if thinking_level:
-        config["thinkingConfig"] = {"thinkingLevel": thinking_level}
-
-    return config
-
-
-def _call_gemini(
-    prompt: str,
-    model: str,
-    response_format: ResponseFormat,
-    images: list[bytes] | None = None,
-    timeout: float = 120,
-) -> tuple[str, Usage]:
-    gemini_key = get_gemini_key()
-    if not gemini_key:
-        raise LLMProviderError(NO_GEMINI_KEY_MESSAGE)
-
-    parts: list[dict[str, Any]] = [{"text": prompt}]
-    for image in images or []:
-        parts.append(
-            {
-                "inlineData": {
-                    "mimeType": "image/png",
-                    "data": base64.b64encode(image).decode("ascii"),
-                }
-            }
-        )
-    payload: dict[str, Any] = {
-        "contents": [{"parts": parts}],
-    }
-    generation_config = _gemini_generation_config(model, response_format)
-    if generation_config:
-        payload["generationConfig"] = generation_config
-
-    request = Request(
-        "https://generativelanguage.googleapis.com/v1beta/"
-        f"models/{_gemini_model_name(model)}:generateContent",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "x-goog-api-key": gemini_key,
-        },
-        method="POST",
-    )
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise _no_answer(_gemini_reason(exc.code, body),
-                         f"Gemini API request failed: {exc.code} {body}", provider="Gemini") from exc
-    except (TimeoutError, URLError) as exc:
-        # A caller's short timeout running out is the provider not answering
-        # in time, not a local crash (URLError wraps a connect timeout).
-        if isinstance(exc, URLError) and not isinstance(exc.reason, TimeoutError):
-            raise
-        raise _no_answer(_TIMED_OUT, f"Gemini API request timed out: {exc}", provider="Gemini") from exc
-
-    return _gemini_text(data), _gemini_usage(data)
 
 
 def _json_mode_supported() -> bool:
@@ -373,39 +194,16 @@ def _call_model(
     """`timeout`: seconds for this one request, with no SDK retries behind it
     (a caller on a budget, such as the fill's optional passes); None keeps the
     client's own timeout and retries."""
-    if _is_gemini_model(model):
-        return _call_gemini(prompt, model, response_format, images,
-                            **({"timeout": timeout} if timeout is not None else {}))
+    from app.services.llm_providers import registry
+    from app.services.llm_providers.types import ImagePart, Message, TextPart
+    from app.services.llm_providers.types import Request as ProviderRequest
 
-    content: Any = prompt
-    if images:
-        content = [{"type": "text", "text": prompt}]
-        for image in images:
-            b64 = base64.b64encode(image).decode("ascii")
-            content.append(
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
-            )
-    kwargs: dict[str, Any] = {
-        "model": model,
-        "messages": [{"role": "user", "content": content}],
-    }
-    if response_format == "json" and _json_mode_supported():
-        kwargs["response_format"] = {"type": "json_object"}
-
-    client = _get_client()
-    if timeout is not None:
-        client = client.with_options(timeout=timeout, max_retries=0)
-    try:
-        response = client.chat.completions.create(**kwargs)
-    except openai.OpenAIError as exc:
-        # Normalize to LLMProviderError so provider outages mean ONE exception
-        # type for every caller (app.main maps it to 502). The Gemini path raises
-        # the same type; without this, OpenAI SDK errors escaped as unhandled
-        # 500s — an exhausted credit balance reached the UI as the detail-free
-        # "Request failed: 500", with the real 429 visible only in a traceback.
-        raise _no_answer(_openai_reason(exc), f"OpenAI API request failed: {exc}",
-                         provider=_openai_provider()) from exc
-    return _message_content(response), _openai_usage(response)
+    ref = registry.resolve(model)
+    parts = [TextPart(prompt), *(ImagePart(img) for img in images or [])]
+    response = registry.get(ref.provider).generate(ProviderRequest(
+        model=ref, messages=[Message("user", parts)], output=response_format, timeout=timeout,
+    ))
+    return response.text, response.usage.as_langfuse() if response.usage else None
 
 
 def _log_call(prompt: str, model: str, response_text: str, attempt: int) -> None:
@@ -505,83 +303,3 @@ def call_openai(
     if last_error is not None:
         raise ValueError("OpenAI response was not valid JSON after retries") from last_error
     raise RuntimeError("OpenAI call failed without a captured response")
-
-
-# Non-chat OpenAI model id fragments — keep discovery focused on generation.
-_OPENAI_SKIP_FRAGMENTS = (
-    "embedding",
-    "whisper",
-    "tts",
-    "dall-e",
-    "davinci",
-    "babbage",
-    "moderation",
-    "transcribe",
-    "realtime",
-    "audio",
-    "image",
-    "search",
-)
-
-
-def _openai_model_is_chatlike(model_id: str) -> bool:
-    lowered = model_id.lower()
-    return not any(fragment in lowered for fragment in _OPENAI_SKIP_FRAGMENTS)
-
-
-def list_openai_models() -> list[dict[str, str]]:
-    """Models visible to the configured OpenAI-compatible client.
-
-    Uses the same key + base_url as inference. Filtered to chat-like ids; the
-    UI still requires an explicit + before anything enters the usable catalog.
-    """
-    try:
-        page = _get_client().models.list()
-    except openai.OpenAIError as exc:
-        raise LLMProviderError(f"OpenAI models.list failed: {exc}") from exc
-
-    seen: set[str] = set()
-    out: list[dict[str, str]] = []
-    for item in page.data:
-        model_id = getattr(item, "id", None)
-        if not isinstance(model_id, str) or not model_id or model_id in seen:
-            continue
-        if not _openai_model_is_chatlike(model_id):
-            continue
-        seen.add(model_id)
-        out.append({"id": model_id, "label": model_id, "provider": "openai"})
-    out.sort(key=lambda row: row["id"])
-    return out
-
-
-def list_gemini_models() -> list[dict[str, str]]:
-    """Gemini models that support generateContent for the configured Gemini key."""
-    gemini_key = get_gemini_key()
-    if not gemini_key:
-        raise LLMProviderError(NO_GEMINI_KEY_MESSAGE)
-
-    request = Request(
-        "https://generativelanguage.googleapis.com/v1beta/models",
-        headers={"x-goog-api-key": gemini_key},
-        method="GET",
-    )
-    try:
-        with urlopen(request, timeout=60) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise LLMProviderError(f"Gemini models.list failed: {exc.code} {body}") from exc
-
-    out: list[dict[str, str]] = []
-    for item in data.get("models") or []:
-        name = item.get("name") or ""
-        methods = item.get("supportedGenerationMethods") or []
-        if "generateContent" not in methods:
-            continue
-        model_id = _gemini_model_name(name)
-        if not model_id.startswith("gemini-"):
-            continue
-        display = item.get("displayName") or model_id
-        out.append({"id": model_id, "label": display, "provider": "gemini"})
-    out.sort(key=lambda row: row["id"])
-    return out

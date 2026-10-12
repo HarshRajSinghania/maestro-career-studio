@@ -142,18 +142,26 @@ def set_default_formatting(
     # Compile before commit so a successful preview can stamp validated_at in
     # the SAME transaction as the formatting write. A second commit would bump
     # updated_at again (Column.onupdate) and re-trigger the gallery stale chip.
+    # compile_against_sample RETURNS its error (None = preview written).
     try:
-        tv.compile_against_sample(
+        error = tv.compile_against_sample(
             row.source,
             keep_pdf_at=tv._preview_path(row.id),
             default_formatting=row.default_formatting,
             engine=row.engine,
         )
-    except Exception:  # noqa: BLE001 — preview refresh is best-effort
-        pass
-    else:
+    except Exception as exc:  # noqa: BLE001 — never a 500 for a knob change
+        error = str(exc)[-2000:]
+    if error is None:
         # Preview on disk matches source + knobs — clear the false stale chip.
         row.validated_at = datetime.now(UTC)
+    elif row.status == "ready" and error != tv.REQUIRES_TEX:
+        # The knobs break a template documents render with (a compile error,
+        # or text that overprints): keep the old state and say why. A draft
+        # was not usable anyway, and without TeX there is nothing to check —
+        # both keep the knobs, with no validated stamp.
+        db.rollback()
+        raise HTTPException(status_code=400, detail=error)
     db.commit()
     db.refresh(row)
     return _with_fmt_keys(row)

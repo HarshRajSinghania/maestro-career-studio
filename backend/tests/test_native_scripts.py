@@ -48,7 +48,8 @@ def record(kind):
              "APPLICATIONS_DIR", "SETTINGS_DIR", "BASE_RESUMES_DIR",
              "KB_DOCUMENTS_DIR", "LOGS_DIR", "EXPORTS_DIR", "MALLOC_ARENA_MAX",
              "EMBEDDINGS_OUT_OF_PROCESS", "FASTEMBED_CACHE_PATH", "ALLOWED_HOSTS",
-             "TEST_DATABASE_URL", "OPENAI_API_KEY")
+             "TEST_DATABASE_URL", "OPENAI_API_KEY", "BACKEND_URL", "MAESTRO_PORT",
+             "MAESTRO_CS_PUBLIC_BACKEND_URL", "MCPB_BUNDLE_PATH")
     path.write_text(json.dumps({"calls": previous["calls"] + 1, "args": sys.argv[1:],
         "cwd": os.getcwd(), "pid": os.getpid(), "umask": os.umask(0o077),
         "env": {key: os.environ.get(key) for key in names}}))
@@ -391,7 +392,7 @@ def test_native_scripts_never_enable_xtrace():
 
 def test_env_example_comments_keys_and_names_the_local_secret_store():
     text = (NATIVE / "maestro.env.example").read_text()
-    for key in ("OPENAI_API_KEY", "GEMINI_API_KEY"):
+    for key in ("OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"):
         assert re.search(rf"^#\s*{key}=", text, re.MULTILINE)
         assert not re.search(rf"^\s*{key}=", text, re.MULTILINE)
     assert "secret store" in text and "never" in text and "chat" in text
@@ -410,6 +411,68 @@ def test_setup_is_private_idempotent_and_installs_editable_mcp(native_home):
     assert_private_layout(ctx)
     assert_editable_install(ctx)
     assert_migration(ctx)
+
+
+@pytest.mark.parametrize("port,expected_port", [(None, "8001"), ("8741", "8741"), ("08741", "8741")])
+def test_common_exports_backend_url_at_the_native_port(native_home, port, expected_port):
+    ctx = native_home
+    setup_home(ctx)
+    if port is None:
+        (ctx.home / "maestro.env").write_text("")
+    else:
+        ctx.env["BACKEND_URL"] = "http://inherited-backend:8000"
+        (ctx.home / "maestro.env").write_text(f"BACKEND_URL=http://backend:8000\nMAESTRO_PORT={port}\n")
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; native_load_env; "$2" -c '
+            "'from native_test_support import record; record(\"load_env\")'",
+            "probe",
+            str(NATIVE / "common.sh"),
+            sys.executable,
+        ],
+        cwd="/",
+        env=ctx.env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+    assert result.returncode == 0, result.stderr
+    assert read_record(ctx, "load_env")["env"]["BACKEND_URL"] == f"http://127.0.0.1:{expected_port}"
+    assert_safe(result, ctx)
+
+
+@pytest.mark.parametrize("port,expected_port", [(None, "8001"), ("8741", "8741"), ("08741", "8741")])
+@pytest.mark.parametrize("setting", ["MAESTRO_CS_PUBLIC_BACKEND_URL", "MCPB_BUNDLE_PATH"])
+def test_common_exports_native_connect_settings(native_home, port, expected_port, setting):
+    ctx = native_home
+    setup_home(ctx)
+    ctx.env["MAESTRO_CS_PUBLIC_BACKEND_URL"] = "http://inherited-backend:8000"
+    ctx.env["MCPB_BUNDLE_PATH"] = "/app/mcpb/inherited.mcpb"
+    assignments = (
+        "MAESTRO_CS_PUBLIC_BACKEND_URL=http://backend:8000\n"
+        "MCPB_BUNDLE_PATH=/app/mcpb/from-env.mcpb\n"
+    )
+    if port is not None:
+        assignments += f"MAESTRO_PORT={port}\n"
+    (ctx.home / "maestro.env").write_text(assignments)
+    result = subprocess.run(
+        [
+            "bash", "-c",
+            'source "$1"; native_load_env; "$2" -c '
+            "'from native_test_support import record; record(\"load_env\")'",
+            "probe", str(NATIVE / "common.sh"), sys.executable,
+        ],
+        cwd="/", env=ctx.env, capture_output=True, text=True, timeout=45,
+    )
+    assert result.returncode == 0, result.stderr
+    expected = {
+        "MAESTRO_CS_PUBLIC_BACKEND_URL": f"http://127.0.0.1:{expected_port}",
+        "MCPB_BUNDLE_PATH": str(BACKEND.parent / "mcpb/maestro-career-studio.mcpb"),
+    }
+    assert read_record(ctx, "load_env")["env"][setting] == expected[setting]
+    assert_safe(result, ctx)
 
 
 @pytest.mark.parametrize("dependency", ["pip", "alembic"])
@@ -1519,6 +1582,8 @@ def test_full_setup_start_health_stop_with_real_venv(tmp_path):
         PYTHON=sys.executable,
         OPENAI_API_KEY="",
         GEMINI_API_KEY="",
+        ANTHROPIC_API_KEY="",
+        OPENROUTER_API_KEY="",
     )
     try:
         setup = run_script("setup.sh", env, timeout=600)
@@ -1527,3 +1592,20 @@ def test_full_setup_start_health_stop_with_real_venv(tmp_path):
     finally:
         assert run_script("stop.sh", env).returncode == 0
     assert run_script("health.sh", env).returncode == 1
+
+
+def test_setup_removes_the_old_distribution_before_installing(native_home):
+    # `maestro-career-studio-backend` was renamed `maestro-career-studio`; both would own
+    # bin/maestro-career-studio-mcp in a reused venv, and uninstalling the old one deletes it.
+    ctx = native_home
+    log = ctx.records / "pip-calls.log"
+    (ctx.records.parent / "modules" / "pip.py").write_text(
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "with (Path(os.environ['NATIVE_TEST_RECORDS']) / 'pip-calls.log').open('a') as out:\n"
+        "    out.write(' '.join(sys.argv[1:]) + '\\n')\n"
+    )
+    setup_home(ctx)
+    calls = log.read_text().splitlines()
+    assert calls[0] == "uninstall -y maestro-career-studio-backend"
+    assert calls[1].startswith("install -e ")

@@ -532,3 +532,106 @@ def test_admitting_the_configured_id_does_not_admit_arbitrary_ones(db_session, c
     )
 
     assert response.status_code == 400
+
+
+def test_get_reports_all_four_keys_and_their_sources(db_session, monkeypatch, client):
+    for name in ("openai_api_key", "gemini_api_key", "anthropic_api_key", "openrouter_api_key"):
+        monkeypatch.setattr(settings.app_settings, name, "")
+    monkeypatch.setattr(settings.app_settings, "anthropic_api_key", "sk-ant-env")
+    db_session.add(Setting(key="llm.openrouter_api_key", value="sk-or-stored"))
+    db_session.commit()
+
+    body = client.get("/api/settings/openai").json()
+
+    assert body["anthropic_api_key_configured"] is True
+    assert body["anthropic_key_source"] == "env"
+    assert body["openrouter_api_key_configured"] is True
+    assert body["openrouter_key_source"] == "settings"
+    assert body["api_key_configured"] is False and body["openai_key_source"] == "none"
+    assert "sk-ant-env" not in json.dumps(body) and "sk-or-stored" not in json.dumps(body)
+
+
+def test_anthropic_only_put_stores_it_and_leaves_the_other_keys(db_session, client):
+    db_session.add(Setting(key="llm.openai_api_key", value="sk-keep"))
+    db_session.add(Setting(key="llm.gemini_api_key", value="gem-keep"))
+    db_session.add(Setting(key="llm.openrouter_api_key", value="or-keep"))
+    db_session.commit()
+
+    response = client.put("/api/settings/openai", json={"anthropic_api_key": "sk-ant-new"})
+
+    assert response.status_code == 200
+    assert db_session.get(Setting, "llm.anthropic_api_key").value == "sk-ant-new"
+    assert db_session.get(Setting, "llm.openai_api_key").value == "sk-keep"
+    assert db_session.get(Setting, "llm.gemini_api_key").value == "gem-keep"
+    assert db_session.get(Setting, "llm.openrouter_api_key").value == "or-keep"
+    assert "sk-ant-new" not in json.dumps(response.json())
+
+
+def test_a_key_and_a_model_in_one_put_both_land(db_session, client):
+    response = client.put(
+        "/api/settings/openai",
+        json={"openrouter_api_key": "sk-or-1", "fast_model": "claude-haiku-5-5"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["fast_model"] == "claude-haiku-5-5"
+    assert db_session.get(Setting, "llm.openrouter_api_key").value == "sk-or-1"
+
+
+def test_a_rejected_put_saves_no_key(db_session, client):
+    """A PUT that answers 400 saves no key (models are validated before keys)."""
+    response = client.put(
+        "/api/settings/openai",
+        json={"anthropic_api_key": "sk-ant-lost", "openai_api_key": "sk-lost",
+              "fast_model": "bogus"},
+    )
+
+    assert response.status_code == 400
+    assert db_session.get(Setting, "llm.anthropic_api_key") is None
+    assert db_session.get(Setting, "llm.openai_api_key") is None
+
+
+def test_a_rejected_chat_model_saves_no_key(db_session, client):
+    response = client.put(
+        "/api/settings/openai",
+        json={"anthropic_api_key": "sk-ant-lost", "chat_model": "bogus"},
+    )
+
+    assert response.status_code == 400
+    assert db_session.get(Setting, "llm.anthropic_api_key") is None
+
+
+def test_sync_for_claude_and_openrouter_without_a_key_is_a_502_sentence(client, monkeypatch):
+    from app.services import llm
+
+    monkeypatch.setattr(llm, "get_anthropic_key", lambda: None)
+    monkeypatch.setattr(llm, "get_openrouter_key", lambda: None)
+    for provider, sentence in (("anthropic", "No Claude API key"), ("openrouter", "No OpenRouter API key")):
+        response = client.post("/api/settings/openai/sync", json={"provider": provider})
+        assert response.status_code == 502
+        assert sentence in response.json()["detail"]
+
+
+def test_extra_model_accepts_the_new_providers(client):
+    response = client.post(
+        "/api/settings/openai/models", json={"id": "anthropic/claude-x", "provider": "openrouter"}
+    )
+    assert response.status_code == 200
+
+
+def test_key_only_put_does_not_auto_pick_fast_smart_or_chat(db_session, client):
+    """Goal Card "No auto-pick": saving a key never changes any role's model."""
+    for key, value in (("fast", "gemini-3.5-flash-lite"), ("smart", "gemini-3.7-flash"),
+                       ("chat", "gpt-5.6-luna")):
+        db_session.add(Setting(key=f"llm.{key}_model", value=value))
+    db_session.commit()
+
+    response = client.put("/api/settings/openai", json={"gemini_api_key": "g-new"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["fast_model"], body["smart_model"], body["chat_model"]) == (
+        "gemini-3.5-flash-lite", "gemini-3.7-flash", "gpt-5.6-luna")
+    for key, value in (("fast", "gemini-3.5-flash-lite"), ("smart", "gemini-3.7-flash"),
+                       ("chat", "gpt-5.6-luna")):
+        assert db_session.get(Setting, f"llm.{key}_model").value == value

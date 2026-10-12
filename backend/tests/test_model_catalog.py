@@ -104,10 +104,20 @@ def test_remove_seed_rejected(db_session):
         model_settings.remove_extra_model(db_session, "gpt-5.6-luna")
 
 
-def test_seed_catalog_is_exactly_the_three_in_use():
+def test_seed_catalog_is_exactly_the_six_listed():
     assert model_settings.VALID_MODEL_IDS == {
         "gemini-3.5-flash-lite",
         "gemini-3.7-flash",
         "gpt-5.6-luna",
+        "claude-haiku-5-5",
+        "claude-sonnet-5-5",
+        "claude-opus-5-5",
     }
     assert not hasattr(model_settings, "OPENAI_MODEL_IDS")
+
+
+def test_add_extra_model_rejects_an_unknown_provider(db_session):
+    with pytest.raises(
+        ValueError, match="provider must be one of openai, gemini, anthropic, openrouter"
+    ):
+        model_settings.add_extra_model(db_session, "x-model", "mistral")

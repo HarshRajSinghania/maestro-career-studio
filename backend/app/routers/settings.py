@@ -41,7 +41,6 @@ from app.services import (
     jev,
     job_preferences,
     job_site_login,
-    llm,
     llm_capabilities,
     market_settings,
     markets,
@@ -52,6 +51,7 @@ from app.services import (
     quick_tailor,
 )
 from app.services.llm import LLMProviderError
+from app.services.llm_providers import registry
 from app.services.sync import offers as sync_offers
 from app.services.sync import pairing as sync_pairing
 
@@ -101,12 +101,16 @@ class OpenAIInfo(BaseModel):
     chat_model: str
     api_key_configured: bool
     gemini_api_key_configured: bool
+    anthropic_api_key_configured: bool
+    openrouter_api_key_configured: bool
     # Where the effective key comes from: a key saved in the app ("settings")
     # BEATS one from .env ("env"). Surfaced because a stale settings-stored
     # key over a blank .env reads as "configured" while every call 401s —
     # the source is the fact that explains it.
     openai_key_source: Literal["settings", "env", "none"]
     gemini_key_source: Literal["settings", "env", "none"]
+    anthropic_key_source: Literal["settings", "env", "none"]
+    openrouter_key_source: Literal["settings", "env", "none"]
     model_options: list[dict[str, str]]
     # Usable catalog (seeds ∪ llm.extra_models), each with source=seed|extra.
     # base_url is a location (not a secret), so it is echoed. When set,
@@ -141,6 +145,8 @@ class ModelSettingsPayload(BaseModel):
     # this payload on every model-dropdown change.
     openai_api_key: str | None = None
     gemini_api_key: str | None = None
+    anthropic_api_key: str | None = None
+    openrouter_api_key: str | None = None
 
 
 class PersonaDraft(BaseModel):
@@ -450,22 +456,29 @@ def reset_prompt(key: str, db: Annotated[Session, Depends(get_db)]):
     return SettingValue(key=key, value=value)
 
 
+def _key_state(db: Session, provider: str, env_value: str) -> tuple[bool, str]:
+    stored = model_settings.get_api_key(provider, db)
+    return bool(stored or env_value), ("settings" if stored else "env" if env_value else "none")
+
+
 @router.get("/openai", response_model=OpenAIInfo)
 def get_openai_info(db: Annotated[Session, Depends(get_db)]):
-    db_openai = model_settings.get_openai_api_key(db)
-    db_gemini = model_settings.get_gemini_api_key(db)
+    openai_ok, openai_src = _key_state(db, "openai", app_settings.openai_api_key)
+    gemini_ok, gemini_src = _key_state(db, "gemini", app_settings.gemini_api_key)
+    anthropic_ok, anthropic_src = _key_state(db, "anthropic", app_settings.anthropic_api_key)
+    openrouter_ok, openrouter_src = _key_state(db, "openrouter", app_settings.openrouter_api_key)
     return OpenAIInfo(
         fast_model=model_settings.get_fast_model(db),
         smart_model=model_settings.get_smart_model(db),
         chat_model=model_settings.get_chat_model(db),
-        api_key_configured=bool(db_openai or app_settings.openai_api_key),
-        gemini_api_key_configured=bool(db_gemini or app_settings.gemini_api_key),
-        openai_key_source=(
-            "settings" if db_openai else "env" if app_settings.openai_api_key else "none"
-        ),
-        gemini_key_source=(
-            "settings" if db_gemini else "env" if app_settings.gemini_api_key else "none"
-        ),
+        api_key_configured=openai_ok,
+        gemini_api_key_configured=gemini_ok,
+        anthropic_api_key_configured=anthropic_ok,
+        openrouter_api_key_configured=openrouter_ok,
+        openai_key_source=openai_src,
+        gemini_key_source=gemini_src,
+        anthropic_key_source=anthropic_src,
+        openrouter_key_source=openrouter_src,
         model_options=model_settings.usable_option_dicts(db),
         base_url=model_settings.get_base_url(db) or app_settings.openai_base_url or None,
         custom_endpoint=model_settings.using_custom_endpoint(db),
@@ -490,22 +503,11 @@ def _capability_map(db: Session) -> dict[str, dict]:
 
 @router.put("/openai", response_model=OpenAIInfo)
 def put_openai_info(payload: ModelSettingsPayload, db: Annotated[Session, Depends(get_db)]):
-    # A field the client did not send must survive this write. `set_models`
-    # passes its key args to `_set_raw_value`, which DELETES the row on
-    # None/"" — so we re-supply the stored value for any omitted field rather
-    # than letting a partial update wipe it. The role fields resolve the same
-    # way, which is what makes a key-only or one-dropdown PUT legal.
+    # A field the client did not send must survive this write: keys are patched
+    # only for the providers named in `model_fields_set` (`set_api_keys`), and the
+    # role fields resolve the same way, which is what makes a key-only or
+    # one-dropdown PUT legal.
     sent = payload.model_fields_set
-    openai_key = (
-        payload.openai_api_key
-        if "openai_api_key" in sent
-        else model_settings.get_openai_api_key(db)
-    )
-    gemini_key = (
-        payload.gemini_api_key
-        if "gemini_api_key" in sent
-        else model_settings.get_gemini_api_key(db)
-    )
     fast_model = payload.fast_model or model_settings.get_fast_model(db)
     smart_model = payload.smart_model or model_settings.get_smart_model(db)
     # chat_model keeps its own tri-state: `set_models` treats None as "not
@@ -525,15 +527,21 @@ def put_openai_info(payload: ModelSettingsPayload, db: Annotated[Session, Depend
             model_settings.set_json_mode(db, payload.json_mode)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # Validate the roles BEFORE saving keys: a PUT that answers 400 saves no key.
+    # Keys land before `set_models`; a model change and a key in one PUT both land.
     try:
-        model_settings.set_models(
-            fast_model,
-            smart_model,
-            db,
-            chat_model=chat_model,
-            openai_api_key=openai_key,
-            gemini_api_key=gemini_key,
-        )
+        model_settings.validate_models(fast_model, smart_model, db, chat_model=chat_model)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    sent_keys = {
+        provider: getattr(payload, f"{provider}_api_key")
+        for provider in model_settings.API_KEY_SETTINGS
+        if f"{provider}_api_key" in sent
+    }
+    if sent_keys:
+        model_settings.set_api_keys(db, sent_keys)
+    try:
+        model_settings.set_models(fast_model, smart_model, db, chat_model=chat_model)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return get_openai_info(db)
@@ -544,12 +552,12 @@ class ProbePayload(BaseModel):
 
 
 class SyncPayload(BaseModel):
-    provider: Literal["openai", "gemini"]
+    provider: Literal["openai", "gemini", "anthropic", "openrouter"]
 
 
 class ExtraModelPayload(BaseModel):
     id: str
-    provider: Literal["openai", "gemini"]
+    provider: Literal["openai", "gemini", "anthropic", "openrouter"]
     label: str | None = None
 
 
@@ -565,12 +573,10 @@ def probe_model(payload: ProbePayload, db: Annotated[Session, Depends(get_db)]):
 
 @router.post("/openai/sync")
 def sync_provider_models(payload: SyncPayload, db: Annotated[Session, Depends(get_db)]):
-    """List chat-like models from OpenAI or Gemini for discovery (+ adds to catalog)."""
+    """List chat-like models from the chosen provider (OpenAI, Gemini, Claude or OpenRouter)
+    for discovery; nothing is added to the catalog until the user clicks +."""
     try:
-        if payload.provider == "openai":
-            discovered = llm.list_openai_models()
-        else:
-            discovered = llm.list_gemini_models()
+        discovered = registry.get(payload.provider).list_models()
     except LLMProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 

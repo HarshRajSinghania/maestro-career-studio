@@ -2,6 +2,32 @@
 
 > Reference tier, extracted from [SYSTEM.md](../../SYSTEM.md) (§4 Core entities). The header contract there governs this file too: integrate don't append, present tense, no dates outside the ledgers, update in the same change that alters the behaviour described.
 
+- **MCP tool coverage:** jobs (ingest/list/get/export;
+  `get_job_search_brief` with verbatim work-auth, typed `job_preferences` and the `auto_apply` guardrail block;
+  `find_job_by_url` posting-equality lookup; `store_extracted_jd` takes `source="agent"`; playbook in
+  docs/agentic-job-search.md, capture-and-score only), the proposal-ledger family (consent-gated
+  propose/decide/triage/resume/final-review/evidence/mark_submitted/report_failure; `record_filled_answers` records
+  each form page's answers and `get_final_review` names their `flags` (inv-filled-answers-local); `record_consent` stores the user's
+  yes/no, or the agent's automatic yes with channel `auto` while full automation is On; `mark_submitted(auto)` records the agent's confirmation note;
+  `get_job_site_login` hands the login to a Queued/approved job's agent (§6); filer and create-lock rules: "MCP proposal filer" below), base resumes
+  (`list_resume_versions`/`get_resume_version`/`restore_resume_version` — kind is REST `base`|`application`, details carry the parent diff, a restore
+  is a new version; `archive_base_resume`/`unarchive_base_resume` hide from `list_base_resumes` without deleting; those
+  five and `set_base_resume_identity` (a base's only anchor writer, `""`/`[]` clear) are **full-profile only**), health
+  (run/get + waivers; a finding carries its bullet's own `question`, `ask_kind`, `measure_target`/`alt_question`, `evidence` and `gain`, a report `next_grade`; disputes and the word bank
+  are web-only; the bank uses GET/PUT), the full tailoring workflow (session tools take **`tailoring_session_id`** — breaking rename, no
+  legacy alias — and carry `base_anchors`; `resolve_gaps`' evidence-carrying actions are gated server-side — §4;
+  `quick_tailor` is the profile-driven fast path; `score_ats(include_other_countries)` returns a `countries` block
+  naming bases skipped for the job's country), render + PDF inspection/upload ("PDF tools" below), application
+  tracking, `record_run` (finished automation reports; `docs/entities/agent-runs.md`), the apply package,
+  templates (draft/validate only; Typst constraints in `create_template_draft`'s
+  docstring, `fmt.*` knobs on `get_template`), explore analytics, `get_autofill_profile` (`profile.eeo` consent-gated),
+  and `get_career_context` (read-only; anti-fabrication framing in the docstring). The Career KB is writable via MCP:
+  reads carry IDs the context prose does not; entity/profile writes land directly, but POINTS go through the user's
+  gate — ingest lands drafts, `kb_sync_base` drafts new/drifted base-resume items (no LLM, no auto-approve), and
+  `kb_approve_points` is the ONE approval path (`approved|retired`), its gate a convention the docstring states (the
+  value is the user's decision), not server enforcement (`record_consent` precedent). `kb_edit_point` has no `state`
+  param; a text change forces `state="draft"`. No delete tool; document upload stays web-only.
+
 - **BaseResume**: DB row + `base_resumes/<slug>.json` on disk; soft-deleted
   rows still serve on GET-by-slug but are excluded from lists. Renders like
   applications do. **Archive** (`archived_at`) is a SEPARATE axis from
@@ -165,10 +191,13 @@
   (400, the same as any invalid override) so a typo cannot be saved. Extras keep
   their documented anchor as a *default* position; `section_order` moves the
   whole extras run, `move_extra_section` orders them among themselves.
-  The four live user templates are bundled at
-  `app/templates/user/`; `scripts/apply_template_sources` is their update
-  path, and seed-time `SUPERSEDED_SEED_DIGESTS` is what reaches installed
-  rows.
+  Fresh installs seed Classic, Typst Classic, and all four designs bundled at
+  `app/templates/user/` (including Harshibar). `THIRD_PARTY_NOTICES.md` inventories
+  their provenance and licenses; derived sources carry attribution headers.
+  `scripts/apply_template_sources` is the maintainer update path; seed-time
+  `SUPERSEDED_SEED_DIGESTS` reaches untouched installed rows for either engine,
+  including Classic whether selected as default or not; only seed-origin rows
+  matching a known shipped source digest change. User edits and formatting stay.
   **Pre-change template sources are frozen per migration** at
   `tests/fixtures/templates_pre_section_order/`: reconstructing old bytes from
   the LIVE templates (what the date-resync test did) breaks on the next template
@@ -178,7 +207,11 @@
 - **Model settings** (`services/model_settings.py`, `services/llm_capabilities.py`; on screen Settings ›
   AI & models, roles Fast, Smart and Assistant): the catalog is seeds ∪ extras (`MODEL_OPTIONS` ∪
   `llm.extra_models`); `GET /api/settings/openai` returns the merge, and deleting an id a role still uses is
-  400. Capabilities are probed on Test and stored per model; `require()` blocks only on a stored No, so an
+  400. Four provider keys (`API_KEY_SETTINGS`: openai, gemini, anthropic, openrouter) are patched per provider
+  by PUT (`set_api_keys`, only the ones sent; role ids are validated first, so a 400 saves no key); an env
+  key stays a fallback for each, shown as source "env". `registry.resolve` routes a model id: catalog tag,
+  then `claude-`/`gemini-` prefix when that provider has a key, else the OpenAI-compatible client.
+  Capabilities are probed on Test and stored per model; `require()` blocks only on a stored No, so an
   unprobed model passes (the Assistant is gated on tools this way). JSON mode is capability-gated:
   `response_format=json_object` goes out only when `llm._json_mode_supported()` (other servers may hard-400
   on the field), and `llm._extract_json_object` salvages fenced JSON.
@@ -202,6 +235,16 @@
   compose/context + typed job preferences. Returns `{draft}` and persists **nothing** — Profile puts it into the
   persona editor as a dirty edit; only `PUT /api/settings/persona` saves; an empty Career KB 422s with an
   import-first message.
+- **In-app chat: interaction model** (SYSTEM.md §7; "chips in, cards out"): assistant prose renders Markdown (content passed to
+  tools stays plain); `propose_edits` stages ANY typed-op set as an approval card (`proposal_ops`, validated and scope-checked at
+  propose time, applied via the standard `/edits` PATCH); proposal cards persist their resolution via `PATCH
+  /api/chat/messages/{id}/card-state` (`meta_json.card_state`, 409 on conflicting re-stamp) and card SSE events carry
+  `message_id` (the tool row persists before the card event); `ChatSelection` is kind-tagged (`resume` | `kb_entity`,
+  missing=resume), and KB chips pin context without constraining the resume scope guard; three read-only analytics tools
+  (`analytics_activity`, `analytics_gap_frequency` incl. build-areas, `analytics_base_summaries`) answer job-search questions.
+- **Chat transcript parts**: `chat_messages.parts` holds versioned neutral parts (+ `provider`, `model`); `ProviderMeta` is
+  provider-tagged and opaque, and `llm_providers/replay.py` `for_provider` hands it only to its own provider, normalizes tool-call
+  ids and repairs orphan calls/results. A NULL `parts` row is legacy: `transcript.from_legacy` reads `tool_calls`/`tool_call_id`.
 - **In-app chat: pinned-resume resolution** (SYSTEM.md §7): the pin is a HINT, not a guard — it reaches the model as one line of the
   ephemeral context block; the enforced guard is `check_ops_in_scope` over selection PATHS (which needs a
   pin only because the scope picker is fed the pinned resume). The composer resolves it once per session —
@@ -220,8 +263,8 @@
   tabs, `template` → `/templates` (the template step's detail names the default
   as `default_template_name`); a link into Settings or Profile goes through
   `lib/settings-tabs.ts` `anchorHref`, which picks the tab that holds the anchor;
-  readiness is app-wide, not Profile-scoped. `model_key` is `bool(stored key or
-  env key)` for either provider: whether a key WORKS is what the capability
+  readiness is app-wide, not Profile-scoped. `model_key` is `llm.any_model_key_configured()` (a stored
+  or env key for any of the four providers, or a custom server): whether a key WORKS is what the capability
   probe answers, and storing that verdict would break the derived-only rule. Autofill readiness spans the
   required personal, work-auth, EEO, and preferences groups and means
   **answerable**, not merely filled: `decline` is an answer, optional fields
@@ -255,7 +298,14 @@
   one (new entities default status `completed`), stores the document via the
   shared `kb_ingest.store_document` helper, and mints draft points in the same
   call. 422 when no text extracts (no orphan rows), 400 bad LLM output, 502
-  provider outage. UI: the Quick capture card is dual-intake. **Vision fallback
+  provider outage. Document imports read PDF, DOCX, PPTX, Markdown, text and images. PPTX uses stdlib ZIP/XML:
+  presentation order (numeric fallback), slide text/tables and linked speaker notes, with a 50 MiB XML cap,
+  at most 1,000 unique slides and 200,000 collected characters. Slide and notes parts are read once;
+  only the first alternate choice is read, slide numbers and note furniture are skipped, and empty slides
+  are skipped. Images get no OCR; binary PPT requires saving as PPTX or PDF. Unreadable DOCX/PPTX files
+  return a plain file-type sentence (chat 400, document import 422). Decks belong in the documents lane;
+  `kb_import.require_resume_file` refuses them in both base-resume import paths before parsing.
+  UI: the Quick capture card is dual-intake. **Vision fallback
   for image-based documents**: certificate PDFs are often one full-page raster
   whose only text layer is the recipient's name (which once minted an
   `experience` entity titled with the user's name).
@@ -767,3 +817,62 @@
   show **Last ran** or **Not run yet** after data arrives; a read that never produced data
   shows no line, while a failed background refetch keeps the cached line ([agent-runs.md](agent-runs.md)). A
   ran card also wears its newest run's outcome chip; until a card has run, the connect-your-agent note is a callout.
+
+- **The uv install** (`backend/maestro_cs/`, command `maestro`; route summary in SYSTEM.md §9, folder in §6 inv-one-home).
+  - **The wheel** is `backend/` renamed `maestro-career-studio` (version = `backend/pyproject.toml`), `py3-none-any`: `scripts/build_wheel.py`
+    stages `git ls-files` (no tests, no host scripts), adds `maestro_cs/web/` (Next standalone + `.next/static` + `public`, with every
+    frontend `.env*` dropped) and `maestro_cs/data/example.json`; `scripts/check_wheel.py` refuses a wheel missing a required file or
+    carrying a forbidden one. Staging also copies root `LICENSE`, `NOTICE` when present, and `THIRD_PARTY_NOTICES.md`, and
+    replaces the staged project's empty `license-files` list with these names. Setuptools >=77 uses the `Apache-2.0` SPDX
+    expression and places the files in `*.dist-info/licenses/`; the checker requires all three plus the bundled template
+    MIT license. The checkout keeps `license-files = []` because its legal files are outside `backend/` and Docker installs
+    before copying sources; editable/Docker installs need no missing-file patterns or tracked copies inside `backend/`.
+    Node comes from `nodejs-wheel-binaries` (a core dependency, left out of `requirements.lock`).
+  - **The folder** (`home.default_home`; `MAESTRO_HOME` wins) holds `data/`, `applications/`, `settings/`, `base_resumes/`,
+    `kb_documents/`, `logs/`, `exports/`, `fastembed_cache/`, `uploads/`, `backups/`, `run/` (process records, `stop.request`), `sync-key`
+    when sync is on, and `maestro.env`. A symlinked folder or `maestro.env` is refused. Ports: process environment, then `maestro.env`,
+    then 8001/3000 (`MAESTRO_PORT`, `MAESTRO_WEB_PORT`; for side-by-side copies only).
+  - **Environment** (`home.backend_env`, `web_env`): the backend gets the shell, then `maestro.env` (a name set there wins in any
+    capitalisation), then the enforced paths and `ALLOWED_HOSTS=localhost,127.0.0.1`; `DATABASE_URL` and other foreign data pointers are
+    stripped. The web process gets the shell minus `_WEB_STRIPPED`, `HOSTNAME=127.0.0.1`, `NEXT_TELEMETRY_DISABLED=1`, and
+    `FRONTEND_ALLOWED_HOSTS` from the file. Every Windows child environment keeps `SYSTEMROOT`, `WINDIR`, `COMSPEC`
+    and `PATHEXT` when present; `home.child_env` recovers missing names from the process environment without copying secrets.
+  - **Run and stop**: `maestro start` preflights both ports, seeds the demo resume, downloads the scoring model into an empty
+    `fastembed_cache/` (skip: `--skip-model`), detaches `maestro run` (on Windows with `CREATE_BREAKAWAY_FROM_JOB` first, without it when the job forbids that: `detach.popen_windows`) and waits for both health URLs. `maestro stop` writes
+    `run/stop.request`; the supervisor stops each child (SIGTERM to its session on POSIX, `CTRL_BREAK_EVENT` on Windows), then a tree kill after 10 s.
+    Backend startup validates seed templates before rendering bases, so a first start without TeX uses ready Typst;
+    seed-render failures persist `render_error`. The smoke checks the demo's committed timestamp and PDF download after health,
+    without a second render poll: startup rendering is synchronous.
+  - **Update**: `maestro update` checks PyPI, prints the changelog's `### Breaking changes`, asks, writes a verified snapshot
+    (`backups/db-*.sqlite3.gz`, newest five kept), stops, runs `uv tool install --force --python 3.12 maestro-career-studio==NEW` (or the WHEEL for
+    `--source`; `--force` clears a rollback pin), starts, and compares versions. On Windows the running executables are locked: `update` first refuses (nothing changed) while any other
+    process runs from the venv (Claude Desktop's `maestro mcp`, `maestro logs -f`; `update.find_venv_processes`), then a detached `cmd` script
+    (`logs/update.cmd`, log `logs/update.log`) waits for this process to exit and does the upgrade.
+  - **Connect and bridge**: `maestro connect` reuses `app.services.connect.build`, the connect card's own strings. Claude Desktop's
+    config gets `{"command": <absolute shim>, "args": ["mcp"]}` (plus `"env": {"MAESTRO_HOME": …}` for a non-default folder); when Desktop
+    runs, a detached waiter writes after it quits. The `claude`/`codex` runners and the browser opener get the parent environment, never
+    maestro.env's keys. `maestro mcp` is a stdio-to-HTTP bridge (dials `127.0.0.1`, one total deadline per request, session replay) that
+    imports no `app` module.
+  - **Import from Docker** (`maestro_cs/importer.py`, `maestro import-docker CHECKOUT [--replace] [--dry-run]`): refuses (one sentence,
+    nothing changed) when the checkout lacks `data/maestro_cs.sqlite3` or `docker-compose.yml`, any uv process runs, a port answers
+    (the uv ports and the checkout `.env`'s `BACKEND_HOST_PORT`/`FRONTEND_HOST_PORT`), its alembic revision is not this code's head, or the
+    uv home holds a job/application/base resume other than `example` (without `--replace`). The checkout is never opened: its database
+    (+ `-wal`/`-shm`) is byte-copied to a temp folder, because even a `mode=ro` connection creates `-wal`/`-shm` beside a WAL file; a file that
+    changes mid-copy aborts. Then: snapshot of the uv DB (`Maintenance.snapshot`, the undo point); `app.tools.backup_db.snapshot` of the copy
+    into `data/.importing/`; rewrite of every TEXT column value that STARTS with `/app/<dir>/` (dir in applications, base_resumes,
+    kb_documents, exports, settings, data; native separators on Windows) in one transaction, any other `/app/` start aborts; row counts
+    compared; journal mode set to DELETE (the backend sets WAL at first start). Files of the five folders merge in (Docker wins,
+    symlinks never followed, owner-only modes; `settings/secrets/sync-key` goes to `<home>/sync-key` only). The staged DB replaces the
+    old one last (old `db`, `-wal`, `-shm` move aside first and come back on ANY later failure). `.env` keys that are `app.config.Settings`
+    fields (plus proxy names) and not path/host/port/journal entries are appended to `maestro.env`; keys already set there are kept;
+    values are never printed (a carried value naming `host.docker.internal` gets a note). Verification: revision == head, equal row counts,
+    sample of rewritten paths exist. JSON columns and longer text are only COUNTED and reported when they mention `/app/`. Undo: `_Undo` copies every
+    uv file about to be replaced (sync-key, the five folders, `maestro.env`) to `data/.before-import/` and remembers files/dirs it adds; a failure
+    restores all of it plus the DB; success moves the copies to `backups/import-replaced-files-<time>/`. Leftover `data/*.before-import`,
+    `.importing/` or `.before-import/` make the next import refuse; `control.stale_database_problem` makes `start`/`run` refuse when the DB
+    file is missing but `.before-import` or `-wal` exists.
+  - **Autostart**: launchd agent (macOS), systemd user unit (Linux), Task Scheduler logon task from XML for the current user (Windows).
+  - **CI**: `maestro-cli` (`tests/maestro_cs` on the three OSes, plus `systemd-analyze --user verify` of the rendered unit on Linux and a
+    schtasks create/query/delete of the rendered XML on Windows, admin runner), `uv-wheel`, `uv-smoke` (`scripts/smoke_uv_install.py`: install, start, score over
+    `/mcp`, backup, loopback and Host/Origin checks, stop), `uv-upgrade` (`scripts/upgrade_check.py`: old wheel to new via `update --source`);
+    `pypi.yml` repeats build and smoke on a tag, then publishes through PyPI trusted publishing.

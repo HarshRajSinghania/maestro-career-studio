@@ -195,7 +195,7 @@ def tailor_session(
         # A sentence for the toast it lands in (never an API path); the cause
         # stays in the log line above. An agent relaying it reads the same step.
         compare_error = (
-            "Your resume is tailored, but the before and after ATS scores couldn't be "
+            "Your resume is tailored, but the before and after match scores couldn't be "
             "compared. Score both again from the job page."
         )
 

@@ -47,9 +47,12 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""
     gemini_api_key: str = ""
+    anthropic_api_key: str = ""
+    openrouter_api_key: str = ""
     # Point the OpenAI-compatible client at something other than api.openai.com:
-    # Ollama (http://host.docker.internal:11434/v1), LM Studio, vLLM, LiteLLM,
-    # OpenRouter. Setting this is what makes the local-first claim literally
+    # Ollama (http://host.docker.internal:11434/v1), LM Studio, vLLM, LiteLLM.
+    # For OpenRouter use its own key/preset instead: on this path the forced
+    # zdr/data_collection body is never sent. Setting this is what makes the local-first claim literally
     # true — with a local endpoint no resume text leaves the machine. A DB
     # setting (llm.base_url) overrides this env default.
     openai_base_url: str = ""
@@ -67,6 +70,11 @@ class Settings(BaseSettings):
     embeddings_out_of_process: bool = False
     sync_key_file: Path | None = None
     sync_remote_url: str = ""
+    maestro_cs_public_backend_url: str = "http://localhost:8000"
+    mcpb_bundle_path: Path = Path("/app/mcpb/maestro-career-studio.mcpb")
+    # "uv" under the `maestro` command (maestro_cs/home.py sets it); empty elsewhere. The connect
+    # card swaps the Claude Desktop bundle download for `maestro connect claude-desktop`.
+    maestro_install: str = ""
     # Hostname a published sync listener may send (SYNC_PUBLIC_HOST), for example
     # <mac>.<tailnet>.ts.net. Empty leaves the host allowlist unchanged. The host
     # middleware reads this on each request; it is never added to allowed_hosts.

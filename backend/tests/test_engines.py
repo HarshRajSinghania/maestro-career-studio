@@ -202,3 +202,51 @@ def test_probe_bundles_both_engines():
     assert both.pdflatex.name == "pdflatex"
     assert both.pdflatex == engines.probe_pdflatex()
     assert both.typst == engines.probe_typst()
+
+
+def test_pdftex_1_40_27_is_available_but_warned(monkeypatch, tmp_path):
+    """pdfTeX 1.40.27 (TeX Live 2025 as released, e.g. an un-updated MacTeX
+    2025) mispositions the interword space it emits under
+    \\pdfinterwordspaceon for fonts whose encoding has a real /space at slot 32
+    (many Type 1 fonts: Helvetica, Charter, Garamond, Fira...): every word after the first is drawn
+    ~2 em to the LEFT, on top of its neighbour. Fixed in 1.40.28 ("fix
+    overlapping text in ptmr8r and other fonts"). Most templates are
+    unaffected, so the engine stays available; the probe names the bug and
+    the remedy."""
+    _stub_pdflatex(tmp_path, "echo 'pdfTeX 3.141592653-2.6-1.40.27 (TeX Live 2025)'")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    status = engines.probe_pdflatex()
+    assert status.available is True
+    assert status.warning is not None
+    assert "1.40.27" in status.warning
+    assert "1.40.28" in status.warning
+
+
+@pytest.mark.parametrize(
+    "banner",
+    [
+        "pdfTeX 3.141592653-2.6-1.40.26 (TeX Live 2024)",
+        "pdfTeX 3.141592653-2.6-1.40.28 (TeX Live 2025)",
+        "pdfTeX 3.141592653-2.6-1.40.29 (TeX Live 2026)",
+        "pdfTeX 3.141592653-2.6-1.40.270 (made up)",
+        "MiKTeX-pdfTeX 4.19 (MiKTeX 24.1)",
+    ],
+)
+def test_other_pdftex_builds_carry_no_warning(monkeypatch, tmp_path, banner):
+    _stub_pdflatex(tmp_path, f"echo '{banner}'")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    status = engines.probe_pdflatex()
+    assert status.available is True
+    assert status.warning is None
+
+
+def test_pdftex_warning_names_the_reach_and_the_real_remedy():
+    """Not just three fonts: the reviewer reproduced it with Charter, Crimson,
+    EB Garamond, Merriweather, Fira Sans, Source Sans Pro, BaskervilleF and
+    Helvetica. And a frozen TL 2025 cannot `tlmgr update` from the default
+    (2026) repository, so the remedy names MacTeX 2026 or 2025's final updates."""
+    warning = engines.PDFTEX_1_40_27_WARNING
+    assert "many Type 1 fonts" in warning
+    assert "1.40.28+" in warning
+    assert "MacTeX 2026" in warning
+    assert "TeX Live 2025's final updates" in warning

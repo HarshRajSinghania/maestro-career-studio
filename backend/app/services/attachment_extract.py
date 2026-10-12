@@ -1,4 +1,4 @@
-"""Extract plain text from uploaded documents (PDF / DOCX / Markdown / text / images).
+"""Extract text from uploaded documents (PDF / DOCX / PPTX / Markdown / text / images).
 
 Extraction is text-only and lossy by design: the output feeds an LLM that
 drafts structured entries, staged for user review before any merge.
@@ -18,6 +18,7 @@ NOT used anywhere: it is AGPL-3.0 and would relicense the whole project.
 
 import io
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 
 from app.services.pdfium_lock import PDFIUM_LOCK
@@ -34,6 +35,8 @@ _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 _IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp"}
 
 MAX_CHARS = 200_000
+_OFFICE_XML_MAX_BYTES = 50 * 1024 * 1024
+_PPTX_MAX_SLIDES = 1_000
 
 # A PDF whose text layer is this sparse AND that embeds images is treated as
 # image-based (scanned page, generated certificate) and sent to vision.
@@ -152,6 +155,20 @@ def _grid_value(node, default: str) -> int:
 
 
 def _docx_text(data: bytes) -> str:
+    import zipfile
+    import zlib
+    from xml.etree import ElementTree
+
+    try:
+        return _docx_document_text(data)
+    except (zipfile.BadZipFile, ElementTree.ParseError, KeyError, RecursionError,
+            zlib.error, EOFError, NotImplementedError, RuntimeError) as exc:
+        # A damaged or hand-made archive: corrupt deflate data, an encryption flag,
+        # an unknown compression method. All are a file we can't read, never a 500.
+        raise UnreadableFile("This file isn't a readable Word document.") from exc
+
+
+def _docx_document_text(data: bytes) -> str:
     import posixpath
     import zipfile
     from xml.etree import ElementTree
@@ -169,7 +186,7 @@ def _docx_text(data: bytes) -> str:
                         posixpath.join("/", relationship.get("Target", part))
                     ).lstrip("/")
                     break
-        if archive.getinfo(part).file_size > 50 * 1024 * 1024:
+        if archive.getinfo(part).file_size > _OFFICE_XML_MAX_BYTES:
             raise UnreadableFile("This Word file is too large to read.")
         root = ElementTree.fromstring(archive.read(part))
     body = root.find(f"{_W}body")
@@ -202,12 +219,185 @@ def _docx_text(data: bytes) -> str:
     return "\n".join(parts)
 
 
+_A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+_P = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
+_R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_MC = "{http://schemas.openxmlformats.org/markup-compatibility/2006}"
+
+
+def _pptx_nodes(node):
+    """Walk one representation of alternate content, including inside runs and cells."""
+    if node is None:
+        return
+    yield node
+    children = node.findall(f"{_MC}Choice")[:1] if node.tag == f"{_MC}AlternateContent" else node
+    for child in children:
+        yield from _pptx_nodes(child)
+
+
+def _a_text(paragraph) -> str:
+    return "".join(
+        "\n" if node.tag == f"{_A}br" else (node.text or "")
+        for node in _pptx_nodes(paragraph) if node.tag in (f"{_A}t", f"{_A}br")
+    )
+
+
+def _pptx_table(node) -> Iterator[str]:
+    for row in node.findall(f"{_A}tr"):
+        cells = [
+            "\n".join(_a_text(p) for p in _pptx_nodes(cell) if p.tag == f"{_A}p")
+            for cell in row.findall(f"{_A}tc")
+        ]
+        if any(cell.strip() for cell in cells):
+            yield " | ".join(cells)
+
+
+def _pptx_skip_placeholder(node, notes: bool) -> bool:
+    placeholder = node.find(f"{_P}nvSpPr/{_P}nvPr/{_P}ph")
+    skipped = {"sldNum", "hdr", "ftr", "dt"} if notes else {"sldNum"}
+    return placeholder is not None and placeholder.get("type") in skipped
+
+
+def _pptx_content(node, *, notes: bool = False) -> Iterator[str]:
+    """Yield shape/group text in order, keeping table rows and the first alternate choice."""
+    if node is None or _pptx_skip_placeholder(node, notes):
+        return
+    if node.tag == f"{_MC}AlternateContent":
+        yield from _pptx_content(node.find(f"{_MC}Choice"), notes=notes)
+    elif node.tag == f"{_A}p":
+        text = _a_text(node)
+        if text.strip():
+            yield text
+    elif node.tag == f"{_A}tbl":
+        yield from _pptx_table(node)
+    else:
+        for child in node:
+            yield from _pptx_content(child, notes=notes)
+
+
+def _pptx_targets(archive, part: str, kind: str) -> dict[str, str]:
+    import posixpath
+    from xml.etree import ElementTree
+
+    folder, name = posixpath.split(part)
+    rels_part = posixpath.join(folder, "_rels", f"{name}.rels")
+    try:
+        rels_data = archive.read(rels_part)
+    except KeyError:
+        return {}
+    rels = ElementTree.fromstring(rels_data)
+    return {
+        rel.get("Id"): _pptx_target(folder, rel.get("Target"))
+        for rel in rels
+        if rel.get("Type", "").endswith(f"/{kind}")
+        and rel.get("TargetMode") != "External" and rel.get("Target") and rel.get("Id")
+    }
+
+
+def _pptx_target(folder: str, target: str) -> str:
+    import posixpath
+
+    part = posixpath.normpath(posixpath.join(folder, target)).lstrip("/")
+    if not part.startswith("ppt/") or not part.endswith(".xml"):
+        raise UnreadableFile("This file isn't a readable PowerPoint deck.")
+    return part
+
+
+def _pptx_slide_order(archive) -> list[str]:
+    import re
+    from xml.etree import ElementTree
+
+    slides = sorted(
+        (name for name in archive.namelist() if re.fullmatch(r"ppt/slides/slide\d+\.xml", name)),
+        key=lambda name: int(re.search(r"slide(\d+)\.xml$", name).group(1)),
+    )
+    try:
+        presentation_data = archive.read("ppt/presentation.xml")
+    except KeyError:
+        return _pptx_unique_slides(slides)
+    presentation = ElementTree.fromstring(presentation_data)
+    ids = presentation.findall(f"{_P}sldIdLst/{_P}sldId")
+    targets = _pptx_targets(archive, "ppt/presentation.xml", "slide")
+    if not ids or any(slide.get(f"{_R}id") not in targets for slide in ids):
+        return _pptx_unique_slides(slides)
+    return _pptx_unique_slides(targets[slide.get(f"{_R}id")] for slide in ids)
+
+
+def _pptx_unique_slides(parts) -> list[str]:
+    slides = list(dict.fromkeys(parts))
+    if len(slides) > _PPTX_MAX_SLIDES:
+        raise UnreadableFile("This PowerPoint file is too large to read.")
+    return slides
+
+
+def _pptx_part_content(archive, part: str, *, notes: bool = False) -> Iterator[str]:
+    from xml.etree import ElementTree
+
+    root = ElementTree.fromstring(archive.read(part))
+    yield from _pptx_content(root.find(f"{_P}cSld/{_P}spTree"), notes=notes)
+
+
+def _pptx_slide_content(archive, part: str, seen_notes: set[str]) -> Iterator[str]:
+    yield from _pptx_part_content(archive, part)
+    note_label = False
+    for target in _pptx_targets(archive, part, "notesSlide").values():
+        if target in seen_notes:
+            continue
+        seen_notes.add(target)
+        for text in _pptx_part_content(archive, target, notes=True):
+            if not note_label:
+                yield "Notes:"
+                note_label = True
+            yield text
+
+
+def _pptx_collect(archive) -> str:
+    parts: list[str] = []
+    total = 0
+    seen_notes: set[str] = set()
+    for number, part in enumerate(_pptx_slide_order(archive), 1):
+        first = True
+        for text in _pptx_slide_content(archive, part, seen_notes):
+            prefix = "\n"
+            if first:
+                prefix = ("\n\n" if parts else "") + f"Slide {number}\n"
+                first = False
+            chunk = prefix + text
+            parts.append(chunk[:MAX_CHARS - total])
+            total += len(chunk)
+            if total >= MAX_CHARS:
+                return "".join(parts)
+    return "".join(parts)
+
+
+def _pptx_text(data: bytes) -> str:
+    import zipfile
+    import zlib
+    from xml.etree import ElementTree
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            # Bound the whole deck's XML before decompressing any part, including notes/rels.
+            xml_size = sum(
+                part.file_size for part in archive.infolist()
+                if part.filename.startswith("ppt/") and part.filename.endswith((".xml", ".rels"))
+            )
+            if xml_size > _OFFICE_XML_MAX_BYTES:
+                raise UnreadableFile("This PowerPoint file is too large to read.")
+            return _pptx_collect(archive)
+    except (zipfile.BadZipFile, ElementTree.ParseError, KeyError, RecursionError,
+            zlib.error, EOFError, NotImplementedError, RuntimeError) as exc:
+        # A damaged or hand-made archive: corrupt deflate data, an encryption flag,
+        # an unknown compression method. All are a file we can't read, never a 500.
+        raise UnreadableFile("This file isn't a readable PowerPoint deck.") from exc
+
+
 class UnreadableFile(ValueError):
     """A file this app cannot read, and its message is a sentence for the user
     (the Assistant's attachment 400, an import report's reason)."""
 
 
-UNSUPPORTED_TYPE = "Use a PDF, Word, text or image file."
+UNSUPPORTED_TYPE = "Use a PDF, Word, PowerPoint, text or image file."
 # No file name inside a sentence: every surface that lists files already puts
 # the name beside the reason ("scan.png: This file isn't a readable image."),
 # and a name like "my_cv.pdf" is text the web app refuses to show
@@ -234,6 +424,11 @@ def extract_text(filename: str, mime: str | None, data: bytes) -> str:
     suffix = Path(filename or "").suffix.lower()
     mime = (mime or "").lower().split(";")[0].strip()
 
+    supported_suffixes = {".pdf", ".docx", ".pptx", *_TEXT_SUFFIXES, *_IMAGE_SUFFIXES}
+    if suffix == ".ppt" or (
+        mime == "application/vnd.ms-powerpoint" and suffix not in supported_suffixes
+    ):
+        raise UnreadableFile("Save it as .pptx or PDF.")
     if suffix == ".pdf" or mime == "application/pdf":
         text = _pdf_text(data)
         if len(text.strip()) < VISION_TEXT_THRESHOLD and _pdf_has_images(data):
@@ -244,6 +439,10 @@ def extract_text(filename: str, mime: str | None, data: bytes) -> str:
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     ):
         text = _docx_text(data)
+    elif suffix == ".pptx" or mime == (
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    ):
+        text = _pptx_text(data)
     elif suffix in _IMAGE_SUFFIXES or mime in _IMAGE_MIMES:
         try:
             pages = _image_png(data)

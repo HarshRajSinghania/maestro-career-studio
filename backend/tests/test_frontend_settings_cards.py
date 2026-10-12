@@ -95,7 +95,7 @@ def test_each_role_saves_its_own_field():
 def test_a_saved_key_leaves_nothing_to_guard():
     # Mutant: the typed keys kept after a save, so the leave guard asked about saved work.
     saved = _slice(_MODELS, "const saveKeys = useSaveModelSettings((_info, patch) => {", "});")
-    assert "setOpenaiKey(null);" in saved and "setGeminiKey(null);" in saved
+    assert "setKeys(NO_KEYS);" in saved
 
 
 def test_a_failed_capability_says_why_to_a_screen_reader():
@@ -111,7 +111,7 @@ def test_a_role_hint_sits_between_its_label_and_its_picker():
     for fn in ("function FreeTextModel(", "function ModelSelect("):
         body = _slice(_MODELS, fn, "\nfunction ")
         hint = body.index('<p id={hintId} className="text-muted-foreground text-body-small">')
-        assert body.index("<Label htmlFor={id}>") < hint < body.index("aria-describedby={hintId}"), fn
+        assert body.index("<Label htmlFor={id}>") < hint < body.index("aria-describedby={describedBy ?? hintId}"), fn
 
 
 def test_the_catalog_reads_words_not_keys():
@@ -128,7 +128,8 @@ def test_the_catalog_reads_words_not_keys():
 def test_the_model_words_live_in_one_import_free_helper():
     # `node --test` loads lib/model-catalog.ts, so it imports nothing (node tests are not in CI).
     assert "import " not in _MODEL_LIB
-    assert 'new Map([\n  ["openai", "OpenAI"],\n  ["gemini", "Gemini"],\n]);' in _MODEL_LIB
+    assert ('new Map([\n  ["openai", "OpenAI"],\n  ["anthropic", "Claude"],\n  ["gemini", "Gemini"],\n'
+            '  ["openrouter", "OpenRouter"],\n]);') in _MODEL_LIB
     assert 'if (source === "configured") return "In use";' in _MODEL_LIB
     assert 'return "Built-in";' in _MODEL_LIB
     # The id shows only when it says more than the name (lib/model-catalog.test.ts has the cases).
@@ -404,7 +405,7 @@ def test_explicit_save_cards_ask_before_leaving():
     keys = _read("components/settings/models-section.tsx")
     # A company typed but not yet added is typed text too (never lose typed text).
     assert 'useLeaveGuard(draft !== null || blockInput.trim() !== "");' in auto
-    assert "useLeaveGuard(openaiKey !== null || geminiKey !== null);" in keys
+    assert "useLeaveGuard(PROVIDERS.some((p) => keys[p] !== null));" in keys
     # A save clears the draft, so the guard stops asking about saved work.
     saved = _slice(auto, "onSuccess: (result) => {", "},")
     assert "setDraft(null);" in saved
@@ -429,7 +430,7 @@ def _button_at(src: str, marker: str) -> str:
 def test_a_save_that_disables_itself_keeps_focus():
     # A native `disabled` Save dropped focus to <body> the moment it was pressed.
     cases = [
-        ("models-section.tsx", "saveKeysOnce({\n"),
+        ("models-section.tsx", "onClick={() => onSave(data.custom_endpoint)}"),
         ("auto-apply-section.tsx", "onClick={() => draft && saveOnce(draft)}"),
         ("autofill-section.tsx", "saveOnce({ value: profileRef.current, revision: editRevision.current })"),
         ("prompts-section.tsx", "onClick={() => saveOnce()}"),

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/seinun-ai/maestro-career-studio/actions/workflows/ci.yml"><img src="https://github.com/seinun-ai/maestro-career-studio/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/seinun-ai/maestro-career-studio/actions/workflows/codeql.yml"><img src="https://github.com/seinun-ai/maestro-career-studio/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
-  <a href="https://github.com/seinun-ai/maestro-career-studio/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/tests-11%2C045%20passing-brightgreen" alt="Tests"></a>
+  <a href="https://github.com/seinun-ai/maestro-career-studio/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/tests-11%2C900%20passing-brightgreen" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a>
   <a href="https://maestrocareerstudio.com"><img src="https://img.shields.io/badge/site-maestrocareerstudio.com-1a3a5c" alt="Project site"></a>
   <a href="https://github.com/seinun-ai/maestro-career-studio/pkgs/container/maestro-career-studio-backend"><img src="https://img.shields.io/badge/ghcr.io-multi--arch-blue" alt="Container images"></a>
@@ -18,27 +18,15 @@
      test-count badge are refreshed from the release checklist in
      docs/RELEASING.md; edit them there, not here. -->
 
-### Tailor your resume to every job, without the AI making things up.
+# Stop rewriting your resume for every job.
 
-Maestro Career Studio is a free, open-source job application studio from
-[Seinun LLC](https://seinun.com). It runs on your computer. Every resume is built
-from things you actually did, every AI edit is a change you accept or undo, and
-the result is a real LaTeX or Typst PDF.
+Maestro tailors it from your whole career history in under a minute, and every bullet is something you actually did, so you can defend it in an interview.
 
-- **Same score, every time.** The match score uses fixed rules and runs on your
-  computer with no AI service involved, so the same resume and job always get
-  the same score.
-- **Every AI edit is a diff.** Suggested changes arrive as a before/after you
-  accept or undo, one by one.
-- **Fills job applications for you.** The browser Companion fills Workday-style
-  forms from your saved answers and attaches your resume. You review and submit.
+- **Same score, every time.** The match score runs on fixed rules and a small model on your own computer, with no AI service involved. Same resume, same job, same number.
+- **Every AI edit is a diff.** Suggested changes arrive as a before and after. You accept or undo them one by one.
+- **It fills the form and stops there.** The Companion fills job applications from your saved answers and attaches your resume. It never submits. That click is yours.
 
-Your career record and application tracker are stored on your computer. When you
-use AI features, resume and job information is sent to the AI service you choose.
-
-**Get started:** [install it](#quickstart) → add your resumes → save a job and
-get your tailored resume. New to this? The
-[Getting Started guide](docs/GETTING_STARTED.md) walks you through every step.
+**[Install in two commands](#quickstart)**, or follow the [Getting Started guide](docs/GETTING_STARTED.md) if this is all new to you.
 
 <!-- P4 hero.gif — CLEARED for publish 2026-08-20. Recorded on the mock instance:
      contact header scrubbed (ajey@seinun.com, placeholder phone), lift
@@ -51,124 +39,91 @@ get your tailored resume. New to this? The
 ![Score, tailor, see every AI edit, download the PDF — end to end](docs/assets/hero.gif)
 
 **Works with Claude, Codex or the ChatGPT desktop app** (88 tools) ·
-**bring your own AI key** — OpenAI or Gemini; scoring, PDFs and tracking work
-without one · **runs on your computer, no account** · **take everything with
-you** — your whole record exports to one `career.md` file
+**bring your own AI key**, OpenAI, Gemini or Claude (scoring, PDFs and tracking work
+without one) · **real LaTeX and Typst PDFs** · **runs on your computer, no
+account** · **take everything with you** in one `career.md` file
 
-> **Made for one person on one computer.** There is no login: anything that can
-> reach the app can read and change your whole career record and your saved API
-> keys. Out of the box it only listens on your own machine (`127.0.0.1`), so
-> that's safe. **Never expose the app to a network.** The one published path is
-> `/api/sync`, sealed, and only as [sync setup](docs/sync-setup.md) describes.
-> [`SECURITY.md`](SECURITY.md) has the details.
-
-**Contents:** [Why Maestro CS?](#why-maestro-cs) ·
-[Prerequisites](#prerequisites) · [Quickstart](#quickstart) ·
-[Updating](#updating) ·
-[Using it well](#using-it-well) ·
-[Driving it from Claude, Codex, or ChatGPT (MCP)](#driving-it-from-claude-codex-or-chatgpt-mcp) ·
-[Always-on bot (optional)](#always-on-bot-optional) ·
-[The rest of the toolkit](#the-rest-of-the-toolkit) ·
-[Where your files live](#where-your-files-live) ·
-[Community & contributing](#community-documentation--contributing) ·
-[Licensing](#licensing) ·
-[Troubleshooting](#troubleshooting--common-questions)
+> **Made for one person on one computer.** There is no login, so anything that
+> can reach the app can read and change your whole career record and your saved
+> API keys. Out of the box it only listens on your own machine (`127.0.0.1`).
+> **Never expose the app to a network.** The one published path is `/api/sync`,
+> sealed, and only as [sync setup](docs/sync-setup.md) describes.
+> [`SECURITY.md`](SECURITY.md) has the details. Your career record stays on
+> your computer. When you use AI features, resume and job information goes to
+> the AI service you choose.
 
 ---
 
-## Why Maestro CS?
+## Why it works this way
 
-**Your time belongs in your career, not in the paperwork around it.** Most of a
-job search goes into documents thrown away a week later: a resume rebuilt for
-each role, a cover letter written again from memory, the same "tell us about a
-time you…" answered for the fourth time. Here you record what you actually did
-once, and every document after that is assembled from that record.
+If your resume folder has a `v2finalcopy(3)` in it, this is for you. Maestro keeps one record of what you have actually done, and every resume is a view of that record. Approved bullets go into a resume word for word, and rewording one is a separate step that asks you first. When a job asks for something your resume does not show, Maestro asks you about it. If it is true, it is saved for every future application. If it is not, it stays a gap.
 
-**It never writes things you didn't do.** Your work goes into one **career
-history**. Resumes are built from the bullets you approved, word
-for word; rewording a bullet is a separate step that asks you first. When a job
-asks for something your resume doesn't show, Maestro asks you about it — if it's
-true, it's saved for every future application; if not, it stays a gap. Every
-change is saved as a **resume version**, so you can always compare or go back.
+The score is fixed rules, so the same resume and job always get the same number. It is not an employer's score or a prediction of an interview, so use it to compare your own drafts. Saving a job and tailoring for it took about 10 seconds on Gemini and about 40 on the OpenAI default in our tests, at about a penny (OpenAI) or under 3¢ (Gemini) per application ([the numbers](docs/USING_MAESTRO.md#5-choose-your-models-deliberately)).
 
-**Real, professional PDFs without the formatting headache.** You edit content in
-a simple editor — a bullet is a bullet — and a template handles the layout, so
-changing a word can never break the formatting. Switch templates any time
-without touching your content, or bring your own design.
+Nothing here is rented. It is free and open source (Apache 2.0), with no account, and you pay only for the AI you use. Your career has one history. Your resume should too.
 
-**Nothing here is rented.** Free and open source (Apache 2.0), no account, no
-subscription. Use the AI service you choose and pay only for what you use —
-about a penny per application.
-
-### How it works
-
-- **Your career record.** Upload every resume version you have. Maestro merges
-  them into one record of your jobs, projects and skills, removing duplicates.
-  Bullets taken unchanged from your files are approved automatically; anything
-  merged or written by AI waits for your review.
-- **The match score.** Maestro compares your resume with a saved job using
-  fixed scoring rules plus a small model that runs on your computer — no AI
-  service is involved, so the same resume and job always get the same 0–100
-  score. It is **not** an employer's score or a prediction of an interview; use
-  it to compare your own drafts and catch gaps. One thing moves over time:
-  recent experience counts more, so a score can shift slightly as months pass
-  ([`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)).
-- **Tailoring.** Suggested changes arrive as a before/after view you accept or
-  undo, one by one.
-- **PDFs.** Built on your computer with LaTeX or Typst, two professional
-  typesetting systems.
-
-### How it compares
-
-Only claims you can check yourself (as of August 2026 — tell us if a row has
-gone stale):
-
-| | Typical AI resume builders | CLI skill frameworks (e.g. career-ops) | **Maestro CS** |
-|---|---|---|---|
-| Match scoring | An AI guesses — same input, different score each run | AI judgment | **Fixed rules — same input, same score, every time** |
-| Shows whether tailoring helped | Static score only | Not measured | **Score before and after, per application** |
-| See what the AI changed | No history | No | **Every change shown, undoable** |
-| PDF output | House web templates | HTML → PDF | **LaTeX and Typst, bring your own template** |
-| Career record | None (per document) | Plain markdown/YAML files | **Organized, versioned — exports to one `career.md`** |
-| Works with AI assistants | No | Command-line skill files | **88 tools for Claude, Codex, ChatGPT desktop — on your own computer** |
-| Submits applications for you | N/A | Never (stated) | **Never without your yes, per application** |
-| Cost | $15–75/month | Free + AI usage | **Free (Apache 2.0) + your own AI usage — [≈1¢ per application](#do-you-need-an-api-key)** |
-
----
-
-## Prerequisites
-
-- **Docker Desktop** (or Docker Engine + Compose v2). Docker runs the app in a
-  self-contained box on your computer, so you don't install anything else.
-- **On Windows, WSL.** Install Docker Desktop with its WSL 2 engine, and run
-  every command below in the Ubuntu (WSL) window from your WSL home folder —
-  [step by step](docs/GETTING_STARTED.md#on-windows-use-wsl).
-- **Git** — it downloads the app and, later, its updates (macOS offers to
-  install it on first use; on Windows, install it inside WSL with
-  `sudo apt install git`).
-- **Disk space** — about a 1 GB download, roughly 3–4 GB once unpacked. Most of
-  it is the PDF tools and the small scoring model.
-- **An AI key — OpenAI or Gemini; either one is enough.** It powers tailoring,
-  cover letters and screening answers, building your career history, the
-  Companion's form filling, and the Assistant. Without a key, scoring, PDFs and tracking
-  still work — see [Do you need an API key?](#do-you-need-an-api-key)
+The long version, with the score, tailoring, templates and the rest of the toolkit, is in [Using Maestro CS](docs/USING_MAESTRO.md).
 
 ---
 
 ## Quickstart
 
-> **New here?** [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) is the
-> step-by-step version — from installing Docker to your first tailored PDF.
+Install [uv](https://docs.astral.sh/uv/) once. After that, Maestro is two commands: no Docker, no Git, no clone. uv installs Maestro as a single `maestro` command and fetches the Python it needs, and the package brings its own web app and its own Node. It runs on macOS, Linux and Windows (x64).
 
-The app is the only required piece; the rest are optional and can be added any
-time:
+```bash
+# 1. Install uv once, then open a new terminal.
+curl -LsSf https://astral.sh/uv/install.sh | sh     # macOS and Linux
+```
 
-| Piece | What it takes |
+```powershell
+# On Windows, in PowerShell instead of the line above:
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+```bash
+# 2. Install Maestro, then start it.
+uv tool install --python 3.12 maestro-career-studio
+maestro start
+```
+
+`maestro start` runs Maestro in the background and opens **http://localhost:3000**.
+Closing the terminal does not stop it. The first start downloads the small
+scoring model (about 100 MB, once) from Hugging Face, so allow a minute or two.
+If the terminal says `maestro` is not found, run `uv tool update-shell` and open a
+new terminal.
+
+Best effort, not tested: **Windows on ARM** has no PDF-engine (typst) wheel, so install an x64
+Python under emulation: `uv tool install --python cpython-3.12-windows-x86_64-none maestro-career-studio`.
+**Alpine and other musl Linux** are not supported by the PDF engine's wheels; use a glibc distro or Docker.
+
+Then:
+
+1. Add your AI key in **Settings › AI & models**. One key from OpenAI, Gemini or Claude is enough. Without a key, scoring, PDFs and tracking still work ([what a key costs and does](docs/SETUP_REFERENCE.md#do-you-need-an-api-key)).
+2. Import your resumes, save a job, and tailor ([step by step](docs/GETTING_STARTED.md#3-your-first-tailored-resume)).
+3. Optional: `maestro connect` adds Maestro to Claude Desktop, Claude Code, Codex, Cursor or VS Code, and the [Companion](docs/GETTING_STARTED.md#4-the-companion-browser-extension-optional) is a Chrome side panel for saving and filling job pages.
+
+| Command | What it does |
 |---|---|
-| **1. The app** | one `docker compose up -d` (below) — runs on your own computer only |
-| **2. An AI key** | **Settings › AI & models** in the app; OpenAI *or* Gemini, [either alone is enough](#5-choose-your-models-deliberately) |
-| **3. Your AI assistant** | **optional.** Claude: install the `.mcpb` extension from Settings → Extensions. Codex / ChatGPT desktop: add the plugin from Settings → Plugins. [Details](#driving-it-from-claude-codex-or-chatgpt-mcp) |
-| **4. The Companion (browser extension)** | **optional.** `chrome://extensions` → Developer mode → **Load unpacked** → the repo's `extension/` folder. Nothing to configure — [full steps](extension/README.md) |
+| `maestro start` | Start Maestro and open the app (`--no-browser`, `--skip-model`) |
+| `maestro stop` | Stop it |
+| `maestro status` | Whether it is running, its version and whether a newer one exists (`--offline` skips that check, `--json` for scripts; exit code 3 means stopped) |
+| `maestro update` | Save a snapshot of your data, update, restart (`-y` skips the question) |
+| `maestro connect [app]` | Add Maestro to Claude Desktop, Claude Code, Codex, Cursor or VS Code |
+| `maestro import-docker CHECKOUT` | Move your data from a Docker install into this one, once (`--dry-run` shows the plan; [steps](docs/UPDATING.md#move-from-docker-to-the-uv-install)) |
+
+[The full command table](docs/SETUP_REFERENCE.md#the-maestro-command-and-the-uv-install) also covers `logs`, `open`, `restart`, `autostart`, `backup`, uninstalling and TeX for LaTeX templates. What the command contacts, and when: [PRIVACY.md](PRIVACY.md#what-the-maestro-command-and-first-start-download).
+
+> **Young, but rehearsed.** The app runs daily on my machine. A fresh Docker
+> install (clone, start, first tailored resume) has been checked end to end on a
+> second machine, and CI installs and starts the uv package on macOS, Linux and
+> Windows for every change. It has had little testing on machines that
+> aren't mine. If it fails on yours, please
+> [open an issue](https://github.com/seinun-ai/maestro-career-studio/issues)
+> with the log. That report is one of the most valuable contributions there is.
+
+## Alternative: run with Docker (self-hosters)
+
+Docker stays the route for contributors and for servers. It needs Docker, Git and about a 1 GB download (roughly 3–4 GB unpacked); the [prerequisites](docs/SETUP_REFERENCE.md#prerequisites) have the detail, and on Windows you run it under WSL ([steps](docs/GETTING_STARTED.md#on-windows-use-wsl)).
 
 ```bash
 # 1. Download the project and create your settings file
@@ -180,492 +135,45 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Then open **http://localhost:3000** and add your AI key in **Settings ›
-AI & models**. The first start sets up your database and adds a demo resume so you
-have something to look at.
+Then open **http://localhost:3000** and add your AI key in **Settings › AI & models**. The first start sets up your database and adds a demo resume so you have something to look at. The rest of the Docker route is in the [setup reference](docs/SETUP_REFERENCE.md#the-docker-route-in-full).
 
-> **Young, but rehearsed.** The app runs daily on my machine, and a fresh
-> install — clone, start, first tailored resume — has been checked end to end on
-> a second machine. It has had little testing on machines that aren't mine. If
-> it fails on yours, please
-> [open an issue](https://github.com/seinun-ai/maestro-career-studio/issues)
-> with the log — that report is one of the most valuable contributions there is.
+**Docker and uv are separate copies.** They keep separate data, and both want ports 8001 and 3000, so run one at a time. **Moving from Docker to uv?** Stop Docker, install Maestro as above, then run `maestro import-docker CHECKOUT` once ([steps](docs/UPDATING.md#move-from-docker-to-the-uv-install)). It reads your Docker folder and changes nothing in it.
 
-### Do you need an API key?
+## Working with AI assistants
 
-**Recommended: yes.** Tailoring, the Companion's form filling, cover letters and
-screening answers, building your career history, and the Assistant all use an AI service.
+### Driving it from Claude, Codex, or ChatGPT (MCP)
 
-**It costs far less than you'd think — measured, not estimated.** We traced real
-applications end to end (Aug 2026) on the default model
-([GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna),
-$0.20 per million input tokens, $1.20 per million output tokens):
+**MCP** is the connector that lets an AI assistant use the app for you: read a posting, score it, work the gaps, make the PDF, all in conversation, on your computer against your data. All 88 tools are on by default, and smaller tool sets (`hunt`, `apply`, `explore`, `templates`, `career`) keep a chat focused. On a uv install, run `maestro connect`; otherwise open Settings › Connected agents › **Connect an agent app**. Setup, example prompts, tool sets and the ready-made skills are in [Using Maestro CS](docs/USING_MAESTRO.md#driving-it-from-claude-codex-or-chatgpt-mcp) and the [MCP guide](backend/mcp_server/README.md). An [always-on bot](docs/always-on-bot.md) can work your search while your laptop is off.
 
-| Step | Cost |
-|---|---|
-| Reading the job posting | ~¼¢ |
-| Finding gaps and questions | ~½¢ |
-| Tailoring | ~¼¢ |
-| Cover letter + screening answers | ~¼¢ |
-| **Save a job → tailored resume → full application package** | **≈1.3¢** |
-| Building your career record, per imported resume (once) | ~⅓¢ |
+### Going all the way: agent applications
 
-A busy month of applications costs about fifty cents; my whole search so far,
-using every feature daily, has cost under **$2**. (The
-[Gemini setup](#5-choose-your-models-deliberately) is faster and costs under 3¢
-per application.)
-
-**Your key stays with you.** It's stored on your computer and sent only to the
-AI service you configured. The app never shows a saved key back; its logs never
-record keys, and record your prompts only if you turn that on.
-
-**No key, but you use Claude or Codex?** Connect them over MCP and your
-assistant does the AI work itself: it reads the posting and writes the tailoring
-edits, and the app applies them with the same honesty checks — no AI key
-needed.
-
-**No key at all?** Scoring, gap diagnostics, health reports, manual editing, PDF
-creation, application tracking and analytics all work without one. Features that
-need AI ask you to add a key instead of failing.
-
-### Local model servers (untested)
-
-You can point the app at a local AI server (Ollama, LM Studio, vLLM) by setting
-`OPENAI_BASE_URL` in `.env` (`http://host.docker.internal:<port>/v1` reaches your
-computer from inside Docker). **We haven't validated any local model end to end
-yet**, and long prompts and strict JSON output are where small models struggle
-([`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) tracks this). If you try it, press **Test**
-on each model in **Settings › AI & models** and tell us what worked in an issue.
+Maestro CS can take an application right up to the submit button, and it stops there. A job your agent finds becomes a **proposal**. You review proposals in the **Agent inbox** and queue or skip them, and an apply run works only the ones you queued. It **waits for your yes before each submit**, and nothing is ever submitted from the web app itself. That yes is recorded by the agent, so it is an audit trail and a volume limit, not a lock that a manipulated agent can't pick: run it while you're watching. The risks, plainly: a job posting is untrusted text that can try to instruct the agent reading it, a posting the agent found is not a vetted employer, and we won't help you hide automation from bot detection. Read the [full section](docs/USING_MAESTRO.md#going-all-the-way-agent-applications) before you turn it on.
 
 ---
 
 ## Updating
 
-**One command, from the folder you cloned:**
+**Installed with uv?** Run `maestro update`. It checks PyPI for a newer release, prints any breaking changes from the changelog, saves a verified snapshot of your data, stops Maestro, updates it and starts it again.
 
-```bash
-./scripts/update.sh
-```
+**On Docker?** From the folder you cloned, run `./scripts/update.sh` (`--check` only tells you whether you're up to date). It needs bash, so on Windows run it under WSL.
 
-It backs up your database, moves to the newest release, downloads the matching
-app, and waits until it's healthy again. `./scripts/update.sh --check` tells you
-whether you're up to date without changing anything. (It needs bash — on
-Windows, run it under WSL.)
-
-> **On v0.3.0 or older?** Those versions kept your data in Postgres, and only
-> v0.4.0 can move it into the database file — so update to v0.4.0 first. The
-> script spots this and prints the steps;
-> [`docs/UPDATING.md`](docs/UPDATING.md#coming-from-v030-or-older) has them too.
-
-**Your data is safe during updates.** Your resumes, applications and settings are
-ordinary folders on your disk, and no update step touches them. **Deleting the
-project folder does delete them**, so keep it.
-
-**After updating,** reload the browser extension (`chrome://extensions` →
-**Reload**, then reload any open job tabs) and restart your AI assistant so it
-sees new tools.
-
-[`docs/UPDATING.md`](docs/UPDATING.md) has the rest: updating by hand, pinning a
-version, what the backup covers, and rolling back.
-
----
-
-## Using it well
-
-Maestro CS is built for **fewer, stronger applications**, not volume. Most
-openings now draw hundreds of applicants, and many employers filter out resumes
-that read as machine-written — so the leverage is in depth per application.
-
-**Words you'll see:**
-
-- **Career history** — one organized record of your work, built from your
-  resumes. Each job, project or school in it is an **item**; each line is a
-  **bullet**.
-- **Base resume** — your main resume for one kind of role, such as Data Scientist.
-- **Tailoring** — adjusting a base resume to one job, using only things you
-  actually did.
-- **Match score** — Maestro's comparison of your resume with a saved job
-  description (the app labels it **ATS score**). It is not an employer's score
-  or a prediction of an interview.
-- **AI service** — OpenAI or Gemini, whichever you choose.
-
-### 1. Build your career history first (once)
-
-![Drop in your resumes, get your career history](docs/assets/kb-onboarding.png)
-
-Upload **every** resume version you have — old ones, role-specific ones, the
-too-long one. Maestro merges duplicates across them and builds one **career
-history**: your verified record in one place.
-
-This step pays off every time. Everything later is built from approved bullets,
-so its quality is the ceiling on everything else. Add certifications,
-project write-ups and performance-review notes too — anything true about your
-work can become evidence later.
-
-> **Review your drafts before tailoring.** Bullets taken unchanged from your files
-> are approved on import; anything merged across resumes, or written by AI,
-> waits in **Drafts to review**. Only approved bullets go into a resume, and fixing a
-> duplicate once fixes every future application.
-
-### 2. Build a base resume per career track
-
-<!-- base-resume.png refreshed 2026-08-23 (post UI-clarity round). Contact
-     header is the approved public set (sanitized +1-999-999-9999,
-     ajey@seinun.com); "Liberty Hill, TX" experience location previously
-     reviewed and accepted. 1400px wide to match the asset set. -->
-
-![One base resume per track, with its health grade and live preview](docs/assets/base-resume.png)
-
-One base per kind of role you actually target (such as *Data Scientist* or *ML
-Engineer*) — not one per job. **New base resume › From career history** suggests
-which entries belong, with a reason for each one it leaves out, plus a drafted
-summary.
-
-<!-- kb-import.png captured 2026-08-23: the editor's Add from career history
-     drawer; background contact panel deliberately blurred at capture time. -->
-
-![Adding bullets from your career history is explicit and versioned](docs/assets/kb-import.png)
-
-The optional instruction box steers the *shape*, not the facts: "lead with
-pipeline and cloud work, keep it mid-level, leave off teaching." **Bullets are
-never rewritten at this step** — approved bullets go in word for word, which is
-what keeps a generated resume defensible.
-
-### 3. Save the job, then close the gaps
-
-![Every job you have saved, from saved to signed](docs/assets/applications.png)
-
-Paste the job description (**Add job**) or save it with the Companion, then score it
-against your base resumes. Scoring uses no AI service, so the same resume and
-job always get the same number.
-
-<!-- job-overview.png captured 2026-08-23: real Lightning AI posting kept on
-     the same precedent as the Visa posting (employer-published public
-     document); the "your profile states 2" line matches the years already
-     public in the shipped resume captures. -->
-
-![The job's details, and a check of its stated requirements against your profile — including mismatches](docs/assets/job-overview.png)
-
-Every saved job also gets a **requirements check**: what the posting *states*
-about work authorization, visa (OPT) policy, salary and years of experience,
-compared with your profile — so a mismatch shows up now, not at the screening
-call.
-
-Then work through the **gaps** rather than accepting a rewrite. Maestro asks
-targeted questions to find things that are true but not yet written down. Your
-answers are saved to your career history, so closing a gap once helps every
-future application.
-
-> **About the score.** It's *our* score: fixed and repeatable, but **not** a
-> prediction of what an employer's system shows — no consumer tool can offer
-> that. Independent tests make the point: the same resume scored
-> [66–99 across 100 runs](https://danunparsed.com/p/hackerrank-open-source-ats)
-> on a popular AI-judged checker, with an
-> [18-point spread](https://resumeoptimizerpro.com/blog/ats-resume-checker-tools-compared)
-> across five commercial ones. Use ours to compare your own drafts and catch
-> gaps. Chasing 100 produces keyword-stuffed resumes that modern screens flag.
->
-> **Languages.** English resumes and job postings, including accented letters
-> (*Zürich*, *José*, *São Paulo*). Non-Latin scripts (Chinese, Japanese, Korean,
-> Cyrillic, Arabic, Hebrew, Devanagari, Thai) aren't supported yet and are
-> refused on import rather than given a misleading score.
-
-### 4. Generate the package, then read it
-
-Cover letter, screening answers, and the PDF. Read everything before it goes
-anywhere — it's your name on it.
-
-### 5. Choose your models deliberately
-
-**Settings › AI & models** has three model roles: **Fast** (reading postings, bulk work),
-**Smart** (tailoring, finding gaps) and **Assistant** (the in-app Assistant). We
-tested the combinations on real job postings, and the **Fast** model turned out
-to decide almost everything — how completely a posting's requirements are read,
-how honest your score is, and most of the waiting time. So it comes down to two
-tested setups, one per AI service:
-
-| | **OpenAI** · most thorough | **Gemini** · fastest |
-|---|---|---|
-| Every role set to | `gpt-5.6-luna` | `gemini-3.7-flash` |
-| The one key you need | OpenAI | Gemini |
-| Job requirements captured | the most complete we measured | about ¾ of that, strongest on named tools |
-| Save + tailor takes | ~40 seconds | ~10 seconds |
-| Cost per application | **about a penny** | **under 3¢** *(Gemini promo pricing doubles Jan 2027)* |
-| Made-up skills | none measured | none measured |
-
-Neither is better overall, and any OpenAI-compatible model can be used instead.
-A fresh install starts with the OpenAI setup, because a model that misses
-requirements quietly *inflates* your score — by about nine points in our tests.
-With only a Gemini key, switch all three roles in **Settings › AI & models** (or set
-`FAST_MODEL`/`SMART_MODEL`/`CHAT_MODEL` in `.env`). Press **Test** next to each model
-to check it works; **Find Gemini models** (or **Find OpenAI models**) lists
-what your key can use.
-
-### Driving it from Claude, Codex, or ChatGPT (MCP)
-
-**MCP** is the connector that lets an AI assistant use the app for you. With it,
-Claude (Desktop or Code), the ChatGPT desktop app or the Codex CLI can run the
-whole process in conversation — read a posting, score it, work the gaps, make
-the PDF. It runs on **your computer** against **your** data.
-
-![Claude pulling the whole pipeline over MCP and building its own view of it](docs/assets/mcp-dashboard.png)
-
-<!-- TODO(P4) mcp-chat.png — a SECOND shot for this section is still open: a
-     Claude conversation answering a real question over the explore tools
-     ("what keeps coming up in the jobs I'm saving that I'm not showing well?"
-     -> surface vs build tiers). Two candidates exist and both need work: the
-     gap-query capture reports `kb_points: 0` / "your Career KB is nearly
-     empty", which argues against §1's own advice, and the base-resume-listing
-     capture is one tool call ending on a question with no result. Re-capture
-     against a scored instance, then save here and add below the dashboard. -->
-
-With the app running, both install from their own settings — no terminal, no
-config file:
-
-- **Claude** — Settings → **Extensions** → **Install Extension** → select
-  `maestro-career-studio/mcpb/maestro-career-studio.mcpb` inside the folder you
-  cloned. One install covers Claude Desktop *and* Claude Code sessions inside the
-  Claude app.
-- **Codex / ChatGPT desktop** — Settings → **Plugins** → **Add** → add
-  `seinun-ai/maestro-career-studio` as a marketplace (ref `main`, sparse paths
-  empty), then **Install**.
-
-Neither needs Python on your computer: both run inside the app you already
-started.
-
-**Other assistants** (Cursor, Windsurf, and others) — run the setup script; it
-prints a ready-to-paste config for each one (needs **Python 3.12+**):
-
-```bash
-./scripts/setup-mcp.sh
-```
-
-Or open Claude Code or the Codex CLI in this folder and ask it to run the
-script for you.
-
-**Things to ask once it's connected:**
-
-- "Here's a job posting: `<paste>`. Save it, score it against my base resumes,
-  and tell me what it asks for that my resume doesn't show."
-- "Tailor my Data Scientist resume to that job, show me what changed, then make
-  the PDF."
-- "Mark the Acme application as applied, and list everything still waiting on a
-  reply."
-- "Across the jobs I've saved, which skills keep showing up as gaps?"
-
-**Tool sets.** All 88 tools are on by default (`full`). Smaller sets — `hunt`,
-`apply`, `explore`, `templates`, `career` — keep a chat focused; pick one in the
-Claude extension's **Tool profile** setting or with
-`setup-mcp.sh --profile`. Use one set at a time.
-
-**Skills.** [`docs/skills/`](docs/skills/) has ready-made skills for a daily job
-hunt, an apply run that asks you only for what the app doesn't know (plus one
-yes before each submit), mail-status, referral pages and a tailor run.
-`customize-job-skills` suggests skills from what your agent knows about you,
-asks a few questions, and builds them with your assistant's own skill creator
-and scheduler. The **Automations** page in the app puts each one on the
-clipboard: copy a prompt into Claude Desktop, Codex or any MCP agent, and your
-agent asks when to run it.
-
-Keep the connection type **STDIO** (the default). The HTTP option would expose
-the app, which has no login — don't. (ChatGPT on the *web* can't reach a local
-app; use the desktop app.)
-
-Manual setup, every tool, and troubleshooting:
-[`backend/mcp_server/README.md`](backend/mcp_server/README.md).
-
-### Always-on bot (optional)
-
-An agent on a machine that stays on can work your job search while your laptop
-is off. Your laptop keeps your profile, and each job has one owner.
-[Run an always-on bot](docs/always-on-bot.md) is the setup. On your laptop, open
-Settings › Connected agents › Second copy and click **Copy setup prompt**. Paste
-that into the agent on the other machine.
-
----
-
-## The rest of the toolkit
-
-The steps above are the core. These make each application quicker than the last.
-
-### Talk to one resume — or one section, or one bullet
-
-The **Assistant** (the in-app chat) works on what you pin. Pin a base resume and it works on that
-one; pin a section, a job entry or a single bullet and it **refuses** edits
-outside it. Pin a career history item — a project, a role, a certification — to
-bring its detail into the conversation without letting the Assistant change it.
-Suggested edits arrive as a card you accept or discard; nothing changes
-silently.
-
-### No more `resume_v2_FINAL(3).docx`
-
-Every change — a manual edit, an Assistant edit, a tailoring run, even a restore —
-saves a **resume version**. Open a resume's history to compare two versions or
-restore one; nothing is ever lost. Old resumes you no longer use are archived,
-not deleted.
-
-### Tell it how you sound — once
-
-A **persona** describes you as a candidate: vision, strengths, goals, working
-style, how your writing should sound. Set it once in Profile › About you (or have it drafted
-from your career history, then review and save it), and every generated document
-uses that voice. It shapes tone and emphasis only — never facts.
-
-### Health Report — is this resume sound at all?
-
-![A grade for the resume on its own, and what each problem is costing you](docs/assets/health-report.png)
-
-A gap needs a job. A **Health Report** doesn't: it checks one resume on its own —
-can it be read by application systems, are the dates right, is the evidence
-strong, is the format sound. A serious problem **blocks** tailoring, because
-tailoring can't fix a broken resume. You can **Mark as OK** a check you disagree with, with a reason
-on record.
-
-### Templates you actually own
-
-![LaTeX and Typst templates, built on your computer](docs/assets/templates.png)
-
-Switching templates is a button, not a rebuild: your content stays the same and
-renders through any template. There are two kinds — **LaTeX** and **Typst** —
-both built on your computer. Start from a bundled design, adapt one you liked,
-or write your own in the built-in editor; every template is test-built and
-checked so that one that application systems couldn't read never goes live.
-*(The web "New template" button starts from a LaTeX template; Typst templates
-are created through the API or MCP.)*
-
-### Quick tailor, when you already know the answer
-
-The guided gap process is the careful path. **Quick tailor** is the fast one:
-one click against a job, answers taken from your saved preferences, tailored and
-rendered in one go. The honesty rule still holds — a skill Maestro found no
-evidence for can only go in your skills list, never into an invented bullet.
-
-### The Companion browser extension
-
-<!-- P4 extension.gif — CLEARED for publish 2026-08-20. Contact header scrubbed;
-     the Job/Score/Resume/Fill/Track ladder and the multi-base scoring panel
-     ("4 base resumes scored against this JD") are the feature moments. The Fill
-     step is never executed in this take, so NO autofill values are ever on
-     screen — preserve that if re-recording. Real employer careers page and the
-     "Liberty Hill, TX" experience location reviewed and accepted by the owner.
-     1000px / 10fps / 64 colors, 2.6 MB; re-encode any replacement to match. -->
-
-![The Companion on a job page](docs/assets/extension.gif)
-
-The **Companion** is a side panel in Chrome: save a job from the job board you're reading, score
-it, and fill application forms from your saved answers (**Profile › Autofill**). It leaves
-signatures, agreement boxes, passwords and government IDs to you unless you turn
-on the agreement permission in Profile, and it never moves to the next page or submits.
-
-To improve form filling, it records *which* fields it met and whether they
-filled — never what you typed. That data stays on your computer, but it does
-show which companies you applied to and when. Clear it any time in **Analytics
-→ Autofill coverage → Clear data**. There's no on/off switch in the panel yet;
-[`extension/README.md`](extension/README.md) shows how to turn it off.
-
-### Analytics: what the market keeps asking you for
-
-![The market you are actually applying into, in numbers](docs/assets/analytics.png)
-
-Every saved job adds to a picture of the market you're applying into — top
-skills, a skill heatmap, role mix over time — filterable by role, level and job
-type. The most useful view is **Skill gaps**: skills jobs keep asking for,
-marked as *not in your career history*, *in your career history* or *used before*. Frequent
-and missing is worth learning next; frequent and already in your history is
-something you have but keep forgetting to say. **Resume fit** shows the score
-before and after tailoring for each base resume, so you can see whether
-tailoring is helping.
-
-### Hunt with the agent you already use
-
-![A scheduled hunt reporting back — and stopping at your review](docs/assets/hunt-digest.png)
-
-Your AI assistant can job-hunt for you. It reads your job preferences from the
-app, finds postings on whatever sites it can use, saves and scores them against
-your resumes, and hands back a ranked shortlist for you to review. There's no
-job-board integration to be locked into.
-
-Ready-made skills (`job-hunt`, `apply-session`, `mail-status`, `referral-pages`,
-`tailor-run`) are in [`docs/skills/`](docs/skills/) — copy a prompt from the
-app's **Automations** page into Claude Desktop, Codex or any MCP agent (your
-agent asks when to run it), copy the skills into your assistant's skills folder
-as-is, or run **`customize-job-skills`** to make them yours or build new ones
-(batch tailoring, referral-first hunting, a weekly digest) from your own data.
-
-### Going all the way: agent applications
-
-<!-- TODO(P4) proposals.png — the /proposals view: the Captured/Proposed/
-     Accepted/Approved/Submitted counters, the daily cap chip, and the queued
-     proposals with their ATS scores. It shows this section's core claim -- the
-     lane stops before submitting -- in the app's own words ("What the hunt
-     found. Submitting still needs your approval."). Captured but not yet saved
-     to a file; drop it at docs/assets/proposals.png and uncomment: -->
-<!-- ![What the hunt found. Submitting still needs your approval.](docs/assets/proposals.png) -->
-
-Maestro CS can take an application right up to the submit button. Read this
-part rather than skim it.
-
-A job your agent finds becomes a **proposal**. You review proposals in the
-**Agent inbox** and **Queue** or **Skip** them (in bulk if you like). An
-apply run then works **only the ones you queued**: it tailors, renders and
-fills each application in a live agent session with a browser, asks you only
-for information the app doesn't have (and hands you logins, CAPTCHAs and
-signatures), and **waits for your yes before each submit**. Nothing is ever submitted from the web app itself, and a daily limit
-you set caps how many submissions are possible.
-
-Be clear about what that yes is: the agent records it, so the record shows *that
-the agent said you agreed*. It's an audit trail and a volume limit, not a lock
-that a manipulated agent can't pick — so run it while you're watching. An agent
-can't mark an application submitted without a confirmation or your own word,
-and if it can't tell whether a submit went through, it stops and never clicks
-again.
-
-**The risks, plainly.** Letting an agent read job pages and drive a browser
-means three real exposures:
-
-- **Manipulated instructions.** A job posting is untrusted text; text hidden in
-  one can try to instruct the agent reading it.
-- **Unverified employers.** A posting the agent found isn't a vetted one, and an
-  application sends your contact details and history to whoever posted it.
-- **Bot detection.** Some employers filter applications that look automated, and
-  we won't help you hide it — no stealth browsing, no CAPTCHA bypass, no
-  invisible (headless) submitting. See
-  [Project Scope](CONTRIBUTING.md#2-project-scope).
-
-Use it on jobs you have looked at yourself. Everything is written down —
-proposals, your yes, and the screenshots behind them.
-
-### Leave with everything
-
-`career.md` is your whole career history as one Markdown file — downloadable from
-the Career history page or over MCP. Every application's PDF is saved in
-`applications/`, in a folder named after the company and role, so checking what
-you actually sent is opening a folder. Your data is yours, in files on your
-disk, and nothing about leaving is made difficult.
-
----
+Your data is not touched by an update, and **deleting the project folder does delete it** on the Docker route. After updating, reload the browser extension and restart your AI assistant so it sees new tools. [`docs/UPDATING.md`](docs/UPDATING.md) has the rest: updating by hand, pinning a version, what the backup covers, rolling back, and coming from v0.3.0 or older.
 
 ## Where your files live
 
-Everything stays inside the folder you cloned. These are yours, never uploaded,
-and ignored by git:
+A uv install keeps everything in one folder per user: the database, resumes, settings, backups, logs and `maestro.env` (your API keys and, if you need them, port overrides). Deleting the folder deletes your data.
 
-- `data/` — the database (`maestro_cs.sqlite3`). Deleting it deletes every
-  application, resume version and career-record entry.
-- `base_resumes/` — your base resumes and their PDFs (plus one demo resume).
-- `applications/` — every application's PDF and source, one folder per company
-  and role.
-- `settings/` — your profile, persona and autofill details.
-- `kb_documents/` — supporting documents you added to your career record.
-- `exports/` — downloads such as `career.md`.
-- `backups/` — database backups made by updates.
-- `logs/` — the app's logs.
+| System | Folder |
+|---|---|
+| macOS | `~/Library/Application Support/Maestro Career Studio` |
+| Windows | `%APPDATA%\Maestro Career Studio` |
+| Linux | `$XDG_DATA_HOME/maestro-career-studio` (default `~/.local/share/maestro-career-studio`) |
 
-The code lives in `backend/` (the server), `frontend/` (the web app) and
-`extension/` (the Chrome extension); contributors start at
-[`CONTRIBUTING.md`](CONTRIBUTING.md).
+On the Docker route everything stays inside the folder you cloned (`data/`, `base_resumes/`, `applications/`, `settings/` and more; the [full list](docs/SETUP_REFERENCE.md#where-your-files-live-docker)). Your files are yours, never uploaded. Every application's PDF is saved in `applications/`, and `career.md` exports your whole career history as one Markdown file.
 
----
+## Troubleshooting
+
+`maestro status` and `maestro logs` come first, and a port already in use is named in the message. `maestro check` prints the install's facts as JSON to paste into an issue. Ports, API keys and quota errors, "database is locked", PDFs that fail to build and an empty app after updating are covered in [Troubleshooting & Common Questions](docs/SETUP_REFERENCE.md#troubleshooting--common-questions).
 
 ## Community, Documentation & Contributing
 
@@ -677,20 +185,17 @@ human reply within 48 hours and is read by a human — we don't merge AI slop.
 This is an early release. If something doesn't work, please say so — a clear bug
 report is one of the most valuable contributions right now.
 
-- **Project site:** [maestrocareerstudio.com](https://maestrocareerstudio.com) — a five-minute tour before you clone anything.
+- **Project site:** [maestrocareerstudio.com](https://maestrocareerstudio.com) — a five-minute tour before you install anything.
 - **Getting Started:** [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) — install to first tailored PDF, step by step.
+- **Using Maestro CS:** [`docs/USING_MAESTRO.md`](docs/USING_MAESTRO.md) — how it works, how to use it well, and the rest of the toolkit.
+- **Setup reference:** [`docs/SETUP_REFERENCE.md`](docs/SETUP_REFERENCE.md) — the `maestro` command, prerequisites, API keys, local models and troubleshooting.
 - **Updating:** [`docs/UPDATING.md`](docs/UPDATING.md) — updating by hand, backups, rolling back.
 - **Known issues:** [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) — what works well, what's rough, and what's a deliberate limitation.
 - **Skills for your AI assistant:** [`docs/skills/`](docs/skills/) — job hunt, apply run, mail status, referral pages, tailor run, and a skill that builds your own; the app's **Automations** page copies each as a prompt.
-- **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md) — development setup, tests, development mode and LLM tracing, and where help is wanted.
-- **How it's built:** [`SYSTEM.md`](SYSTEM.md) — the architecture reference for contributors and coding agents; read the relevant part before changing behaviour.
-- **Glossary:** [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md) — the project's vocabulary, worth ten minutes before your first contribution.
-- **Changelog:** [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release; read any **Breaking changes** heading before [updating](#updating).
-- **Releasing (maintainers):** [`docs/RELEASING.md`](docs/RELEASING.md).
+- **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md) — development setup, tests, development mode and LLM tracing, and where help is wanted. [`SYSTEM.md`](SYSTEM.md) is the architecture reference for contributors and coding agents; read the relevant part before changing behaviour. [`UBIQUITOUS_LANGUAGE.md`](UBIQUITOUS_LANGUAGE.md) is the project's vocabulary, worth ten minutes before your first contribution.
+- **Changelog:** [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release; read any **Breaking changes** heading before [updating](#updating). Maintainers: [`docs/RELEASING.md`](docs/RELEASING.md).
 - **Security & privacy:** [`SECURITY.md`](SECURITY.md) — the local-only rule and how to report a vulnerability. [`PRIVACY.md`](PRIVACY.md) — what is stored, and what leaves your computer.
 - **License:** [`LICENSE`](LICENSE) — Apache License 2.0, plus [`NOTICE`](NOTICE).
-
----
 
 ## Privacy Policy
 
@@ -700,8 +205,6 @@ service only when you add a key and use an AI feature, and to the assistant you
 connect over MCP when it calls a tool. With a model on your own computer, the
 app sends nothing out. [`PRIVACY.md`](PRIVACY.md) has the full policy: what is stored, every
 place data can go, retention, and how to ask a question.
-
----
 
 ## Licensing
 
@@ -724,12 +227,11 @@ you to carry forward.
 [section 5](LICENSE) of the license itself; there's nothing to sign. Commercial
 questions: **ajey@seinun.com**.
 
----
-
 ## Credits & Citation
 
-Maestro CS stands on other people's work. The full list — bundled sources, the
-scoring model, the PDF tools, and every dependency with its license — is in
+Maestro Career Studio is a free, open-source project from
+[Seinun LLC](https://seinun.com). It stands on other people's work. The full
+list — bundled sources, the scoring model, the PDF tools, and every dependency with its license — is in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The ones that shape the
 product most:
 
@@ -750,35 +252,3 @@ product most:
 
 Using Maestro CS in published work? Cite it with GitHub's **"Cite this
 repository"** button, which reads [`CITATION.cff`](CITATION.cff).
-
----
-
-## Troubleshooting & Common Questions
-
-**"port is already allocated" when starting:**
-Another program is using a port the app needs. Change `FRONTEND_HOST_PORT`
-(3000) or `BACKEND_HOST_PORT` (8001) in `.env` and run `docker compose up -d`
-again (`lsof -i :<port>` shows what's using it). If you change the backend port,
-the Companion needs the new address too — see
-[`extension/README.md`](extension/README.md).
-
-**AI features fail with "401 Unauthorized" or quota errors:**
-Check the key in **Settings › AI & models** and press **Test**. If you put the key in
-`.env` after starting, run `docker compose restart backend`.
-
-**"database is locked":**
-The database takes one writer at a time. Usually a program on your computer
-opened `data/maestro_cs.sqlite3` while the app was running — stop the app first,
-or open a copy from `backups/` instead. It also happens during long writes (like
-building your career record); give it a few minutes. On a drive that doesn't
-support the default mode (some network drives), set
-`SQLITE_JOURNAL_MODE=DELETE` in `.env` and restart.
-
-**PDFs fail to build:**
-LaTeX templates need TeX, which the app's Docker image includes. If you run the
-backend outside Docker without TeX, LaTeX templates build through a Typst
-template instead and the app says so.
-
-**The app came up empty after updating from v0.3.0 or older:**
-Your data isn't gone — it's still in the old Postgres volume. See
-[Coming from v0.3.0 or older](docs/UPDATING.md#coming-from-v030-or-older).

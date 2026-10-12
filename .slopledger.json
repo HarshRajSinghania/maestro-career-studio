@@ -2,6 +2,21 @@
   "_readme": "Machine-checkable removal triggers for SYSTEM.md \u00a713 (Active migrations & deprecation ledger). SYSTEM.md remains the source of truth for WHY each row exists and its traps; this file only encodes the triggers that can be evaluated mechanically. Run: python3 ~/.claude/skills/ai-slop-detector/scripts/ledger_check.py .  (add --strict for a non-zero exit on drift). Rows without triggers are prose/DB/build conditions \u2014 verify those by hand per SYSTEM.md. Keep row ids identical to \u00a713.",
   "rows": [
     {
+      "id": "mcp-stdio-venv",
+      "status": "new-is-default",
+      "hand_check": "The release after /mcp ships (v0.10.0): delete scripts/setup-mcp.sh, the host-venv paragraphs in docs/USING_MAESTRO.md, GETTING_STARTED.md and backend/mcp_server/README.md, and every docker exec mcp_server.server example. Keep maestro-career-studio-mcp as the maestro mcp fallback until B\u2032. Machine predicates require the script absent and zero source matches; the release and prose removals are verified by hand.",
+      "triggers": [
+        {
+          "kind": "command",
+          "cmd": "test ! -e scripts/setup-mcp.sh"
+        },
+        {
+          "kind": "command",
+          "cmd": "git grep -lE '\"exec\", \"-i\"|docker exec -i' -- ':!CHANGELOG.md' ':!docs/plans' ':!.slopledger.json'; test \"$?\" -eq 1"
+        }
+      ]
+    },
+    {
       "id": "typst-default-flip",
       "status": "both-live",
       "hand_check": "HELD by owner 2026-08-09: LaTeX stays, both engines remain first-class; nothing waits on this row. Header defects fixed (Typst ulink(); LaTeX separator space), DB rows re-synced. The CLEAN 8/8 corpus predates the 2026-08-08 extractor swap (PyMuPDF to pypdfium2): re-run it before acting on those numbers."
@@ -68,6 +83,36 @@
       "id": "health-rewrite-cache",
       "status": "new-is-default",
       "hand_check": "Migration 85a1bb628e28. Cut when bullet_rewrites or health_ask_answers is dropped, or GET /api/resume-lint/{kind}/{key}/answers goes away. Miss path is fallback, not a competing product."
+    },
+    {
+      "id": "native-scripts-to-maestro",
+      "status": "both-live",
+      "hand_check": "The always-on bot runs on the maestro command for one release (verify by hand). Then delete backend/scripts/native/, docs/native-install.md and tests/test_native_scripts.py. Machine predicate: the scripts folder is gone.",
+      "triggers": [
+        {
+          "kind": "command",
+          "cmd": "test ! -e backend/scripts/native"
+        }
+      ]
+    },
+    {
+      "id": "lock-wheel-deps",
+      "status": "both-live",
+      "hand_check": "Regenerate backend/requirements.lock in python:3.12-slim with --unsafe-package nodejs-wheel-binaries (recipe in backend/Dockerfile). Until then the lock names maestro-career-studio-backend and lacks psutil; the image installs the project with --no-deps -e .",
+      "triggers": [
+        {
+          "kind": "command",
+          "cmd": "grep -q '^psutil==' backend/requirements.lock"
+        },
+        {
+          "kind": "command",
+          "cmd": "! grep -q '^nodejs-wheel-binaries' backend/requirements.lock"
+        },
+        {
+          "kind": "command",
+          "cmd": "! grep -q 'maestro-career-studio-backend' backend/requirements.lock"
+        }
+      ]
     }
   ],
   "system_md_baselines": {

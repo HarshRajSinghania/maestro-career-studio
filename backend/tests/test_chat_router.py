@@ -2,20 +2,21 @@ import io
 import json
 from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.db import get_db
 from app.main import app
-from app.routers import chat as chat_router
-from app.services import chat_agent, llm
+from app.services import chat_agent, llm, model_settings
+from tests import fake_provider
 
 
-def _client(db_session) -> TestClient:
+def _client(db_session, *, raise_server_exceptions=True) -> TestClient:
     def _override():
         yield db_session
 
     app.dependency_overrides[get_db] = _override
-    return TestClient(app)
+    return TestClient(app, raise_server_exceptions=raise_server_exceptions)
 
 
 def teardown_function():
@@ -55,8 +56,8 @@ def test_send_message_streams_sse(db_session, monkeypatch):
         yield {"type": "done", "session_id": str(row.id)}
 
     monkeypatch.setattr(chat_agent, "run_turn", fake_run_turn)
-    # The router resolves the model client before the stream (no key in tests).
-    monkeypatch.setattr(chat_router, "get_chat_client", lambda model: object())
+    # The router checks the provider is ready before the stream (no key in tests).
+    fake_provider.install(monkeypatch, fake_provider.FakeProvider([]), model=model_settings.get_chat_model(db_session))
 
     with client.stream(
         "POST", f"/api/chat/sessions/{session_id}/messages", json={"content": "hello"}
@@ -143,3 +144,26 @@ def test_upload_attachment_certificate_pdf_stores_transcript(db_session, monkeyp
     row = db_session.get(ChatAttachment, UUID(body["id"]))
     assert "Anthropic Academy" in row.text_content
     assert "Riley Quill" in row.text_content
+
+
+@pytest.mark.parametrize('data', [b'not a zip', b'PK\x03\x04'])
+def test_broken_pptx_attachment_returns_a_400(db_session, data):
+    client = _client(db_session, raise_server_exceptions=False)
+    session_id = client.post('/api/chat/sessions', json={}).json()['id']
+    resp = client.post(
+        f'/api/chat/sessions/{session_id}/attachments',
+        files={'file': ('broken.pptx', io.BytesIO(data), 'application/octet-stream')},
+    )
+    assert resp.status_code == 400
+    assert resp.json()['detail'] == "This file isn't a readable PowerPoint deck."
+
+
+def test_broken_docx_attachment_returns_a_400(db_session):
+    client = _client(db_session, raise_server_exceptions=False)
+    session_id = client.post('/api/chat/sessions', json={}).json()['id']
+    resp = client.post(
+        f'/api/chat/sessions/{session_id}/attachments',
+        files={'file': ('broken.docx', io.BytesIO(b'not a zip'), 'application/octet-stream')},
+    )
+    assert resp.status_code == 400
+    assert resp.json()['detail'] == "This file isn't a readable Word document."

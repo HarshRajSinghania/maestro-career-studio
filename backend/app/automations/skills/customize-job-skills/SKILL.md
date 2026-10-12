@@ -31,7 +31,7 @@ option. Ideas can be anything the tools support, for example:
 
 - Batch-tailor every saved job above a score, then render the PDFs.
 - Hunt only at referral companies, from their careers pages.
-- A weekly digest of pipeline status, ATS trends and skill gaps (`explore_*`).
+- A weekly digest of pipeline status, match score trends and skill gaps (`explore_*`).
 - Draft cover letters and Q&A answers for the accepted queue.
 - Resume health check and Career KB top-up before a new push.
 

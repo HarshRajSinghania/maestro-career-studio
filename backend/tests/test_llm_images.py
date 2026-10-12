@@ -78,11 +78,16 @@ def test_call_gemini_includes_inline_image_data(monkeypatch):
         ).encode("utf-8")
         return io.BytesIO(body)
 
-    monkeypatch.setattr(llm_module, "urlopen", fake_urlopen)
-    text, _ = llm_module._call_gemini(
-        "read this", "gemini-3-flash-preview", "text", images=[b"png-bytes"]
-    )
-    assert text == "transcript"
+    monkeypatch.setattr("app.services.llm_providers.gemini.urlopen", fake_urlopen)
+    from app.services.llm_providers import registry
+    from app.services.llm_providers.types import ImagePart, Message, ModelRef, TextPart
+    from app.services.llm_providers.types import Request as ProviderRequest
+
+    resp = registry.get("gemini").generate(ProviderRequest(
+        model=ModelRef("gemini", "gemini-3-flash-preview"),
+        messages=[Message("user", [TextPart("read this"), ImagePart(b"png-bytes")])],
+    ))
+    assert resp.text == "transcript"
 
     parts = seen["payload"]["contents"][0]["parts"]
     assert parts[0] == {"text": "read this"}

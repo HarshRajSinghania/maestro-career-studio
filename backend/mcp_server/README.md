@@ -8,136 +8,129 @@ tool below is one action your assistant can take in the app.
 
 ## Before you start
 
-- **The app must be running.** From the repo root: `docker compose up -d --build`.
-  The backend is then on **http://localhost:8001** by default (set by
-  `BACKEND_HOST_PORT` in `.env`). If you run the backend directly with
-  `uvicorn app.main:app --port 8000` from `backend/`, it is on port 8000 instead.
-- The extension and plugin routes below need nothing else, on macOS or
-  Windows. Only the setup-script and hand-config routes need a **host Python
-  3.12+** (a fresh macOS ships 3.9: `brew install python@3.12`; Debian/Ubuntu:
-  `sudo apt install python3.12 python3.12-venv`). On Windows, use the extension
-  or the plugin: the script writes Linux paths that Windows apps can't run.
+Keep Maestro running on the same computer as your assistant. Docker publishes
+the backend at `http://localhost:8001` by default (`BACKEND_HOST_PORT` in `.env`).
+A direct `uvicorn app.main:app --port 8000` run uses port 8000; the
+[native scripts](../../docs/native-install.md) use `http://127.0.0.1:8001`.
+The assistant needs no Docker or Python to connect over HTTP. A
+[uv install](../../README.md#quickstart) (`maestro start`) serves the
+same URL, and its `maestro connect` command does the setup below from the terminal.
 
 ## Install
 
-Pick the route for your assistant. Every route defaults to the `full` profile
-(all 88 tools); see [Profiles](#profiles) to narrow it.
+Open Settings › Connected agents › **Connect an agent app** and choose a
+**Tool set**. Every route defaults to `full` (all 88 tools); see
+[Profiles](#profiles) to narrow it. Enable one connection per client.
 
-### Claude (Desktop, and Claude Code inside the Claude app)
+### Claude Desktop
 
-Settings → **Extensions** → **Install Extension**, then pick
-[`mcpb/maestro-career-studio.mcpb`](../../mcpb/maestro-career-studio.mcpb) in
-your clone. Leave the fields empty; the defaults are correct. The **Tool
-profile** field is where you choose a scoped profile.
+**On a uv install**, run `maestro connect claude-desktop`. It adds a
+`maestro-career-studio` entry to `claude_desktop_config.json` that runs the
+install's own `maestro mcp` (a Python stdio bridge to the same endpoint) by its
+full path, because Claude Desktop does not see your terminal's PATH. It keeps a
+`.bak` copy of the old file and changes nothing else. Claude Desktop rewrites that
+file while it runs, so when it is open the command waits and writes after you
+quit it (`--now` writes at once; `--print` shows the entry). `--profile hunt` and
+the other profile names choose a smaller tool set. On Docker, use the bundle:
 
-The extension runs the server inside the backend container, so it needs no host
-Python and no config file.
+Download the `.mcpb` from the card or the
+[release](https://github.com/seinun-ai/maestro-career-studio/releases) and
+double-click it. Settings → **Extensions** → **Install Extension** can also
+open the downloaded bundle. Reinstall if you have the older Docker-based bundle.
 
-Claude Desktop and the Claude Code CLI are set up separately: a server added to
-one does not appear in the other. For the Claude Code CLI, install the plugin:
+The dependency-free Node ≥18 bridge forwards stdio to Maestro's HTTP endpoint;
+it starts no Python or Docker process on Claude's side. **Maestro address**
+defaults to `http://localhost:8001`; **Tool profile** chooses the tool set.
+It works on macOS, Windows and Linux.
 
-```bash
-claude plugin marketplace add https://github.com/seinun-ai/maestro-career-studio
-claude plugin install maestro-career-studio@maestro-career-studio
-```
+### URL clients
 
-### Codex and the ChatGPT desktop app
-
-In the app: Settings → **Plugins** → **Add** → add
-`seinun-ai/maestro-career-studio` as a marketplace, then **Install**. From the
-Codex CLI:
-
-```bash
-codex plugin marketplace add seinun-ai/maestro-career-studio
-codex plugin add maestro-career-studio@maestro-career-studio
-```
-
-ChatGPT on the **web** only takes remote HTTPS connectors, so use the desktop
-app.
-
-The plugins (Claude Code and Codex) run the server inside the backend container
-and always load the `full` profile. For a scoped profile, use the setup script
-or a hand-written config below.
-
-**Don't set `COMPOSE_PROJECT_NAME`** if you use the extension or a plugin. They
-look for the container by its default name, `maestro-career-studio-backend-1`;
-renaming the project renames the container and they can't find it. If you need
-a different name, use the setup script instead (or, for the extension, fill in
-its **Container name** field).
-
-### Cursor, Windsurf and other clients: the setup script
-
-From the repo root:
+The card copies CLI commands, opens install links for Cursor and VS Code,
+and gives other HTTP MCP clients a URL. For the default Docker port:
 
 ```bash
-./scripts/setup-mcp.sh                 # full profile
-./scripts/setup-mcp.sh --profile hunt  # a scoped profile
-./scripts/setup-mcp.sh --print-only    # change nothing, just print the config
+claude mcp add --scope user --transport http maestro-career-studio http://localhost:8001/mcp
+codex mcp add maestro-career-studio --url http://localhost:8001/mcp
 ```
 
-It builds a host virtualenv, works out the backend port, registers the server
-with Claude Code, and prints a paste-ready block for each client. You can also
-ask a coding agent (Claude Code, Codex CLI) in this repo to run it for you.
+Use `/mcp` exactly — no trailing slash (`POST /mcp/` is a 307 redirect).
+`--scope user` makes Maestro available in every folder; without it, Claude Code adds it to the current project only.
+For a scoped profile, append its name, for example `/mcp/hunt`.
+
+In the Codex app, open **Plugins** › **Add** › **Create custom MCP server**,
+choose **Server URL**, paste the URL and set **Authentication** to **No authentication**.
+Leave **Tunnel** off: it would share an unauthenticated Maestro.
+claude.ai and chatgpt.com web connectors are outside this local setup.
+
+For Claude Code and Codex plugins, follow the
+[release-tag marketplace guide](../../plugins/maestro-career-studio/README.md#install).
+The Codex marketplace uses the release tag as **Git ref** and `.agents/plugins`
+plus `plugins` as **Sparse paths**. Both plugins connect by URL and load `full`.
 
 ### By hand
 
-From `backend/`:
+Codex CLI and the Codex app share `~/.codex/config.toml`:
 
-```bash
-python3 -m venv .venv && .venv/bin/pip install -e ".[mcp]"
+```toml
+[mcp_servers.maestro-career-studio]
+url = "http://localhost:8001/mcp"
+enabled = true
 ```
 
-That gives you the command `backend/.venv/bin/maestro-career-studio-mcp` (or
-`python -m mcp_server.server`). Every client needs the same three things:
+Claude Code and Cursor use this entry inside `mcpServers`:
 
-- **command**: the absolute path to `maestro-career-studio-mcp`. Desktop apps
-  don't see your shell's `PATH`, so a bare name usually fails; find the path
-  with `which maestro-career-studio-mcp` inside the venv.
-- **`BACKEND_URL`**: `http://localhost:8001` (the host port, not the
-  container's internal 8000). Without it the server assumes
-  `http://localhost:8000`.
-- **`MAESTRO_CS_MCP_PROFILE`**: `full` or a scoped profile.
+```json
+"maestro-career-studio": {
+  "type": "http",
+  "url": "http://localhost:8001/mcp"
+}
+```
 
-Templates with every profile filled in:
+VS Code uses the same entry under `servers` in `.vscode/mcp.json`.
+[Codex examples](./codex_config.example.toml) cover every profile.
+Claude Desktop needs the bundle or a Node bridge entry in
+`claude_desktop_config.json`:
 
-- **Claude Desktop and most stdio clients** (Cursor, Windsurf):
-  [`claude_desktop_config.example.json`](./claude_desktop_config.example.json).
-  On macOS the Desktop file is
-  `~/Library/Application Support/Claude/claude_desktop_config.json`; on Windows,
-  `%APPDATA%\Claude\claude_desktop_config.json`. **Quit Claude Desktop fully
-  (Cmd+Q, or Quit from its Windows tray icon) before editing**: the app writes this file too
-  and can discard an edit made while it is open. Merge the entries you want into
-  `mcpServers`, restart, and check the server is listed under Settings →
-  Connectors.
-- **Codex CLI and the ChatGPT desktop app** (they share `~/.codex/config.toml`):
-  [`codex_config.example.toml`](./codex_config.example.toml). The key is
-  `mcp_servers` (snake_case) and each server's `env` is its own table. The
-  ChatGPT app's custom MCP dialog takes the same values; set Type to **STDIO**
-  and leave the working directory empty.
-- **Claude Code CLI**, for sessions in any directory:
+```json
+"maestro-career-studio": {
+  "command": "node",
+  "args": ["<REPO>/mcpb/server/index.js"],
+  "env": {
+    "MAESTRO_CS_BACKEND_URL": "http://localhost:8001",
+    "MAESTRO_CS_MCP_PROFILE": "full"
+  }
+}
+```
 
-  ```bash
-  claude mcp add --scope user maestro-career-studio \
-    -e BACKEND_URL=http://localhost:8001 \
-    -e MAESTRO_CS_MCP_PROFILE=full \
-    -- /absolute/path/to/backend/.venv/bin/maestro-career-studio-mcp
-  ```
+(On a uv install, `maestro connect claude-desktop` writes the equivalent entry,
+`"command": "<full path to maestro>", "args": ["mcp"]`, for you.)
+Replace `<REPO>` with your clone's absolute path; use an absolute Node path if
+Claude cannot find `node`. The file is at
+`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS or
+`%APPDATA%\Claude\claude_desktop_config.json` on Windows. Quit Claude Desktop
+fully before editing, then restart. [Bridge examples](./claude_desktop_config.example.json)
+cover every profile. Use one route per client to avoid duplicate tools.
 
-  Keep `--scope user`. Without it the CLI uses `local` scope, which works only
-  in the directory you ran the command from.
+### Legacy stdio
 
-### Keep the transport STDIO
+Existing `setup-mcp.sh` and `maestro-career-studio-mcp` connections keep working
+for one release. The [setup script](../../scripts/setup-mcp.sh) is the fallback
+for stdio-only clients and needs host Python 3.12+. It and the host stdio venv
+are deprecated and removed in v0.10.0; the console entry point stays as a
+compatibility fallback (SYSTEM.md §13 `mcp-stdio-venv`).
 
-Some clients offer an HTTP/URL transport. Don't use it: that means exposing the
-backend over the network, and the backend has no login by design (see
-[`SECURITY.md`](../../SECURITY.md)). Anyone who can reach it can read and change
-your employment history, salary expectations and EEO answers. STDIO keeps the
-server a local process on your machine.
+### Keep the connection local
+
+`/mcp` has no authentication by design: a local process can already reach REST.
+It lives inside the FastAPI app behind the same Host → Origin → CORS checks as
+REST, with no second port or security definition. Never publish port 8001 or
+proxy `/mcp` beyond this computer. See [SECURITY.md](../../SECURITY.md).
 
 ## Profiles
 
-`MAESTRO_CS_MCP_PROFILE` picks which tools your assistant sees, so a focused
-chat isn't cluttered with unrelated ones.
+The **Tool set** selector picks a profile URL (`/mcp` for `full`, or
+`/mcp/{profile}`); the bundle uses `MAESTRO_CS_MCP_PROFILE` for the same choice.
+Each scoped URL lists exactly its allowlist and refuses tools outside it.
 
 | Profile | Use when | Tools |
 | --- | --- | --- |
@@ -154,18 +147,14 @@ guess which to call.
 
 ### Applying with a browser tool
 
-For apply chats, pair the `apply` profile with Playwright MCP and point both at
-the same folder, so the PDF the app stages is already somewhere the browser
-can upload from:
+For apply chats, pair the `/mcp/apply` URL with Playwright MCP. The browser's
+output folder and Maestro's upload staging must agree, so the browser can use
+the staged PDF. An HTTP-capable client can use:
 
 ```json
 "maestro-career-studio-apply": {
-  "command": "<MAESTRO_CS_MCP>",
-  "env": {
-    "BACKEND_URL": "http://localhost:8001",
-    "MAESTRO_CS_MCP_PROFILE": "apply",
-    "MAESTRO_CS_UPLOAD_DIR": "<REPO>/.playwright-mcp/uploads"
-  }
+  "type": "http",
+  "url": "http://localhost:8001/mcp/apply"
 },
 "playwright": {
   "command": "<NODE>",
@@ -182,14 +171,15 @@ can upload from:
 }
 ```
 
-The placeholders are the same as in
-[`claude_desktop_config.example.json`](./claude_desktop_config.example.json).
-Playwright's `--output-dir` must be the parent `.playwright-mcp` folder. Enable
-only these two servers for apply chats, and restart Claude Desktop (Cmd+Q)
-after changing the config. If Claude asks once for access to `.playwright-mcp`,
-approve it.
+The Playwright placeholders are the same as in
+[`claude_desktop_config.example.json`](./claude_desktop_config.example.json),
+which also shows Claude Desktop's Node bridge entry for `apply`.
+Playwright's `--output-dir` must be the parent `.playwright-mcp` folder. Set
+`MAESTRO_CS_UPLOAD_DIR` on the backend process for a native install. Enable
+only these two servers for apply chats. If Claude asks once for access to
+`.playwright-mcp`, approve it.
 
-When the server runs inside the container (the extension and plugin routes),
+When the backend runs inside Docker,
 `upload_path` is rewritten to the same folder as your computer sees it:
 `<folder you ran docker compose from>/.playwright-mcp/uploads`. If the browser
 sees the checkout under a different path, set `MAESTRO_CS_UPLOAD_HOST_ROOT` in
@@ -304,12 +294,14 @@ date and number ranges. If `em_dash_found` is true, fix the text and re-render.
 
 ## How it works
 
-Your assistant starts this server as a local process and talks to it over
-stdio. Each tool call becomes a request to the app's backend, which stores
-everything and renders the PDFs.
+HTTP MCP runs inside Maestro's FastAPI backend. Sync tool functions execute on
+worker threads and call REST on that same backend, which stores your data and
+renders PDFs. Profiles share one registry. The bridge preserves the caller's
+`clientInfo`, so Career KB timeline rows keep the agent's name.
 
 ```
-AI assistant --stdio--> maestro-career-studio-mcp --HTTP--> backend --> your data + LaTeX/Typst
+URL client --------------------HTTP--> /mcp inside FastAPI --> REST --> data + LaTeX/Typst
+Claude Desktop --stdio--> Node bridge (.mcpb) or `maestro mcp` --HTTP--^ (same backend port and Host/Origin checks)
 ```
 
 Contributing and running the tests: see [../../CONTRIBUTING.md](../../CONTRIBUTING.md).
@@ -325,9 +317,8 @@ Contributing and running the tests: see [../../CONTRIBUTING.md](../../CONTRIBUTI
   retry.
 - **The tools don't appear in Claude Code**: `claude mcp get
   maestro-career-studio` shows how it is registered; a `local`-scope entry only
-  works in the directory it was added from. If the setup script wrote
-  `.mcp.json`, start a **new** session in the repo and **approve** the server
-  when asked. Re-running `./scripts/setup-mcp.sh` is always safe.
+  works in the directory it was added from. Copy the HTTP command from
+  **Connect an agent app** and start a new session; approve the server when asked.
 - **Tools appear twice, or the model picks the wrong one**: two profiles are
   enabled at once (`full` beside a scoped one). In Claude Code, `claude mcp
   list`, then `claude mcp remove <name>`.
@@ -336,7 +327,7 @@ Contributing and running the tests: see [../../CONTRIBUTING.md](../../CONTRIBUTI
   editing, or use the extension instead, which Desktop manages itself.
 - **It works in Claude Code but not Claude Desktop (or the reverse)**: they are
   set up separately; see [Install](#install).
-- **The extension or plugin can't find the container**: check `docker ps`. If
-  the backend container isn't named `maestro-career-studio-backend-1` (for
-  example, because `COMPOSE_PROJECT_NAME` is set), put its name in the
-  extension's **Container name** field, or use the setup script.
+- **The bundle or plugin cannot connect**: check its Maestro address and the
+  backend's `/health`. Docker's host port defaults to 8001; direct uvicorn's
+  port may differ. Reinstall an older Docker-based bundle. Container names no
+  longer affect the connection.

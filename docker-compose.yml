@@ -1,8 +1,7 @@
-# Fixes the compose project name, and with it the container names, so a shipped
-# MCP declaration can name `maestro-career-studio-backend-1` as a literal —
-# Codex plugin manifests support no ${VAR} interpolation, so it cannot be a
-# variable. COMPOSE_PROJECT_NAME still overrides this; an existing install that
-# relied on the folder name gets new container names, so see docs/RELEASING.md.
+# Fixes the default project/container names and the old database-volume lookup.
+# MCP plugins connect by URL to localhost:8001, independently of container names.
+# COMPOSE_PROJECT_NAME can override this for a second stack; use different host
+# ports and the URL on Connect an agent app (see docs/RELEASING.md).
 name: maestro-career-studio
 
 services:
@@ -33,8 +32,11 @@ services:
       # the empty string as unset (same pattern as OPENAI_BASE_URL below), so
       # without this line a value set in .env never reaches the container.
       SQLITE_JOURNAL_MODE: ${SQLITE_JOURNAL_MODE:-}
+      MAESTRO_CS_PUBLIC_BACKEND_URL: ${MAESTRO_CS_PUBLIC_BACKEND_URL:-http://localhost:${BACKEND_HOST_PORT:-8001}}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       # Empty = the OpenAI API. Set to an OpenAI-compatible endpoint (Ollama,
       # LM Studio, vLLM) to keep every request on this machine. From inside the
       # container, host Ollama is http://host.docker.internal:11434/v1.
@@ -63,17 +65,15 @@ services:
       # an origin is `http://studio.lan`.
       ALLOWED_WEB_ORIGINS: ${ALLOWED_WEB_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       # Exact extension ids allowed through CORS (chrome://extensions shows it).
-      # Unset = the companion extension cannot reach the API; the web UI is
+      # Unset = the companion extension may not write to the API; the web UI is
       # unaffected. Never widen this to all extensions.
       MAESTRO_CS_EXTENSION_IDS: ${MAESTRO_CS_EXTENSION_IDS:-}
       # Staging area for PDFs the apply lane hands to a browser. Both are set
-      # HERE rather than in the MCP client's config, because `docker exec`
-      # inherits the container environment — which is what lets the shipped
-      # plugin manifest stay free of any machine-specific value.
-      # The MCP server may run inside this container while the browser that
-      # opens the file runs on the host, so it needs BOTH sides of the mount:
+      # HERE rather than in the MCP client's config, because /mcp runs inside
+      # the backend process and reads its environment. The browser opens files
+      # on the host, so the backend needs BOTH sides of the mount:
       # UPLOAD_DIR to write to, UPLOAD_HOST_ROOT to report back. Unset
-      # UPLOAD_HOST_ROOT (the host-venv transport) makes the translation inert.
+      # UPLOAD_HOST_ROOT (a native backend) makes the translation inert.
       # ${PWD} is the directory compose runs from (compose falls back to its own
       # working directory where the shell exports no PWD, e.g. PowerShell), so
       # run compose from the repo root. Set MAESTRO_CS_UPLOAD_HOST_ROOT in .env
@@ -95,6 +95,7 @@ services:
       - ./exports:/app/exports
       - ./base_resumes:/app/base_resumes
       - ./kb_documents:/app/kb_documents
+      - ./mcpb:/app/mcpb:ro
       # Host side of the upload staging area above. Without this the staged PDF
       # exists only in the container and the browser fails to OPEN it — a silent
       # dead end rather than an error.

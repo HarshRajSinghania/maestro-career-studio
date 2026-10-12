@@ -33,6 +33,7 @@ class EngineProbe(BaseModel):
     version: str | None = None
     path: str | None = None
     reason: str | None = None
+    warning: str | None = None
 
 
 class EnginesProbe(BaseModel):

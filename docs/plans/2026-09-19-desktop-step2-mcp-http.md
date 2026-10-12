@@ -1,3 +1,6 @@
+> **SUPERSEDED (2026-10-10)** by `docs/plans/2026-10-10-desktop-step3-mcp-http.md`; kept as the record
+> of the original draft. Several of its SDK assumptions proved wrong on mcp 1.29.1.
+
 # Desktop step 2, branch 2: MCP over HTTP, the bridge, the connect page, store readiness — implementation plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (or

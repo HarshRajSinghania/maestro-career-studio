@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import Response
+from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import settings as app_settings
@@ -45,8 +46,10 @@ from app.services import automations as automation_prompts
 from app.services import http_client, memory, seeding, tracing
 from app.services.llm import LLMProviderError
 from app.services.sync.hooks import NotOwnedHere
+from mcp_server.http import McpEndpoint
 
 logger = logging.getLogger(__name__)
+mcp_endpoint = McpEndpoint()
 
 
 def _ensure_app_log_handler(
@@ -88,19 +91,25 @@ def _log_llm_config() -> None:
     from app import config
     from app.services import llm, model_settings
 
-    key_source = (
-        "settings" if model_settings.get_openai_api_key() else
-        "env" if app_settings.openai_api_key else "NONE"
-    )
+    sources = {
+        provider: (
+            "settings" if model_settings.get_api_key(provider) else
+            "env" if getattr(app_settings, f"{provider}_api_key") else "NONE"
+        )
+        for provider in model_settings.API_KEY_SETTINGS
+    }
     endpoint = llm.get_base_url() or "https://api.openai.com/v1 (default)"
-    if key_source == "NONE" and not llm.get_base_url():
+    if not llm.any_model_key_configured():
         logger.warning(
-            "No OpenAI API key configured — every LLM feature will fail. Add one "
-            "in Settings › AI & models in the web app, or set OPENAI_API_KEY in "
-            ".env and restart."
+            "No model API key configured — every LLM feature will fail. Add one "
+            "in Settings › AI & models in the web app, or set OPENAI_API_KEY, "
+            "GEMINI_API_KEY, ANTHROPIC_API_KEY or OPENROUTER_API_KEY in .env and restart."
         )
     else:
-        logger.info("LLM endpoint %s, api key from %s", endpoint, key_source)
+        logger.info(
+            "LLM endpoint %s, api keys from: %s", endpoint,
+            ", ".join(f"{provider}={source}" for provider, source in sources.items()),
+        )
     if app_settings.llm_log_content:
         # Loud on purpose. This writes resumes, job descriptions, work-auth
         # answers and generated screening answers to disk in cleartext, and the
@@ -128,7 +137,8 @@ async def lifespan(app: FastAPI):
     status.ensure_machine_id()
     _log_llm_config()
     automation_prompts.load_cards()  # a malformed skill file fails startup, not a page
-    yield
+    async with mcp_endpoint.run():  # fresh session managers on every lifespan
+        yield
     tracing.shutdown()
 
 
@@ -422,6 +432,12 @@ app.include_router(filled_answers.router)
 app.include_router(agent_runs.router)
 app.include_router(sync.router)
 app.include_router(sync.setup_router)
+
+# MCP over Streamable HTTP (mcp_server/http.py). Plain Routes, not a Mount: a
+# Mount 307-redirects a bare POST /mcp and keeps the full path. Inside the same
+# middleware stack as REST — SYSTEM.md §6 inv-mcp-inside-the-app.
+app.router.routes.append(Route("/mcp", endpoint=mcp_endpoint))
+app.router.routes.append(Route("/mcp/{profile}", endpoint=mcp_endpoint))
 
 
 @app.get("/health")

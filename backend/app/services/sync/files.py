@@ -119,11 +119,17 @@ def _is_evidence(rel: str) -> bool:
     return "evidence" in rel.split("/")[:-1]
 
 
+def _read_flags() -> int:
+    """Read-only, never following a symlink, never blocking on a FIFO. Windows' ``os`` has neither
+    flag (the later ``S_ISREG`` check still refuses non-regular files) and wants ``O_BINARY``."""
+    return os.O_RDONLY | sum(getattr(os, f"O_{name}", 0) for name in ("NOFOLLOW", "NONBLOCK", "BINARY"))
+
+
 def _read_regular(path: Path, *, limit: int) -> bytes | None:
     """The file's bytes, or None when it is not a regular file or cannot be read. Never blocks on
     a FIFO, never follows a symlink, and refuses a file that grows past ``limit`` while it is read."""
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = os.open(path, _read_flags())
         with os.fdopen(fd, "rb") as handle:
             if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
                 return None
@@ -245,8 +251,11 @@ def _write_atomic(target: Path, data: bytes) -> None:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
             handle.flush()
-            os.fchmod(handle.fileno(), _FILE_MODE)
+            if hasattr(os, "fchmod"):
+                os.fchmod(handle.fileno(), _FILE_MODE)
             os.fsync(handle.fileno())
+        if not hasattr(os, "fchmod"):  # Windows on Python 3.12 (3.13+ has fchmod, which sets only the read-only bit)
+            os.chmod(temp, _FILE_MODE)
         os.replace(temp, target)
     except BaseException:
         Path(temp).unlink(missing_ok=True)

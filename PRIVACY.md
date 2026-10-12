@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Effective 2026-10-05 · Maestro Career Studio 0.7.0 and later**
+**Effective 2026-10-10 · Maestro Career Studio 0.9.0 and later**
 
 Maestro Career Studio ("Maestro CS") is free, open-source software that you run
 on your own computer. It is published by an individual, Ajey Dhayashanker
@@ -39,6 +39,15 @@ folder, listed last:
 - A rendered-PDF folder outside the clone, written when an assistant fetches a
   rendered resume over MCP (`get_rendered_pdf`): `$MAESTRO_CS_PDF_DIR` if set,
   otherwise `maestro-cs-pdfs` in your system temp directory.
+
+**Installed with uv instead of Docker** (`maestro start`, see the README), the
+same folders and files live in one per-user folder instead of a clone:
+`~/Library/Application Support/Maestro Career Studio` on macOS,
+`%APPDATA%\Maestro Career Studio` on Windows,
+`$XDG_DATA_HOME/maestro-career-studio` (default
+`~/.local/share/maestro-career-studio`) on Linux. Its `maestro.env` takes the
+place of `.env`, and it also holds `backups/` (database snapshots), the scoring
+model in `fastembed_cache/`, and small process records in `run/`.
 
 This includes sensitive information: employment history, contact details,
 work-authorization answers, optionally your voluntary EEO (diversity) answers,
@@ -81,9 +90,17 @@ Maestro CS has no AI model of its own. AI features work only after you add a key
 or an endpoint; scoring, PDF rendering, and tracking work without one. When you
 use an AI feature, the app sends a request to the service you configured:
 
-- **OpenAI**, or any **OpenAI-compatible endpoint** you enter (OpenRouter,
-  Ollama, LM Studio, vLLM). The default is `api.openai.com`.
+- **OpenAI**, or any **OpenAI-compatible endpoint** you enter (Ollama, LM
+  Studio, vLLM). The default is `api.openai.com`.
 - **Google Gemini** (`generativelanguage.googleapis.com`), if you add a Gemini key.
+- **Anthropic Claude** (`api.anthropic.com`), if you add a Claude key. Your key,
+  and Anthropic's retention terms.
+- **OpenRouter** (`openrouter.ai`), if you add an OpenRouter key. Maestro asks
+  OpenRouter to route only to model providers with zero data retention and no
+  data collection. OpenRouter itself may still keep inputs: its
+  [privacy policy](https://openrouter.ai/privacy) says inputs containing
+  personal data are collected, so a resume sent through OpenRouter reaches
+  OpenRouter under its terms.
 - **Jev (TypeSafe AI), via OpenRouter** (default `openrouter.ai`), only if you
   add a Jev key and switch the Companion's form filling to it.
 
@@ -102,10 +119,32 @@ it only somewhere you trust.
 your content goes to that provider, under *its* terms and privacy policy, which
 this one does not cover. The author has no access to it.
 
+### What the `maestro` command and first start download
+
+Nothing here is your career data. Each request carries what any web request does
+(your IP address, the program's name) and the addresses below, and nothing else.
+
+- **The code** comes from PyPI (`pypi.org`) when you run `uv tool install` or
+  `maestro update`; uv also fetches a Python 3.12 build from GitHub if you have none.
+  Those downloads are uv's, under its terms.
+- **`maestro status`** asks `pypi.org` for the newest version, unless you add
+  `--offline`. **`maestro update`** asks `pypi.org` the same way and reads the
+  changelog from `raw.githubusercontent.com`. They run only when you run them: no
+  background check exists, and the Maestro servers never look for updates.
+  Both name each request on screen (`maestro status` says "checked pypi.org").
+- **The scoring model** (`BAAI/bge-small-en-v1.5`, about 100 MB) downloads from
+  Hugging Face (`huggingface.co`). On a uv install `maestro start` does it once, on
+  the first start, into `fastembed_cache/` in your Maestro folder, and says it is
+  downloading from Hugging Face; `maestro start --skip-model` leaves it for the first score.
+  The Docker backend downloads the same model the first time it scores, into the
+  container's temporary folder, so it downloads it again after an update or any
+  recreated container. The request names the model; no resume or job text is
+  sent, and the scoring itself runs on your computer.
+
 ### Optional Langfuse tracing
 
 Off by default. It requires the optional `tracing` SDK extra (included in the
-Docker image and native installs; the planned desktop build will omit it) and all three settings set by you:
+Docker image and native installs; a uv install and the planned desktop build omit it) and all three settings set by you:
 `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and `LANGFUSE_HOST`. Each traced AI
 call sends its full prompt and response, which include your resume and job
 text, to the host you named.
@@ -118,6 +157,8 @@ forms wherever you use it. The only network address its code contacts is your
 own Maestro CS backend (default `http://localhost:8001`): saved job details and
 form-filling requests go there, and nothing goes to any other server from the
 extension. The AI step of form filling is done by the backend, as above.
+You set this address in the extension's options; an address off this computer
+receives the same saved job details and form-filling data.
 
 It also keeps a usage log in your local database: which kinds of fields it met
 (label, field type, outcome, site hostname), never what you typed. It is on by
@@ -133,9 +174,14 @@ use Chrome's own settings sync.
 
 ### Connecting an AI assistant (MCP)
 
-The MCP server, including the `.mcpb` extension for Claude Desktop, runs inside
-your local Docker container and talks only to the local backend. The `.mcpb`
-shim starts it with `docker exec` and makes no network connections itself.
+The MCP server runs inside your local Maestro backend, reached by default at
+`http://localhost:8001/mcp`. Scoped tool sets use `/mcp/<profile>` on that same
+backend. The `.mcpb` bundle for Claude Desktop is a bridge that connects only
+to the backend address set in the bundle (default `http://localhost:8001`).
+Neither the bridge nor an assistant connecting by URL needs Docker on the
+assistant's side. On a uv install, `maestro mcp` is the same kind of bridge, and
+`maestro connect` only edits the app you name (Claude Desktop's settings file, or
+that app's own `mcp add`), pointing it at your local address.
 
 But an MCP tool exists to hand information to the assistant that called it. Your
 career history, job data, resume text, and saved answers can be returned to the
@@ -168,16 +214,19 @@ sent to a provider.
 ### No telemetry from the author
 
 The code contains no analytics, crash-reporting, or advertising service. Maestro
-CS does not check for updates or phone home; the version check is local. Updates
-happen when you run `scripts/update.sh`, which uses git and Docker to reach
-GitHub and the container registry. Fonts are fetched when the web app is built,
-and the code editor is bundled, so nothing loads from a CDN at runtime.
+CS does not phone home, and the servers never check for updates. Updates happen
+when you run `scripts/update.sh` (it uses git and Docker to reach GitHub and the
+container registry) or `maestro update` (it reaches PyPI and GitHub, as listed
+[above](#what-the-maestro-command-and-first-start-download)). Fonts are fetched
+when the web app is built, and the code editor is bundled, so nothing loads from
+a CDN at runtime.
 
 One third party to know about: **Next.js**, the web framework, has anonymous
 usage telemetry of its own (to Vercel). The frontend Dockerfiles, release and
-dev, set `NEXT_TELEMETRY_DISABLED=1`, so it is off in images built from them. If
-you run the frontend outside Docker (`npm run dev` or `npm start` on your own
-machine), set that variable yourself to opt out.
+dev, set `NEXT_TELEMETRY_DISABLED=1`, so it is off in images built from them, and
+the uv install sets it for its web server. If you run the frontend outside Docker
+and the uv install (`npm run dev` or `npm start` on your own machine), set that
+variable yourself to opt out.
 
 ## Retention and deletion
 
@@ -192,6 +241,9 @@ Your data stays until you remove it; there is no server-side copy.
   to delete, as are `.playwright-mcp/` and the rendered-PDF folder (which also
   holds page-preview PNGs of the PDFs).
 - Removing the folder and its Docker volumes removes the software and its data.
+  On a uv install, run `maestro autostart off` and `maestro stop`, then
+  `uv tool uninstall maestro-career-studio`: that removes the software and leaves
+  your Maestro folder; deleting that folder removes the data.
 - Data already sent to an AI provider or assistant is kept under that provider's
   policy. Ask them to delete it.
 - **Clear** under Job-site login in Settings › Connected agents removes the

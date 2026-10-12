@@ -15,7 +15,7 @@ each surface ask whether its own requirement is met.
 
 `set_models` gates chat on the stored tools probe (unprobed is allowed through,
 matching `require()`). The tools probe must issue the same call as chat —
-including `get_chat_client` routing — or its stored row shadows reality.
+including the registry's provider routing — or its stored row shadows reality.
 """
 
 import json
@@ -28,24 +28,15 @@ from sqlalchemy.orm import Session
 
 from app.models.setting import Setting
 from app.services import llm
+from app.services.llm_providers import registry
+from app.services.llm_providers.errors import (
+    NO_ANTHROPIC_KEY_MESSAGE,
+    NO_GEMINI_KEY_MESSAGE,
+    NO_KEY_MESSAGE,
+)
+from app.services.llm_providers.types import Finish, Message, Request, TextPart, ToolSpec
 
 logger = logging.getLogger(__name__)
-
-_PROBE_TOOL = [
-    {
-        "type": "function",
-        "function": {
-            "name": "report_ok",
-            "description": "Report that the check succeeded.",
-            "parameters": {
-                "type": "object",
-                "properties": {"ok": {"type": "boolean"}},
-                "required": ["ok"],
-            },
-        },
-    }
-]
-
 
 @dataclass
 class CapabilityReport:
@@ -95,32 +86,23 @@ def _probe_json(model: str) -> None:
         raise RuntimeError("model did not return a JSON object")
 
 
-def _probe_tools(model: str) -> None:
-    """Tool calling AND streaming — the chat agent needs both together.
+_PROBE_SPEC = ToolSpec(
+    "report_ok", "Report that the check succeeded.",
+    {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]})
 
-    Every argument here must match what `chat_agent.run_turn` sends: the same
-    client (`llm.get_chat_client`), and the same per-model kwargs from
-    `llm.completion_extras`. A probe of a call the app never makes measures
-    nothing.
-    """
-    stream = llm.get_chat_client(model).chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": "Call report_ok with ok=true."}],
-        tools=_PROBE_TOOL,
-        stream=True,
-        **llm.completion_extras(model),
-    )
-    saw_tool_call = False
-    for chunk in stream:
-        choices = getattr(chunk, "choices", None) or []
-        if not choices:
-            continue
-        delta = getattr(choices[0], "delta", None)
-        if delta is not None and getattr(delta, "tool_calls", None):
-            saw_tool_call = True
-            break
-    if not saw_tool_call:
-        raise RuntimeError("model streamed no tool call")
+
+def _probe_tools(model: str) -> None:
+    """Tool calling AND streaming, through the same adapter.stream call `chat_agent.run_turn`
+    makes. A probe of a call the app never makes measures nothing (SYSTEM.md §12)."""
+    ref = registry.resolve(model)
+    request = Request(model=ref, messages=[Message("user", [TextPart("Call report_ok with ok=true.")])],
+                      tools=[_PROBE_SPEC], cache=True)
+    provider = registry.get(ref.provider)
+    provider.ready()  # chat does the same: Gemini's stream raises a missing key only when pulled
+    for event in provider.stream(request):
+        if isinstance(event, Finish) and event.message.tool_calls:
+            return
+    raise RuntimeError("model streamed no tool call")
 
 
 _PROBES = {"text": _probe_text, "json": _probe_json, "tools": _probe_tools}
@@ -149,6 +131,16 @@ _UNREACHABLE_SIGNS = (
     "timeout",
     "name or service not known",
     "temporary failure in name resolution",
+    # Anthropic's error vocabulary
+    "authentication_error",
+    "permission_error",
+    "rate_limit_error",
+    "overloaded_error",
+    "credit balance is too low",  # Anthropic's 400 for an account with no API credit
+    "error code: 529",
+    # Every no-key sentence, built from the constants so they cannot drift.
+    *(m.split(".")[0].lower() for m in (
+        NO_KEY_MESSAGE, NO_GEMINI_KEY_MESSAGE, NO_ANTHROPIC_KEY_MESSAGE, llm.NO_OPENROUTER_KEY_MESSAGE)),
 )
 
 

@@ -54,10 +54,9 @@ if you think the reasoning has expired.
 1. **Unchecked volume auto-apply or bulk blast.** Full automation mode is opt-in,
    capped, limited to jobs the user queued and to answers that pass every check;
    unscored, uncapped or unqueued applying stays refused. Employers now filter for applications
-   that read as machine-generated, and the flagship high-volume project in this
-   space is archived. Shipping a blast tool would aim the product at the one
-   market trend most against it.
-2. **Any claim that our ATS Score predicts a real ATS.** Ours is deterministic,
+   that read as machine-generated. A blast tool prioritizes volume over the
+   stronger, reviewed applications Maestro is built to support.
+2. **Any claim that our match score predicts a real ATS.** Ours is deterministic,
    versioned and reproducible — that is the entire claim, and it is defensible
    precisely because it is narrow. One overclaim discredits the rest of it.
 3. **A hosted, multi-tenant SaaS version.** Local-only *is* the differentiator
@@ -171,6 +170,8 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev,mcp]"
 ```
+
+If your venv still has the old `maestro-career-studio-backend` (the distribution was renamed `maestro-career-studio`), `pip uninstall maestro-career-studio-backend` first.
 
 *Gotcha reminder (SYSTEM.md §9):* Beware of stale `.pth` files in virtual environments if you switch across Git worktrees or branches. Reinstall editable dependencies and restart clients (such as Claude Desktop) if imports unexpectedly point to older workspace directories.
 

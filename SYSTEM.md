@@ -71,7 +71,7 @@ at phone widths; §8's reference file says what stays best-effort below that).
 ```
 backend/
   app/
-    main.py            FastAPI app; routers mounted under /api/*
+    main.py            FastAPI app; REST under /api/*, MCP at /mcp and /mcp/{profile}
     config.py          settings; data-dir paths (container-absolute by default —
                        override BASE_RESUMES_DIR/APPLICATIONS_DIR/SETTINGS_DIR/LOGS_DIR locally)
     db.py              SQLAlchemy; sessions use autoflush=False (see §12)
@@ -89,14 +89,16 @@ backend/
                        artifacts, application_render, engines (the ONE probe),
                        pdf_render (dual-engine: pdflatex + typst), pdf_preview,
                        jd_extraction, resume_lint, health_*, career_kb,
-                       chat_agent + chat_tools, attachment_extract (stdlib DOCX),
+                       chat_agent + chat_tools, transcript (chat rows as neutral parts; NULL `parts` = legacy row), llm_providers/ (neutral LLM types, errors, registry (model id to provider), OpenAI-compatible, Gemini and Claude adapters), attachment_extract (bounded DOCX/PPTX + notes; decks are documents),
                        autofill_choose + autofill_slots + jev (Companion fill),
                        automations (page catalog), agent_runs + inbox_readiness, …)
     automations/skills/  the agent prompts, one <name>/SKILL.md each: the Automations
                        source of the Automations page; indexed by docs/skills/README.md
-    templates/         bundled .tex.j2 sources, typst_classic.typ and cover_letter.typ
+    templates/         six seeded resume designs + both cover-letter sources; derived
+                       sources carry MIT headers; inventory/licenses: THIRD_PARTY_NOTICES.md
     tools/             operator tools, `python -m app.tools.<name>`: backup_db
-  mcp_server/          FastMCP server (server.py tools → client.py httpx → REST)
+  mcp_server/          FastMCP registry + http.py per-profile ASGI endpoint; client.py httpx → REST
+  maestro_cs/          the `maestro` command (uv install, §9): CLI, supervisor, home layout, update, connect, stdio bridge
   migrations/          alembic: the SQLite chain, baseline 871d0425b64c + revisions (ids: §9; §12 has the revision-id gotcha)
   tests/               pytest on a throwaway SQLite file, no service; mcp_server/tests/ uses respx (no DB)
   scripts/             calibration + parity tooling (ats_*, template_parity, health_golden, fill_trace), run from backend/
@@ -106,16 +108,15 @@ data/                  the database: maestro_cs.sqlite3 + its -wal/-shm sidecars
 base_resumes/          on-disk resume data (<slug>.json) + rendered tex/pdf output
 applications/          rendered per-application artifacts (Company_Role_YYYYMMDD_<idprefix>/)
 extension/             browser-capture extension (posts pre-extracted JDs)
-scripts/               setup-mcp.sh (MCP registration), update.sh (user update path, §9)
-.claude/settings.json  shared Claude Code settings: enables the Superpowers plugin (obra/superpowers-marketplace);
-                       the only tracked file under .claude/ — settings.local.json and the rest stay gitignored
+scripts/               setup-mcp.sh (deprecated stdio, §13), update.sh (Docker update, §9), build_wheel/check_wheel + uv smoke/upgrade checks (§9)
+.claude/settings.json  shared Claude Code settings (enables the Superpowers plugin); the only tracked file under .claude/
 ```
 
 ## 3. Architecture at a glance
 
 ```
  paste JD ─┐                          ┌─ web UI (Next 16, react-query)
- extension ─┼→ jobs router → Job row  ├─ MCP server (88 tools, thin REST wrappers)
+ extension ─┼→ jobs router → Job row  ├─ MCP /mcp inside FastAPI (88 REST wrappers)
  MCP ingest┘        │                 └─ chat agent (chat_tools.py — separate toolset)
                     ▼ ATS engine (deterministic, LLM-free)  →  AtsScore rows (base upsert / tailored append)
                     ▼ TailoringSession (frozen gaps → resolutions → LLM tailor ops)
@@ -125,7 +126,7 @@ scripts/               setup-mcp.sh (MCP registration), update.sh (user update p
 ```
 
 `data/maestro_cs.sqlite3` (SQLite, WAL) holds rows and local sync clocks; ORM flushes stamp jobs/profile, including imports and both sides of moves. A job still at revision 0 is stamped from that clock when this copy pushes or lists its jobs. Deleted jobs leave tombstones; Core writers touch their subtree (`services/sync/hooks.py`; the write guard is §6
-inv-flush-guard). Resume JSON/rendered files stay on disk (`base_resumes` row + file required); job-site login: `settings/secrets/` (§6).
+inv-flush-guard). Resume JSON/rendered files stay on disk (`base_resumes` row + file required); job-site login: `settings/secrets/` (§6). A uv install keeps all of it in one per-user folder (inv-one-home). **LLM calls** go through the front door `llm.py` (`call_openai`, key getters; four keys, env keys as fallback). `llm_providers/registry.resolve` routes a model id by catalog tag, then keys/prefix, to an adapter (OpenAI-compatible incl. custom servers and the privacy-locked OpenRouter preset, Claude, Gemini); chat streams through the same adapters.
 
 **Sync** is optional, on only while a key file exists (`docs/sync-setup.md`): the laptop owns the profile, each job has one owner
 (docs/entities/job.md), nothing merges (inv-one-writer-ownership). The always-on copy drives: `sync.sh` (cron; `--now` forces a round) or MCP `sync_now` asks its
@@ -148,7 +149,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
 | FilledAnswer (`models/filled_answer.py`) | [`docs/entities/filled-answers.md`](docs/entities/filled-answers.md) | the answer receipt: what each form page run filled, each answer's source, the warn-only flags, the EEO lifecycle |
 | AgentRun (`models/agent_run.py`) | [`docs/entities/agent-runs.md`](docs/entities/agent-runs.md) | finished automation reports; Recent runs, Last ran, retention and phase 4 limits |
 | Health rubric | [docs/health-check-rubric.md](docs/health-check-rubric.md) | what the check judges and why: levels, questions, flags, word bank, disputes (the report's code contract: Others, ResumeLintReport) |
-| Others | [`docs/entities/others.md`](docs/entities/others.md) | BaseResume, the settings endpoints (model settings, form-filling engines, persona draft, setup status) and the secondary entities that need rules but not a file each |
+| Others | [`docs/entities/others.md`](docs/entities/others.md) | BaseResume, the settings endpoints (model settings, form-filling engines, persona draft, setup status), the uv install (`maestro`) and the secondary entities that need rules but not a file each |
 
 ## 5. The application workflow, end to end (web)
 
@@ -159,7 +160,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
 2. **Track** — **Jobs** (`/applications`; the URL, `?status=`/`?source=` and `cs-tracker-*` keep their
    names): the tracker. Two queries (summary list with server-joined job fields + saved jobs of the
    toggle's source), a grouped status `Select` with counts, inline `StatusChip` per row (PATCHes
-   directly), a read-only ATS column (`ats_score` / `best_ats_score`), search, sort, and a Tracked/Yours/Agents provenance `SourceToggle` (counts follow the
+   directly), a read-only Match score column (`ats_score` / `best_ats_score`), search, sort, and a Tracked/Yours/Agents provenance `SourceToggle` (counts follow the
    toggle; `?source=` deep-linkable; Analytics' copy reads All, as it counts every application).
    "Saved" = job with no application — agent-captured jobs stay out unless the toggle is `Agents`,
    which is why the default reads Tracked, not All (agent inventory lives in the Agent inbox,
@@ -238,33 +239,29 @@ this contract. Code citing "§4" lands here; the table says which file to open.
 ## 6. Cross-cutting invariants (do not break these)
 
 - **The browser is the attacker; six controls are the whole boundary.** `{#inv-browser-boundary}` The API has no
-  authentication, so binding to `127.0.0.1` proves nothing on its own — the user's own browser is already inside the
-  boundary and can be aimed at it.
+  authentication; the user's browser is inside the boundary and can be aimed at `127.0.0.1`.
   1. **Host allowlist, on BOTH listening servers.** `TrustedHostMiddleware` rejects any Host not in
      `settings.allowed_hosts` (`conftest` adds `testserver`; production does not); without it DNS rebinding makes an
      attacker page SAME-ORIGIN and CORS is never consulted. The backend check alone guards nothing users touch: the
-     browser hits Next on :3000, whose `/api` catch-all rebuilds the request and drops the inbound Host.
-     `frontend/proxy.ts` checks first — the NAME is load-bearing, since Next 16 renamed `middleware` and a
-     `middleware.ts` is ignored in silence — and the `/api` route repeats it, because this must not rest on one
-     filename. ONE definition: `lib/allowed-hosts.mjs`, plain ESM so `node` runs it in tests.
-  2. **Origin gate** (`app/origin_guard.py`). CORS governs what may be READ, this what may RUN: a form/multipart POST
-     needs no preflight, so the side effect lands and only the reply is withheld. Present-but-unlisted `Origin` →
-     refused before routing; ABSENT → allowed (httpx MCP and the healthcheck send none, and are not browsers). Raw ASGI,
-     never `BaseHTTPMiddleware`, which wraps the SSE chat body. **Host → Origin → CORS** falls out of `add_middleware`
-     PREPENDING, so `main.py` reads in reverse (pinned by test); `ALLOWED_ORIGINS` is ONE list, read by CORS and gate.
+     browser hits Next on :3000, whose `/api` catch-all drops the inbound Host. `frontend/proxy.ts` checks first
+     (Next 16 ignores `middleware.ts`), and the `/api` route repeats it. ONE definition: `lib/allowed-hosts.mjs`,
+     plain ESM so `node` runs it in tests.
+  2. **Origin gate** (`app/origin_guard.py`). CORS governs READS, the gate what may RUN: form/multipart POSTs need no
+     preflight. Present-but-unlisted `Origin` → refused before routing; ABSENT → allowed (httpx MCP and healthchecks).
+     Raw ASGI, never `BaseHTTPMiddleware`: it wraps chat SSE. **Host → Origin → CORS** follows `add_middleware`
+     PREPENDING, so `main.py` reads in reverse (pinned by test); CORS and the gate read ONE `ALLOWED_ORIGINS` list.
   3. **Extension origins are exact ids**, never a pattern: `settings.maestro_cs_extension_ids` →
-     `chrome-extension://<id>` entries in `allow_origins` (a regex trusts EVERY installed extension). Unset = no
-     extension may call the API, logged at startup. Extension-side half of §11 item 19's "CORS must never admit
-     untrusted origins".
+     `chrome-extension://<id>` entries in `allow_origins` (a regex trusts EVERY installed extension). Empty refuses
+     extension writes carrying Origin; Chromium's host-permitted extension GETs omit Origin, so reads are not blocked.
   4. **Template source is data, not code.** `pdf_render._environment()` is a `SandboxedEnvironment` — `Template.source`
      comes from the web editor, chat and MCP, and a plain `Environment` turns any of those into arbitrary Python (`(((
      x.__init__.__globals__ )))`). The `(((`/`((*` delimiters are ergonomics, not a control.
-  5. **The compiler can neither execute nor read.** `-no-shell-escape` is unconditional, and `compile_cover_letter_pdf`
-     stays a thin alias of `compile_pdf` (the flag was their only difference). It covers `\write18` only —
-     `\input`/`\verbatiminput` open anything the process can, past Jinja's sandbox because they live in the .tex Jinja
-     already produced. So `_compile_env` adds kpathsea paranoid mode (`openin_any`/`openout_any=p`): no dotfiles, no
-     parent traversal, no absolute path outside `TEXMFOUTPUT` — which MUST be the staging dir, since `_pdflatex_argv`
-     passes an absolute `\input`. BOUNDS the damage; the render worker is the fix (KNOWN_ISSUES).
+  5. **The compiler can neither execute, read siblings nor download.** `-no-shell-escape` (+ `shell_escape=f`) is
+     unconditional; `compile_cover_letter_pdf` stays a thin alias of `compile_pdf`. `\input` opens anything past Jinja's
+     sandbox, so `_compile_env` adds kpathsea paranoid mode (`openin_any`/`openout_any=p`), and `_run_pdflatex` compiles
+     in a fresh temp folder per run (cwd = `TEXMFOUTPUT` = that folder; only the PDF and log are copied back), so base
+     resumes' shared `tex/` can be neither read nor overwritten. Typst: the `@pkg` regex is only the friendly error (a computed import path
+     walks past it); `_worker` points proxies at a dead address in the child so a download fails. BOUNDS; the render worker is the fix (KNOWN_ISSUES).
   6. **A template id is a slug, enforced in the REGISTRY.** `validate_template_id` (`schemas/template.py`, importing
      nothing from `app`) gates `create_draft`, `duplicate` and `_preview_path` — not just `TemplateCreate`, since chat
      and MCP reach the registry directly and `Template.id` is a bare `Text` PK. `_preview_path` ALSO
@@ -302,12 +299,15 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   `services/placement_targets.py` owns the placement-target contract, and the frontend's `buildPlacementTargets`
   hand-mirrors its targets shape. Extra targets require `section="extra"`, a stable `section_key`, and either an enabled
   entry's original index or, for a flat bullets section, the same stable key as `index_or_category`.
-- **MCP control invariants** `{#inv-mcp-controls}`: no MCP tool name contains "delete"; no set-default-template tool.
-  Registration is pinned by a subset assert in `mcp_server/tests/test_server.py` — add new tools there.
+- **MCP control invariants** `{#inv-mcp-controls}`: no tool name contains "delete"; no set-default-template tool (`mcp_server/tests/test_server.py`).
+- **MCP lives inside the app.** `{#inv-mcp-inside-the-app}` `/mcp` and `/mcp/{profile}` are routed inside FastAPI behind
+  REST's SyncPublicHost → Host → Origin → CORS stack; SDK DNS-rebinding protection is OFF so that stack stays the one
+  definition; never a second port or `/api/sync` route. Pins: `tests/test_mcp_http_boundary.py`, `mcp_server/tests/test_http.py`.
+- **MCP tools run off the event loop.** `{#inv-tools-off-loop}` Every registered MCP tool runs on a worker thread
+  through `mcp_server.http`'s own limiter; module functions stay sync (`tests/test_mcp_http_loopback.py`, `mcp_server/tests/test_http.py`).
 - **`tailor_application` vs `edit_application`** `{#inv-tailor-vs-edit}` (MCP): the former REPLACES `customized_json`
   wholesale from the BASE resume; the latter applies ops to the CURRENT draft — docstrings lead with this; keep them
-  unmistakable. Edit indices are **0-based into the full JSON section array**, including `enabled: false` rows (PDF
-  render omits those — never display ordinals). Successful PATCH `/edits` responses echo `applied[]`.
+  unmistakable. Edit indices are **0-based into the full JSON array**, including `enabled: false` rows omitted from PDF; PATCH `/edits` echoes `applied[]`.
 - **Autofill telemetry and run traces carry no VALUES.** `{#inv-autofill-telemetry-no-values}` `POST
   /api/autofill/telemetry` stores label, kind, rule id, option texts, outcome, host — never what was typed, was there
   before, or any AI answer: no value column, `extra="forbid"`, sw re-filters to six keys. `POST /runs` stores one strict
@@ -384,22 +384,31 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   only on its own yes carrying the current policy (`agreed_policy`; `test_eeo_consent.py`). One flag for both would make
   an EEO yes agree to terms. ONE gate, `eeo_consent.withhold_unconsented`, strips `profile.eeo` unless `enabled` for
   every outward reader: `GET /api/autofill/context`, the `/choose` prompt AND the Jev engine's slot catalog (model
-  providers — Jev, OpenRouter serving Jev — are recipients too); it fails CLOSED when consent cannot be computed. The
+  providers — OpenAI, Gemini, Claude, OpenRouter, Jev — are recipients too); it fails CLOSED when consent cannot be computed. The
   MCP client keeps its OWN strip — two gates, not a relocated one. Which path asks never decides whether protected-class
   data is served. Pins (router, `/choose`, Jev): `.system_md_enforcement.json`. No inference or invented EEO answers;
   never solicit pasted demographic answers in chat when consented values are in Profile. Human-only at ANY setting is
   Next/Submit and nothing wider; `consent_forms` lifts every label refusal for the callers that pass it (the fill loop,
   a model included; never the old collector/pause rows), and only it, as served (lapsed or unreadable: absent), adds
   `derived.agrees_to_terms`.
+
+- **Provider data** `{#inv-provider-tagged-meta}`: opaque blocks (`ProviderMeta`: Claude thinking signatures, Gemini thought
+  signatures) carry their provider and reach only that provider; `replay.for_provider` strips them for any other, so a model
+  switch mid-chat never leaks one vendor's blocks to another. Pinned by `tests/test_replay.py`.
 - **PDF word-spacing** `{#inv-pdf-word-spacing}`: pdflatex+XCharter joins words for strict extractors;
   `pdfinterwordspaceon` + the parse_certified gate protect this — see the shared header partial `_header.tex.j2`, which
-  BOTH resume and cover-letter templates include (format/scanner changes must handle both).
+  BOTH resume and cover-letter templates include (format/scanner changes must handle both). pdfTeX 1.40.27 misplaces
+  that space for many Type 1 fonts (e.g. Helvetica, Charter, Garamond, Fira) → overprinted words that still extract
+  cleanly; `template_validation.text_overprints` refuses such a LaTeX sample and `engines` warns on that build, where
+  boot re-validates ready LaTeX templates once (`template_registry.recheck_ready_latex_for_engine_warning`). A uv
+  install uses the HOST's TeX, not Docker's TL 2026 — a PDF's `PTEX.Fullbanner` names the pdfTeX that made it.
 - **A render never changes engine silently** `{#inv-render-fallback-explained}`: `services/engines` is the ONE probe;
   `MAESTRO_CS_PDFLATEX` overrides and fails CLOSED. Without `pdflatex`, `pdf_render.resolve_render_template` uses the
   first ready Typst template for LaTeX resumes, bases and cover letters; `render_note` names both. VALIDATION never
   substitutes. `base_resume_render.record_render_error`: committed writes persist `render_error`; render-only requests
-  return 400, never 500. Startup seed-render failures warn with tracebacks and leave the base usable; its first save
-  retries. Call sites: `tests/test_render_note_coverage.py`. Pinned by `tests/test_render_fallback.py`.
+  return 400, never 500. Startup validates seed templates before rendering bases; seed-render failures persist
+  `render_error`, warn with tracebacks and leave the base usable; its first save retries. Call sites:
+  `tests/test_render_note_coverage.py`. Pins: `tests/test_render_fallback.py`, `tests/test_seeding.py`.
 - **`user_cannot_confirm` is durable.** `{#inv-provenance-no-decay}` No code path upgrades that provenance to anything
   else — including the gap flow that writes it: a "cannot confirm" gap outcome stores a retired `user_cannot_confirm`
   point (on the entity its placement names, else the archived "Unconfirmed claims" holder) and future sessions
@@ -463,46 +472,38 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   is the always-on copy's own loopback call (404 on the laptop, 403 for an `Origin`, as is `/api/sync-setup/*`). Settings' **Second copy**
   shows a 16-character code, once, for 10 minutes, with no attempt limit. `GET /api/settings/second-copy/setup-prompt` serves `backend/app/automations/bot-setup.md` (no sync lock; 409 on the always-on copy). Pinned by `tests/sync/test_seal.py`, `test_sealed_home.py`,
   `test_public_host.py`, `test_pairing.py` and `test_two_machines.py`.
+- **One data folder per user; nothing writes into the install.** `{#inv-one-home}` A uv install's `MAESTRO_HOME` defaults to
+  `~/Library/Application Support/Maestro Career Studio` (macOS), `%APPDATA%\Maestro Career Studio` (Windows) or
+  `$XDG_DATA_HOME/maestro-career-studio` (Linux), the folder the future desktop app uses, so its data needs no import.
+  `home.backend_env` points every writable path (data, applications, settings, logs, uploads, model cache) into it, so nothing
+  lands under site-packages; its `maestro.env` is the only settings file. Pinned by `tests/maestro_cs/test_home.py`.
+- **The install's environment is applied before `app` is imported.** `{#inv-env-before-app}` `app.config.settings` reads the
+  environment at import, and its `env_file=".env"` would read a Docker checkout's file from the caller's folder. One-shot verbs
+  (`check`, `migrate`, `connect`) call `home.apply_env()` first, which also `chdir`s into the home; servers get it as child env
+  with cwd = home; `maestro mcp` imports no `app` module. Pinned by `tests/maestro_cs/test_maintenance.py` and `test_bridge.py`.
 
 ## 7. Agent surfaces
 
-- **MCP server** (`backend/mcp_server/`; its clients are **connected agents** on screen, Settings › Connected agents):
-  thin wrappers (`@_guard` → `ToolError`) over REST via httpx (`BACKEND_URL`, default localhost:8000; compose maps host
-  8001). **The docstring is the API**: it describes what a tool does, records and requires, never instructs (directory
-  policy), and every tool carries `title` + four `ToolAnnotations` hints (`_read`/`_write`); both ratcheted in
-  `test_server.py`. Lists page with bounded defaults; a failed `next` lookup after a landed write is `next: null`
-  (`_best_effort_hint`). A fact an agent needs must survive ~2048-dedented-char client truncation or live in a param
-  `Field(description=…)` (`_EDIT_OPS_FIELD` precedent); ratchet
-  `test_registered_tool_docstrings_fit_client_truncation_budget`. Coverage: jobs (ingest/list/get/export;
-  `get_job_search_brief` with verbatim work-auth, typed `job_preferences` and the `auto_apply` guardrail block;
-  `find_job_by_url` posting-equality lookup; `store_extracted_jd` takes `source="agent"`; playbook in
-  docs/agentic-job-search.md, capture-and-score only), the proposal-ledger family (consent-gated
-  propose/decide/triage/resume/final-review/evidence/mark_submitted/report_failure; `record_filled_answers` records
-  each form page's answers and `get_final_review` names their `flags` (inv-filled-answers-local); `record_consent` stores the user's
-  yes/no, or the agent's automatic yes with channel `auto` while full automation is On; `mark_submitted(auto)` records the agent's confirmation note;
-  `get_job_site_login` hands the login to a Queued/approved job's agent (§6); filer and create-lock rules: `docs/entities/others.md`, "MCP proposal filer"), base resumes
-  (`list_resume_versions`/`get_resume_version`/`restore_resume_version` — kind is REST `base`|`application`, details carry the parent diff, a restore
-  is a new version; `archive_base_resume`/`unarchive_base_resume` hide from `list_base_resumes` without deleting; those
-  five and `set_base_resume_identity` (a base's only anchor writer, `""`/`[]` clear) are **full-profile only**), health
-  (run/get + waivers; a finding carries its bullet's own `question`, `ask_kind`, `measure_target`/`alt_question`, `evidence` and `gain`, a report `next_grade`; disputes and the word bank
-  are web-only; the bank uses GET/PUT), the full tailoring workflow (session tools take **`tailoring_session_id`** — breaking rename, no
-  legacy alias — and carry `base_anchors`; `resolve_gaps`' evidence-carrying actions are gated server-side — §4;
-  `quick_tailor` is the profile-driven fast path; `score_ats(include_other_countries)` returns a `countries` block
-  naming bases skipped for the job's country), render + PDF inspection/upload (`docs/entities/others.md`, "PDF tools"), application
-  tracking, `record_run` (finished automation reports; `docs/entities/agent-runs.md`), the apply package,
-  templates (draft/validate only; Typst constraints in `create_template_draft`'s
-  docstring, `fmt.*` knobs on `get_template`), explore analytics, `get_autofill_profile` (`profile.eeo` consent-gated),
-  and `get_career_context` (read-only; anti-fabrication framing in the docstring). The Career KB is writable via MCP:
-  reads carry IDs the context prose does not; entity/profile writes land directly, but POINTS go through the user's
-  gate — ingest lands drafts, `kb_sync_base` drafts new/drifted base-resume items (no LLM, no auto-approve), and
-  `kb_approve_points` is the ONE approval path (`approved|retired`), its gate a convention the docstring states (the
-  value is the user's decision), not server enforcement (`record_consent` precedent). `kb_edit_point` has no `state`
-  param; a text change forces `state="draft"`. No delete tool; document upload stays web-only. **Scoped profiles**
-  (`MAESTRO_CS_MCP_PROFILE`, default `full`): `hunt` / `apply` / `explore` / `templates` / `career`; allowlists in
-  `mcp_server/profiles.py`. Enable ONE per chat (`full` carries the KB writes). `MAESTRO_CS_*` variables have no
-  pre-rename fallback. Stdio examples: `mcp_server/`; ChatGPT.com cannot be a client — `mcp.run()` is stdio only.
-  **Apply executor:** headed real Chrome; `docs/entities/others.md`, "Attended executor", and the apply playbook's "Unattended (full automation)" section.
-  **Directory listing** = plugin bundle `plugins/maestro-career-studio/`, not `.mcpb`; policy `PRIVACY.md`.
+- **MCP server** (`backend/mcp_server/`; on screen **connected agents**, Settings › Connected agents): thin REST wrappers
+  (`@_guard` → `ToolError`) via httpx (`BACKEND_URL`, default localhost:8000; compose host 8001). Loopback bypasses proxies; other hosts honor them (`mcp_server/tests/test_client_loopback.py`).
+  **The docstring is the API**: behavior, records and requirements, never instructions (directory policy).
+  `test_server.py` ratchets `title`, four `ToolAnnotations` (`_read`/`_write`) and ~2048-dedented-char docstrings;
+  overflow facts live in param `Field(description=…)` (`_EDIT_OPS_FIELD`). Lists page with bounded defaults;
+  `_best_effort_hint` returns `next: null` on a failed lookup after a landed write.
+  Coverage: [docs/entities/others.md](docs/entities/others.md), "MCP tool coverage".
+  **Scoped profiles**:
+  `profiles.py` owns `full` / `hunt` / `apply` / `explore` / `templates` / `career` (88 tools); `/mcp` = `full`, `/mcp/{profile}` = its allowlist.
+  Lifespans run fresh stateful JSON sessions; tools use `http.py`'s eight-worker limiter (§6 inv-tools-off-loop).
+  Stdio filters `MAESTRO_CS_MCP_PROFILE` (default `full`; migration state: §13 `mcp-stdio-venv`).
+  Hints use request `CURRENT_PROFILE`, else env (pins: `mcp_server/tests/test_profiles.py`, `test_server.py`, `test_http.py`).
+  Enable ONE profile per chat (`full` carries KB writes); `MAESTRO_CS_*` has no legacy fallback. **Apply executor:** headed Chrome (`docs/entities/others.md`, "Attended executor"; apply playbook, "Unattended (full automation)").
+  **Plugin:** `plugins/maestro-career-studio/`: Claude Code's `.mcp.json` and Codex's `.codex-mcp.json` connect by URL; Codex prompts for durable decisions, login/upload, health-gate waivers, restores, KB approval and sync. Claude installs use a tagged local checkout; Codex uses a release-tag Git ref and sparse paths `.agents/plugins` + `plugins`; policy `PRIVACY.md`.
+  Settings › Connected agents' **Connect an agent app** (`connect-assistant`) selects a tool set and copies commands/URLs, opens install links or downloads the Claude Desktop bundle.
+  `GET /api/setup/connect?profile=full` composes values from `MAESTRO_CS_PUBLIC_BACKEND_URL` (default localhost:8000; compose host port unless overridden); `/api/setup/connect/bundle` serves `MCPB_BUNDLE_PATH` (compose read-only mount; `tests/test_setup_connect.py`).
+  The dependency-free Node ≥18 `.mcpb` bridges stdio↔HTTP with no assistant-side Docker/Python: `MAESTRO_CS_BACKEND_URL`
+  defaults to localhost:8001; `MAESTRO_CS_MCP_PROFILE` selects `/mcp` or `/mcp/{profile}` (no trailing slash).
+  Requests are ordered; stale sessions replay initialize + initialized before one retry, preserving `clientInfo`
+  (`mcpb/tests/bridge.test.js`). HTTP `serverInfo.version` reads `APP_VERSION`, else `dev` (`mcp_server/tests/test_http.py`).
 - **Guided tailoring workflow** (`mcp_server/workflow.py`): wrapped tools carry a `next` envelope
   (`state`/`blocking`/`offer`/`ask_user`/`options`/`call`) that walks §5's arc — score all bases → recommend →
   quick|custom → tailor → render → apply readiness — unnarrated. `workflow.py` is PURE (no httpx/DB/LLM), a
@@ -518,7 +519,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   - **`offer` ≠ `ask_user`.** `score_ats` emits only a non-blocking `offer` — mass JD capture scores twenty
     postings in a loop and a question on each would derail it; `ask_user` appears only mid-arc, after the user
     commits. **A hint never names a tool the active profile did not register** (`hunt` has no tailoring tools):
-    options AND prose filter via `profiles.allowed_tools()`; prose states facts, never commands (`test_workflow.py`).
+    options AND prose filter via `_active_allowed_tools()`; prose states facts, never commands (`test_workflow.py`).
   - **Two controls.** `mcp_workflow` `{hints: bool}` (`GET/PUT /api/settings/mcp-workflow` + its card in
     Settings › Connected agents) is the USER's master switch; `brief=true` on `score_ats` is the AGENT's, for
     triage loops, checked FIRST so a loop pays no settings read. Tools **always wrap** (`next: null` when
@@ -549,32 +550,20 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   toolset (resume edit, KB capture, template admin including the mutations MCP
   deliberately lacks). Its resume-edit tool runs the SAME pipeline as the REST
   endpoints (`services/resume_ops.py`); scope checks and ToolError mapping
-  remain chat-side. **Chat interaction model** ("chips in, cards out"):
-  assistant prose renders Markdown (content passed to tools stays plain);
-  `propose_edits` stages ANY typed-op set as an approval card (`proposal_ops` —
-  validated + scope-checked at propose time, applied via the standard `/edits`
-  PATCH); proposal cards persist their resolution via `PATCH
-  /api/chat/messages/{id}/card-state` (`meta_json.card_state`, 409 on
-  conflicting re-stamp) and card SSE events carry `message_id` (tool row
-  persists before the card event); `ChatSelection` is kind-tagged (`resume` |
-  `kb_entity`, missing=resume) — KB chips pin context and never constrain the
-  resume scope guard; three read-only analytics tools (`analytics_activity`,
-  `analytics_gap_frequency` incl. build-areas, `analytics_base_summaries`)
-  answer job-search questions in chat. **Pinned-resume resolution**: the pin is a HINT, not a guard (the enforced guard is
+  remain chat-side. Cards, selections and the analytics tools: `docs/entities/others.md`, "In-app chat: interaction model". **Pinned-resume resolution**: the pin is a HINT, not a guard (the enforced guard is
   `check_ops_in_scope` over selection PATHS); how it resolves, reloads and follows a changed base is reference
   tier: `docs/entities/others.md`, "In-app chat: pinned-resume resolution". **Social posts**: chat
   drafts LinkedIn/social posts as copy-out markdown — no card, no persistence,
   the transcript is the history — grounded via read-only `get_career_context`;
-  conventions live in chat_system.txt. The router resolves the model client before the
-  capability check (no key → a 422 "The Assistant needs an API key…") and hands it to
-  `run_turn`; working chips are words (`TOOL_PHRASES`), and deleting a chat asks first.
+  conventions live in chat_system.txt. The router checks the Assistant's key before the
+  capability check (no key → a 422 "The Assistant needs an API key…"); `run_turn` streams through the adapter; working chips are words (`TOOL_PHRASES`), and deleting a chat asks first.
   Prompt rows seed at startup. `prompts.get_prompt` lazy-seeds only with a caller's session; its own session reads
   the file default without writing when a row is absent. Prompt-file changes need the DB `prompt.chat_system` row
   reset (Settings › AI & models › AI instructions → Reset to default, or delete the row); a deploy uses a
   SQLite-chain migration that deletes the row only while it still equals the previous default
   (`4022b54933e6` did it for `chat_system`; `tests/test_prompt_sync_guard.py` explains the mechanic).
 - **Chrome extension** (`extension/`; on screen **the Companion**): MV3; the **side panel**
-  (`panel/`) is the ONE surface — toolbar icon (`openPanelOnActionClick`) and hotkey
+  (`panel/`) runs capture and fill; toolbar icon (`openPanelOnActionClick`) and hotkey
   (Alt+Shift+J → `sidePanel.open`, guarded: that method is Chrome 116 and the minimum is 114)
   both open it. Four-stage rail — Job → Resume → Fill → Track — INFERRED from the store by
   `ns.decisions.stageFor` every render, never set by a click. Job = saved AND a base chosen (a pick,
@@ -588,16 +577,15 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   get a per-render snapshot, per-CONCERN actions (`panel/actions/*.js`) a handle with one
   `write(patch)` door, and each roster THROWS at boot naming a missing script. `panel/icons.js` (`ns.icon`, inline Lucide svg) draws every icon;
   the panel carries no emoji or text glyph (`test_extension_panel_icons.py`). `shared/status-roles.js` is the application status table (word + colour role) the web `StatusChip` shares (`test_extension_status_roles.py`). `shared/` is
-  what both worlds load: `decisions.js` (the ONE home of every panel rule), `choose.js`
-  (routing, the /choose batch, `rest_fill` shaping, `QUESTIONY`); `guided-run.js` (the
-  runner, transport injected) is panel-only.
-  The failure note (never the server's raw text; `failureNote`), the rail's revisit rules, the sender model, the COMMIT GESTURE and the ONE
-  `attachableFileInputs` definition are reference tier: `extension/INTERNALS.md`. The bridge
-  storage key `widget.session` must NOT be renamed — that drops every live entry.
+  what both worlds load: `decisions.js` (the ONE home of panel rules), `choose.js` (routing, /choose batch, `rest_fill` shaping, `QUESTIONY`).
+  `guided-run.js` (runner, injected transport) is panel-only.
+  Failure copy (never server text; `failureNote`), revisit rules, sender model, COMMIT GESTURE and the ONE `attachableFileInputs` definition:
+  `extension/INTERNALS.md`. Never rename bridge storage key `widget.session` — that drops every live entry.
   **Posting identity is ONE table in two languages** — `job_url_match.posting_id` ↔
   `decisions.postingId` (LinkedIn `currentJobId` / `/jobs/view/<id>`, Indeed `jk`/`vjk`,
   embedded Greenhouse `gh_jid`), pinned by `test_extension_posting_identity.py`; add a key to
-  BOTH. **`extension/INTERNALS.md` owns the rest.**
+  BOTH. Options (`options.html`, `options.js`) read `read_settings`, save `backendUrl`/`appUrl` in `storage.sync` and test `/health`.
+  `scripts/pack_extension.py` gates matching versions; store upload and key handoff: `docs/RELEASING.md`. Rest: `extension/INTERNALS.md`.
 - **Guided fill** (design doc `2026-08-16-guided-apply-design`, unpublished — §10):
   the panel's **Fill** stage — **Autofill** → `panel_prepare` (the
   gesture-backed injection; `preparePage` is the only other injector) → a run. `fillMode` (`storage.sync`):
@@ -625,23 +613,23 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   knock-out heads Fill.
   **`/choose` has two engines**, `fast` and `jev` (`llm.autofill_engine`, Settings › AI & models › **Form filling**);
   how each decides, and the Jev key's host rule, are reference tier: `docs/entities/others.md`, "Form-filling engines".
-- **Streaming chat** needs the OpenAI streaming tool-call wire shape (OpenAI, or Gemini via the OpenAI-compat
-  URL); eligibility is the tools probe.
+- **Streaming chat** runs through `llm_providers` on any provider; eligibility is the tools probe.
 
 ## 8. Frontend conventions
 
 Reference tier, like §4: consulted while working in `frontend/`, not read for orientation. Lives in
 [`docs/frontend-conventions.md`](docs/frontend-conventions.md): layout and sidebar rules, Tailwind v4 tokens and
 M3 colour roles, the studios' save and preview model, a11y and focus behaviour, naming, the copy rules and the one
-glossary (*Canonical terms*; ratchets `test_frontend_vocabulary.py`, `test_frontend_sentence_length.py`), each
+glossary (the app calls its fixed-rules score **Match score**; *Canonical terms*; ratchets `test_frontend_vocabulary.py`, `test_frontend_sentence_length.py`), each
 with the failure mode that bought it. Code citing "§8" lands here.
 
 ## 9. Dev & test environment
 
-- Use the Python interpreter from the backend's virtual environment; backend installed editable
-  (`pip install -e ".[dev,mcp]"` — beware the stale-`.pth` gotcha: it can pin `app`/`mcp_server` to an OLD
-  worktree for anything run outside a repo dir, including the Claude Desktop MCP server; reinstall + restart
-  client to fix).
+- Use the backend venv's Python, installed editable (`pip install -e ".[dev,mcp]"`); run from `backend/`.
+  A stale `.pth` can pin `app`/`mcp_server` to an old worktree outside that cwd; reinstall and restart the process.
+- **MCP loopback and public URL:** `BACKEND_URL` targets REST inside this backend (`http://localhost:8000` in Docker;
+  native exports `http://127.0.0.1:$MAESTRO_PORT`). `MAESTRO_CS_PUBLIC_BACKEND_URL` is the assistant-facing local address
+  used by Connect an agent app (compose host port, default 8001; native exports its port). Neither publishes `/mcp`.
 - **The database is a file.** `data/maestro_cs.sqlite3` (compose bind-mounts `./data` to `/app/data`), WAL,
   pragmas set per connection by `app/db.make_engine` — the ONE engine constructor (app, tests, tools);
   `prepare_sqlite_file` mints it 0600 and `migrations/env.py` calls it too, so a first boot creates the file
@@ -664,10 +652,10 @@ with the failure mode that bought it. Code citing "§8" lands here.
   JD skill names only, never resume text. `python -m scripts.ats_calibration monotonicity` (same env)
   asserts "adding true evidence never lowers the score" over the whole corpus — run it after ANY matcher or
   tier change, not just a scoring-weight one.
-- Backend tests: `pytest tests/ mcp_server/tests/ -q -n auto --dist loadfile` from `backend/` (CI's command; a bare
-  `tests/` skips the MCP suite). `-n` is pytest-xdist (~15 → ~3.5 min); `loadfile` keeps `tests/browser`'s Chromium
-  per file. conftest makes a throwaway SQLite file per process and worker (`TEST_DATABASE_URL` may name another,
-  never under `data/` or with `-n`) and blanks `OPENAI_API_KEY`/`GEMINI_API_KEY`: a worker's `load_dotenv()` finds the
+- Backend tests: `pytest tests/ mcp_server/tests/ -q -n auto --dist loadfile` from `backend/`; bare `tests/` skips MCP.
+  CI cold-installs `.[mcp]`, checks six stdio profiles and `/mcp` + `/mcp/hunt` over HTTP. xdist (~15 → ~3.5 min)
+  uses `loadfile` to keep browser tests per file. conftest makes a SQLite file per process/worker (`TEST_DATABASE_URL` may name another,
+  never under `data/` or with `-n`) and blanks the four provider keys (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`): a worker's `load_dotenv()` finds the
   nearest `.env`, so unstubbed tests made billed calls. Parity tests (`tests/node_ts.py`) need node 24: skip locally, FAIL in `CI`.
 - **Deploying a local change = rebuilding BOTH images** (MAINTAINER path, MAIN checkout):
   `docker build -t maestro-career-studio-backend backend/` AND `…-frontend frontend/`, then
@@ -676,21 +664,26 @@ with the failure mode that bought it. Code citing "§8" lands here.
 - **A USER updates instead** — `./scripts/update.sh`: online SQLite snapshot
   (`app.tools.backup_db --stdout` through the running backend container, else the checkout's own image tag —
   `.env`'s `latest` can predate the tool; 0600, magic-byte checked) → ff-only to the newest `v*` tag → images pinned to that tag →
-  health poll → extension/MCP reminders (README "Updating"; `docs/RELEASING.md` cuts one). Checkout and images
+  health poll → extension/MCP reminders (only legacy stdio re-runs setup-mcp.sh; an old Docker `.mcpb` is reinstalled once; README "Updating"). Checkout and images
   move TOGETHER: a bare `docker compose pull` skews an install (docs/UPDATING.md). Contributors build. **Pre-v0.4.0 guard:** a `<project>_pgdata` volume with no
   `data/.migrated-from-postgres.json` makes `--check` warn and an update exit before touching anything; a
   v0.3.0 user's OWN old script skips the guard (recovery steps: docs/UPDATING.md, which holds both rules).
-- **Windows = WSL.** The supported route is Docker Desktop's WSL 2 engine with the clone in the WSL home, never
+- **Windows = WSL for Docker; the uv install runs natively.** Docker needs Desktop's WSL 2 engine with the clone in the WSL home, never
   `/mnt/c` (SQLite WAL over the Windows share is untrusted; the scripts are bash). `.gitattributes` forces LF
-  so a Git-for-Windows clone cannot CRLF the scripts or `.env`. The `.mcpb` shim searches Docker Desktop's
-  Windows paths, then PATH (`dockerCandidates`/`onPath`, `mcpb/tests/shim.test.js`); `setup-mcp.sh` is not
-  a Windows route. The upload host root is `${PWD}` (compose falls back to its own cwd; `update.sh` pins it
-  to the repo) unless `MAESTRO_CS_UPLOAD_HOST_ROOT` says otherwise; a Windows-shaped root joins with `\`.
-- **Native run (no Docker)** — `docs/native-install.md`: `backend/scripts/native/*.sh` run one loopback worker from
-  `$MAESTRO_HOME`; `GET /health/memory` reports memory. `slow` tests (real backend, venv or model; the 200 MB budget
-  test) skip when `MAESTRO_SKIP_SLOW` is set — set it in CI. `tests/sync/test_two_machines.py` runs in CI ON PURPOSE, never `slow`: its
-  real home subprocess downloads nothing, and it is the sync contract. With `EMBEDDINGS_OUT_OF_PROCESS` at most ONE embedding
-  helper runs per process (`embeddings._HELPER_LOCK`): two ~290 MB helpers OOM a small machine.
+  so a clone cannot CRLF scripts or `.env`; `setup-mcp.sh` is not a Windows route. The `.mcpb` uses HTTP on macOS, Windows and Linux without Docker on the assistant's side.
+  The upload host root is `${PWD}` (compose cwd; `update.sh` pins it to the repo) unless `MAESTRO_CS_UPLOAD_HOST_ROOT` overrides it; Windows joins with `\`.
+- **uv install (B′, `maestro`)** — `uv tool install --python 3.12 maestro-career-studio`: a `py3-none-any` PyPI wheel of `backend/`
+  (version = `backend/pyproject.toml`) plus the Next standalone bundle (`maestro_cs/web/`; `scripts/build_wheel.py`, gated by
+  `check_wheel.py`, including root legal files in PEP 639 `dist-info/licenses/`) and Node from `nodejs-wheel-binaries`.
+  `maestro start` detaches `maestro run`, a foreground supervisor owning
+  uvicorn (127.0.0.1:8001) and `node server.js` (:3000); stop = `run/stop.request` + a signal; process identity = pid + psutil
+  create_time. `maestro update` = verified snapshot → stop → `uv tool install --force …==NEW` (Windows: a detached `cmd` script) → start. The web
+  process gets no API keys (`home._WEB_STRIPPED`). CI: `maestro-cli`, `uv-wheel`, `uv-smoke`, `uv-upgrade`; `pypi.yml` publishes on
+  `v*` tags. `maestro import-docker` copies a Docker checkout's data in once (the checkout is read, never written). Detail: `docs/entities/others.md`, "The uv install".
+- **Native run (no Docker)** — `docs/native-install.md`: `backend/scripts/native/` runs one loopback worker under `$MAESTRO_HOME`; URLs follow the MCP rule above, `MCPB_BUNDLE_PATH` uses the checkout's `mcpb/maestro-career-studio.mcpb` (`tests/test_native_scripts.py`).
+  `slow` tests skip with `MAESTRO_SKIP_SLOW` (CI); `integration` MCP loopback and `tests/sync/test_two_machines.py`
+  run in CI ON PURPOSE, never `slow`: no downloads. With `EMBEDDINGS_OUT_OF_PROCESS` at most ONE embedding
+  helper runs per process (`embeddings._HELPER_LOCK`); two ~290 MB helpers OOM. `GET /health/memory` reports memory.
 - **Version identity**: the tag bakes into both images as `APP_VERSION`, served by `GET /api/version` with
   the live alembic revision; the frontend warns when its baked copy disagrees, unless either side STARTS
   WITH `dev` (local or dispatch build) = do not compare — which also keeps it off contributors.
@@ -704,7 +697,7 @@ with the failure mode that bought it. Code citing "§8" lands here.
   Regenerate that lock with **`mcp` + `tracing` only, on Linux/Python 3.12** (command in `backend/Dockerfile`;
   macOS/3.13 gives wrong pins). CI's `dependency-audit` (`pip-audit` on the lock) failing on a new advisory is intended.
 - **No Langfuse stack ships here** (the bundled compose file had fixed default secrets).
-  The SDK is the `tracing` extra (included in Docker and native; the planned desktop build omits it); `services/tracing.py` requires
+  The SDK is the `tracing` extra (included in Docker and native; uv and the desktop build omit it); `services/tracing.py` requires
   all three `LANGFUSE_*` settings. Tracing points at the user's host; `langfuse_host` defaults to empty.
 - Alembic revision ids are hand-written fake-hex and COLLIDE easily — generate with `uuid.uuid4().hex[:12]`.
 - **SYSTEM.md gate**: `python3 scripts/check_system_md.py` (CI `docs-gate` job) enforces this file's header
@@ -857,15 +850,16 @@ citation. Priority lives in the item text, not in the ordinal.
 
 ## 12. Gotchas that have bitten before
 
+- **Sync MCP tools deadlock on the event loop** (2026-10-10 spike): a same-backend REST call blocks single-worker
+  uvicorn → `http.offload_tools` uses its own worker limiter; pinned by `tests/test_mcp_http_loopback.py`.
 - **Owned-session prompt reads never seed** (2026-10-10): a lazy INSERT waited out `busy_timeout` behind a caller's
   write and hid a mocked outage → only caller-supplied sessions seed; startup seeds the rest (`tests/test_prompts_service.py`).
 - **Guard files before commit** (2026-10-06): refusal still deleted documents/changed previews → check before disk I/O, including helpers (`tests/sync/test_guard.py`).
-- **Retry keys must identify controls** (2026-09-25): rule attempts use composite labels, collection uses clean
-  questions, so `country | field-12` never reaches the `country` retry → use element identity and stable descriptors;
-  a model upgrade cannot repair fields collection never sends (§11 item 40).
-- **Same page is not same URL** (2026-09-23): the leave guard stopped every popstate to the same pathname, so Back
-  between `?tab=` or `?session=` entries changed the URL and not the screen → `samePage` decides what asks, the URL
-  decides what renders (`lib/leave-guard.ts`).
+- **Retry keys must identify controls** (2026-09-25): rule attempts use composite labels, collection clean questions, so
+  `country | field-12` never reaches the `country` retry → use element identity; a model upgrade cannot repair fields
+  collection never sends (§11 item 40).
+- **Same page is not same URL** (2026-09-23): the leave guard stopped every same-pathname popstate, so Back between `?tab=`
+  or `?session=` entries changed the URL, not the screen → `samePage` decides what asks, the URL what renders (`lib/leave-guard.ts`).
 - **A page's `searchParams` prop keeps its arrival value after a native `replaceState`** (2026-09-23): a link to
   another tab of the same page opened nothing → read `?tab=` with `useSearchParams`, and keep `use(searchParams)` in
   the page (without it `next build` fails on `useSearchParams` outside Suspense).
@@ -877,12 +871,10 @@ citation. Priority lives in the item text, not in the ordinal.
   `id_key` (`resume_lint.py`). v3 kept the measure, digit-quoting analogue and uncertain keys; detail asks are new.
 - **A prompt-contract change bumps `RUBRIC_VERSION`** (2026-09-25): cache rows key on text + rubric version + model,
   so unchanged text kept its old judgment → bump it and resync the prompt row; overrides and "no number" survive.
-- **A GUI-launched process has no shell `PATH`** (2026-09-20): MacTeX at `/Library/TeX/texbin` is invisible to the
-  desktop shell and to a Claude Desktop child, so a bare `pdflatex` does not resolve. `engines.find_pdflatex` searches
-  the TeX homes after PATH, and every run spawns the resolved ABSOLUTE path.
-- **A seeded template copies its source only on INSERT** (2026-09-20): v0.4.0's Postgres import landed rows AFTER
-  migrations ran, so a migration-time rewrite hit an empty file and the importer re-landed old bytes →
-  `template_registry.SUPERSEDED_SEED_DIGESTS` resyncs at SEED time.
+- **A GUI-launched process has no shell `PATH`** (2026-09-20): a bare `pdflatex` misses MacTeX's `/Library/TeX/texbin`
+  in desktop apps → `engines.find_pdflatex` searches TeX homes after PATH; every run spawns its absolute path.
+- **A seeded template copies source only on INSERT** (2026-09-20): import landed rows after migrations, restoring
+  old bytes → `template_registry.SUPERSEDED_SEED_DIGESTS` resyncs at seed time, including Classic when another template is default.
 - **`foreign_keys` is per connection, and defaults OFF** (2026-09-19): `journal_mode` persists in the file; `foreign_keys`,
   `synchronous` and `busy_timeout` reset every connect, so 21 `ondelete=` cascades silently stopped → every SQLite
   engine goes through `app.db.make_engine`.
@@ -926,28 +918,29 @@ citation. Priority lives in the item text, not in the ordinal.
 - **Check model capability in the ROUTER, never inside `run_turn`**: `run_turn` is a generator — anything it raises
   fires after the SSE headers are out and reaches the browser as a truncated stream. Capabilities are probed on save
   (`llm_capabilities.probe()`); `require()` raises `CapabilityMissing`; unprobed models are never blocked.
-- **A probe must issue the SAME call as the surface it measures**: same client (`llm.get_chat_client`), same kwargs
-  from `llm.completion_extras` (the one site for such rules). A re-implemented call's stored row SHADOWS reality — a false tools=No once 422'd every
-  chat message.
-- **LLM provider outages are ONE exception type**: `llm.py` normalizes them to `llm.LLMProviderError`; `app.main` maps
-  it to 502 + its `str()`, a user sentence; plain `RuntimeError` is LOCAL and stays a 500. Never catch `openai.*` in
-  routers; classify a provider failure on `provider_detail`, never `str(exc)` — a user sentence once replaced the text
-  the capability probe matched on (2026-09-24).
+- **A probe must issue the SAME call as the surface it measures**: the adapter `stream` call in `llm_providers` (`provider.stream`), so client and kwargs
+  match by construction. A re-implemented call's stored row SHADOWS reality (a false tools=No once 422'd every chat message).
+- **LLM provider outages are ONE exception type**: `llm.py` normalizes them to `llm.LLMProviderError`; `app.main` maps it to
+  502 + its `str()`, a user sentence; plain `RuntimeError` is LOCAL (500). Never catch `openai.*` in routers; classify on
+  `provider_detail`, never `str(exc)` (a user sentence once replaced the text the capability probe matched on, 2026-09-24).
 - **`delete-orphan` cascade vs bulk re-point**: a bulk `update()` moving children off a parent leaves its loaded
   collection stale, so `session.delete(parent)` cascades away the moved rows → expire the parent between (`career_kb.merge_entities`).
-- **Workday apply steps read as "no form"** (2026-09-25): Workday has no `<form>`/`<select>`, a `type="text"` phone
-  and no email on My Information, so every step but the résumé upload scored 1 and Fill was withheld. Measure
-  `detectPage`'s signals on the live page before blaming timing; the fix is `workday-apply-route`.
+- **Workday apply steps read as "no form"** (2026-09-25): no `<form>`/`<select>`, a `type="text"` phone and no email on My
+  Information, so every step but the résumé upload scored 1 and Fill was withheld → measure `detectPage`'s signals on the
+  live page before blaming timing; the fix is `workday-apply-route`.
 - **Tailwind v4 compiles some classes to nothing** (2026-10-06): a variant on a plain class (`data-confirm:animate-confirm`
   until it was an `@utility`) and an unknown role (`border-outline`; check `--color-*` in `globals.css`); `translate-*`/`scale-*`
   set those properties, so `transition-[…transform]` jumps → register a class that takes a variant; name those properties.
+- **Agent sandboxes kill what a tool call starts** (2026-10-10): a server vanished between calls, even with `setsid` → run
+  start, checks and stop in ONE call (`scripts/smoke_uv_install.py`), or use `maestro autostart`.
+- **Child-server startup signals have separate meanings** (2026-10-10): reverse DNS can stall listening, while
+  “Started” precedes child output → fixtures bypass DNS, report bound ports, and wait for asserted output before stopping.
+
 ## 13. Active migrations & deprecation ledger
 
-**The rule.** A row is born the moment work lands that SUPERSEDES something without deleting it; it dies
-when the old path is removed. Every row names a **removal trigger** — the observable condition under
-which the old path gets deleted; without one it is two ways of doing the same thing, a design bug, not a
-row. §11 = work NOT YET BUILT; §13 = work built TWICE, where one copy must die. When a row lands, CUT the
-superseded prose from its home section and leave a one-line pointer ("migration state: §13 `<id>`").
+**The rule.** A row tracks a superseded path until deletion, with an observable **removal trigger**.
+§11 = work NOT YET BUILT; §13 = work built TWICE. Cut superseded prose from its home section;
+leave "migration state: §13 `<id>`". Remove the row when the old path is gone.
 
 **Machine-checked.** Rows with executable triggers are mirrored (TRIGGERS only, same ids) in
 `.slopledger.json`; the maintainer runs `python3 ~/.claude/skills/ai-slop-detector/scripts/ledger_check.py
@@ -961,6 +954,7 @@ survives as fallback/backup) · `blocked` (trigger cannot be evaluated until a n
 
 | id | old → new | status | removal trigger | effort |
 |---|---|---|---|---|
+| `mcp-stdio-venv` | stdio host venv (`setup-mcp.sh`, `maestro-career-studio-mcp`) and `docker exec` examples → URL (`/mcp`) + `.mcpb` bridge | new-is-default | The release after `/mcp` ships (v0.10.0): delete `scripts/setup-mcp.sh`, the venv paragraphs in docs/USING_MAESTRO.md, GETTING_STARTED and the mcp_server README, and every `docker exec … mcp_server.server` example. Keep the `maestro-career-studio-mcp` console script as the `maestro mcp` fallback until B′. | small |
 | `typst-default-flip` | seed `default` (LaTeX Classic) → seed `typst-classic` | both-live | **HELD by owner 2026-08-09: LaTeX stays, both engines remain first-class.** This is a longer park than 2026-08-02's, not a cancellation — the row survives because the trigger is still reachable, but nothing is waiting on it and `latex-render-path`/`texlive-layer` stay blocked behind it indefinitely. Header defects fixed (Typst `ulink()`; LaTeX separator space), DB rows re-synced. **The CLEAN 8/8 parity corpus predates 2026-08-08's extractor swap** (PyMuPDF→pypdfium2, forced by the Apache relicence), so those numbers were taken with a different measuring tape — re-run the corpus before acting on them. Then repoint `_bootstrap_default` (template_registry.py:131); a runtime `set-default` is NOT enough, seeding re-mints the LaTeX default on every fresh install. | medium |
 | `latex-render-path` | `pdf_render` latex branch + `*.tex.j2` → typst branch + `typst_classic.typ` | blocked | `select count(*) from templates where engine='latex'` = 0 **and still 0 after `GET /api/templates`** (which re-runs `ensure_seed_templates`); `cover_letter.tex.j2` has no caller, i.e. `render_cover_letter(engine="latex")` is unreachable — `compile_cover_letter_pdf` itself survives as the engine-dispatching entry point for both; no surface (web, chat, MCP, STARTER_SOURCE) can mint a latex row. Blocked on `typst-default-flip`. | large |
 | `texlive-layer` | minimal TeX Live layer (`backend/Dockerfile`) → `typst==0.15.0` in-process | blocked | Layer is already slim (install-tl `scheme-basic` + 18 tlmgr packages) and XCharter is vendored at `backend/app/assets/fonts/xcharter/` (keep the Bitstream Charter notice alongside; `settings.typst_font_paths` defaults there, so typst no longer reaches into texlive). The remaining FULL cut requires only: `grep -rn pdflatex backend/app` returns only comments. Blocked on `latex-render-path`. | medium |
@@ -969,6 +963,9 @@ survives as fallback/backup) · `blocked` (trigger cannot be evaluated until a n
 | `autofill-work-auth-shape` | `work_auth.authorized_to_work` + `requires_sponsorship` (two timeless booleans, stored "yes"/"no") → typed `WorkAuth` (`schemas/autofill_profile.py`: `status`, `authorized_now`, `sponsorship_now`, `sponsorship_future`, `authorization_expires_on`, `countries_authorized`) | both-live | Delete when no raw-profile reader uses either legacy key. Today's storage readers are FOUR: `services/autofill_profile.py`'s legacy branch, the Settings editor's legacy-on-edit bridge (`components/settings/autofill-section.tsx`), the fill engine's dual-read (`content/autofill.js`, the `w` binding in the profile normalizer; moved from agent.js at the phase-2 split), and the panel's `workAuthForWrite` (`panel/actions/pause.js`), which promotes the legacy pair before the first typed pause-row write. The panel copy is the trap: `.slopledger.json`'s trigger paths cover `extension/content` only, so the mechanical check goes GREEN while that reader lives — widen the paths or verify it by hand. `job_search_brief`'s identically named response fields are a frozen outward compatibility projection from typed `authorized_now` / `sponsorship_future`, not a legacy reader, and do not block removal. ALSO `GET /api/settings/autofill` must return a `work_auth` carrying neither legacy key. Then delete the legacy branch of BOTH `autofill_profile.get_work_auth` and the extension's `w` binding. Per `autofill-education-shape`: cut the frontend first, the extension one release later. | small |
 | `job-location-raw` | `jobs.location` (dual-written) → `location_raw` + city/state/country | both-live | Stage 1 (schema shim + `.location` property) already met. Stage 2: no reader of `jobs.location` remains, then `op.drop_column`. | small |
 | `health-rewrite-cache` | unattended rewrite always-LLM → `bullet_rewrites` (NULL text = tried-ask) + ephemeral ask answers → `health_ask_answers` | new-is-default | Migration `85a1bb628e28` (pre-SQLite chain, removed in v0.5.0; the tables are in the SQLite baseline). The LLM miss path is the intended fallback, not a second product — cut this row when a follow-up deletes either table or the GET `/api/resume-lint/{kind}/{key}/answers` rehydrate. | small |
+| `chat-message-parts` | `chat_messages.tool_calls` / `tool_call_id` columns → neutral versioned `parts` (+ `provider`, `model`; migration `cf0804d00ae2` backfills) | new-is-default | The release after this one ships: drop both columns, `transcript.from_legacy` and the `ChatMessageRead` legacy fields in one migration. Readers: `transcript.from_legacy` fallback, `ChatMessageRead`. | small |
+| `native-scripts-to-maestro` | `backend/scripts/native/*.sh` (always-on bot) → the `maestro` command | both-live | The always-on bot runs on `maestro` for one release, then delete `backend/scripts/native/`, `docs/native-install.md` and `tests/test_native_scripts.py`. | medium |
+| `lock-wheel-deps` | `requirements.lock` as the image's whole runtime set (names the old `maestro-career-studio-backend`, no `psutil`) → regenerated lock that omits `nodejs-wheel-binaries` (`pip-compile --unsafe-package`); the image adds the project with `--no-deps -e .` | both-live | Lock regenerated in `python:3.12-slim`: it has `psutil==`, `nodejs-wheel-binaries` not pinned, no `maestro-career-studio-backend`. | small |
 
 **Row notes** (only where the trigger hides a trap):
 
