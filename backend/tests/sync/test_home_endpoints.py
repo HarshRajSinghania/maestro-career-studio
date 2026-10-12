@@ -673,6 +673,17 @@ def test_a_remote_job_is_stored_as_a_replica_owned_by_the_sender(
         roots.home / "Co_Role_a")
 
 
+def _copied(folder_on):
+    return sorted(path.name for path in folder_on.rglob("*.pdf"))
+
+
+def test_a_pushed_job_gets_its_resume_copied(
+        client, auth, db_session, recv, roots, folder_on):
+    _, bundle = remote_job(recv, roots)
+    assert post_jobs(client, auth, [bundle]).status_code == 200
+    assert _copied(folder_on) == ["resume.pdf"]
+
+
 def test_resending_a_bundle_changes_nothing(client, auth, db_session, recv, roots):
     ids, bundle = remote_job(recv, roots)
     first = post_jobs(client, auth, [bundle]).json()
@@ -1325,6 +1336,19 @@ def test_a_returned_job_is_owned_here_again(client, auth, db_session, recv, root
     # and the job is writable here again
     db_session.get(models.Application, ids.app).notes = "Mine"
     db_session.commit()
+
+
+def test_a_returned_job_gets_its_resume_copied_again(
+        client, auth, db_session, recv, roots, remote_id, folder_on):
+    import shutil
+
+    ids, bundle = remote_job(recv, roots)
+    post_jobs(client, auth, [bundle])
+    shutil.rmtree(folder_on)
+    bundle["handover"] = "returning"
+    body = client.post("/api/sync/handover/return", headers=auth, json={"bundles": [bundle]})
+    assert _ids(body.json()["job_ids"]) == [ids.job.hex]
+    assert _copied(folder_on) == ["resume.pdf"]
 
 
 def test_a_kept_both_job_can_be_returned(client, auth, db_session, recv, roots):

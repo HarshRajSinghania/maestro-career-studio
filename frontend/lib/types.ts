@@ -617,6 +617,8 @@ export interface RenderResult extends RenderNoted {
   resolved_template_id: string | null;
   resolved_engine: string | null;
   template_fallback: boolean | null;
+  /** Where the visible copy sits in the resumes folder; null when there is none. */
+  copy_path: string | null;
 }
 
 /** POST /api/base-resumes/{slug}/propose — a reviewed-before-applied proposal. */

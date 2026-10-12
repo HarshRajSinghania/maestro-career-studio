@@ -42,6 +42,7 @@ from app.models.job import Job
 from app.models.sync import SyncRequest, SyncState, SyncTombstone
 from app.models.types import utcnow
 from app.schemas.agent_runs import MAX_DIGEST, MAX_JOB_IDS, RunCountKey, RunOutcome
+from app.services import resumes_folder
 from app.services.sync import (
     duplicates,
     hooks,
@@ -688,6 +689,7 @@ def _store(db: Session, peer: PeerInfo, bundle: dict, found: dict) -> None:
         return
     if outcome.kind != "laptop":
         found["applied"].append(shown)
+        resumes_folder.copy_job(job_id)  # after the bundle's commits; never raises
     if outcome.kind != "applied":
         found["duplicates"].append({"job_id": shown, "kept": outcome.kind,
                                     "local_id": outcome.local_id.hex})
@@ -833,6 +835,7 @@ def _take_back(db: Session, peer: PeerInfo, bundle: dict, found: dict) -> None:
         reason = _store_returned(db, peer, bundle, job_id)
     if reason is None:
         found["job_ids"].append(shown)
+        resumes_folder.copy_job(job_id)  # after the bundle's commits; never raises
     else:
         found["refused"].append({"job_id": shown, "reason": reason})
 

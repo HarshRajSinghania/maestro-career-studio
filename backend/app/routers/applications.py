@@ -41,6 +41,7 @@ from app.services import (
     pdf_preview,
     resume_diff,
     resume_ops,
+    resumes_folder,
 )
 from app.services import proposals as proposal_svc
 from app.services.application_writes import NO_TAILORED_RESUME, stage_resume_update
@@ -500,6 +501,7 @@ def render_application(
             template_id is not None and doc.resolved_template_id != template_id
         ),
         render_note=doc.render_note,
+        copy_path=str(p) if (p := resumes_folder.copy_path_for(application_id)) else None,
     )
 
 

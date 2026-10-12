@@ -26,6 +26,7 @@ from app.services import (
     base_resume_data,
     pdf_preview,
     pdf_render,
+    resumes_folder,
     role_titles,
 )
 
@@ -111,6 +112,7 @@ def render_resume(
         application.pdf_pages = len(pdf_preview.ensure_page_images(pdf_path))
         application.render_error = None
         db.commit()
+        resumes_folder.copy_application(application.id)  # never raises
 
         return source_path, pdf_path, doc
     except Exception as e:

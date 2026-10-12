@@ -257,3 +257,20 @@ def copy_job(job_id: UUID) -> None:
         return
     for application_id in ids:
         copy_application(application_id)
+
+
+def copy_path_for(application_id: UUID) -> Path | None:
+    """Where the resume copy is, without writing anything. None when there is none."""
+    if availability() is not None:
+        return None
+    try:
+        with SessionLocal() as db:
+            application = db.get(Application, application_id)
+            name = _get(db, APP_KEY_PREFIX + application_id.hex)
+            base = root(db)
+            if not (enabled(db) and application and application.pdf_path and name and base):
+                return None
+            path = base / name / Path(application.pdf_path).name
+            return path if path.exists() else None
+    except Exception:  # noqa: BLE001 — planning decision 8
+        return None

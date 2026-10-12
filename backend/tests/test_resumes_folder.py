@@ -1,59 +1,18 @@
 """Visible copies of finished resumes ({#inv-resumes-folder-one-way})."""
 import builtins
 import os
-from datetime import UTC, date, datetime
+from datetime import date
 from pathlib import Path
-from uuid import uuid4
-
-import pytest
 
 from app.config import settings as app_settings
-from app.models.application import Application
-from app.models.job import Job
 from app.models.qa_entry import QAEntry
 from app.models.setting import Setting
+from app.routers import qa
+from app.services import base_resume_data, pdf_render
 from app.services import resumes_folder as rf
 from app.services.sync import registry
 from tests.pdf_fixtures import write_blank_pdf
-
-
-def _job(db, *, company="Acme", title="Data Scientist"):
-    job = Job(
-        raw_text="Need Python",
-        raw_text_hash=uuid4().hex,
-        extracted_json={"title": title, "company": company},
-        title=title,
-        company=company,
-        role_category="data_scientist",
-        extracted_at=datetime.now(UTC),
-    )
-    db.add(job)
-    db.commit()
-    db.refresh(job)
-    return job
-
-
-def _application(db, job, pdf: Path | None = None):
-    application = Application(
-        job_id=job.id,
-        base_resume="data_scientist",
-        status="draft",
-        pdf_path=str(pdf) if pdf is not None else None,
-    )
-    db.add(application)
-    db.commit()
-    db.refresh(application)
-    return application
-
-
-@pytest.fixture
-def folder_on(tmp_path, monkeypatch):
-    """A machine that keeps a resumes folder, rooted in tmp_path/Documents/..."""
-    root = tmp_path / "Documents" / "Maestro Career Studio" / "Applications"
-    monkeypatch.setattr(app_settings, "resumes_folder_default", root)
-    monkeypatch.setattr(app_settings, "applications_dir", tmp_path / "work")
-    (tmp_path / "work").mkdir()
-    return root
+from tests.resumes_folder_fixtures import make_application, make_job, make_pdf
 
 
 def test_unavailable_without_a_default(monkeypatch):
@@ -91,8 +50,8 @@ def test_folder_label_is_readable_and_safe():
 
 
 def test_folder_name_is_saved_and_clashes_get_a_number(db_session, folder_on):
-    job = _job(db_session, company="Acme", title="Data Scientist")
-    first, second = _application(db_session, job), _application(db_session, job)
+    job = make_job(db_session, company="Acme", title="Data Scientist")
+    first, second = make_application(db_session, job), make_application(db_session, job)
     name_one = rf._folder_for(db_session, first, job)
     name_two = rf._folder_for(db_session, second, job)
     assert name_two == f"{name_one} (2)"
@@ -118,26 +77,19 @@ def test_folder_name_is_chosen_under_the_write_lock(db_session, folder_on, monke
     lock, label = rf.begin_write, rf.folder_label
     monkeypatch.setattr(rf, "begin_write", lambda db: (calls.append("lock"), lock(db))[1])
     monkeypatch.setattr(rf, "folder_label", lambda *a: (calls.append("label"), label(*a))[1])
-    job = _job(db_session)
-    application = _application(db_session, job)
+    job = make_job(db_session)
+    application = make_application(db_session, job)
     rf._folder_for(db_session, application, job)
     assert calls == ["lock", "label"]  # the lock comes before the name is chosen
     rf._folder_for(db_session, application, job)
     assert calls == ["lock", "label"]  # a saved name returns without taking the lock again
 
 
-def _pdf(tmp_path, name="Riley_Quill_DataScientist_Resume.pdf"):
-    path = tmp_path / "work" / "Acme_DS_20261011_abcd1234" / name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_blank_pdf(path, 1)
-    return path
-
-
 def test_copies_resume_and_cover_letter_pdfs_only(db_session, folder_on, tmp_path):
-    resume = _pdf(tmp_path)
+    resume = make_pdf(tmp_path)
     (resume.parent / "Riley_Quill_DataScientist_Resume.log").write_text("x")
-    letter = _pdf(tmp_path, "Riley_Quill_DataScientist_CoverLetter.pdf")
-    app = _application(db_session, _job(db_session, company="Acme", title="Data Scientist"), pdf=resume)
+    letter = make_pdf(tmp_path, "Riley_Quill_DataScientist_CoverLetter.pdf")
+    app = make_application(db_session, make_job(db_session, company="Acme", title="Data Scientist"), pdf=resume)
     db_session.add(QAEntry(application_id=app.id, kind="cover_letter", answer="Hi", pdf_path=str(letter)))
     db_session.commit()
 
@@ -149,7 +101,7 @@ def test_copies_resume_and_cover_letter_pdfs_only(db_session, folder_on, tmp_pat
 
 
 def test_second_copy_is_a_no_op(db_session, folder_on, tmp_path, monkeypatch):
-    app = _application(db_session, _job(db_session), pdf=_pdf(tmp_path))
+    app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
     first = rf.copy_application(app.id)
     before = first.stat().st_mtime_ns
     writes = []
@@ -162,7 +114,7 @@ def test_second_copy_is_a_no_op(db_session, folder_on, tmp_path, monkeypatch):
 
 
 def test_never_reads_the_copy(db_session, folder_on, tmp_path, monkeypatch):
-    app = _application(db_session, _job(db_session), pdf=_pdf(tmp_path))
+    app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
     first = rf.copy_application(app.id)
     os.utime(first, ns=(0, 0))  # force a rewrite on the next call
     real_open = builtins.open
@@ -176,7 +128,7 @@ def test_never_reads_the_copy(db_session, folder_on, tmp_path, monkeypatch):
 
 
 def test_failure_is_recorded_not_raised(db_session, folder_on, tmp_path, monkeypatch):
-    app = _application(db_session, _job(db_session), pdf=_pdf(tmp_path))
+    app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
 
     def refuse(*args, **kwargs):
         raise PermissionError("no")
@@ -195,7 +147,7 @@ def test_vanished_custom_root_is_not_recreated(db_session, folder_on, tmp_path):
     custom = tmp_path / "usb"
     db_session.add(Setting(key=rf.PATH_KEY, value=str(custom)))
     db_session.commit()
-    app = _application(db_session, _job(db_session), pdf=_pdf(tmp_path))
+    app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
     assert rf.copy_application(app.id) is None
     assert not custom.exists()
     db_session.expire_all()
@@ -203,7 +155,7 @@ def test_vanished_custom_root_is_not_recreated(db_session, folder_on, tmp_path):
 
 
 def test_off_and_unavailable_copy_nothing(db_session, folder_on, tmp_path, monkeypatch):
-    app = _application(db_session, _job(db_session), pdf=_pdf(tmp_path))
+    app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
     db_session.add(Setting(key=rf.ENABLED_KEY, value="off"))
     db_session.commit()
     assert rf.copy_application(app.id) is None
@@ -213,15 +165,15 @@ def test_off_and_unavailable_copy_nothing(db_session, folder_on, tmp_path, monke
 
 
 def test_no_pdf_means_no_folder(db_session, folder_on):
-    app = _application(db_session, _job(db_session))
+    app = make_application(db_session, make_job(db_session))
     assert rf.copy_application(app.id) is None
     assert not folder_on.exists()
 
 
 def test_same_size_rerender_replaces_the_copy(db_session, folder_on, tmp_path):
-    pdf = _pdf(tmp_path)
+    pdf = make_pdf(tmp_path)
     pdf.write_bytes(b"A" * 64)
-    app = _application(db_session, _job(db_session), pdf=pdf)
+    app = make_application(db_session, make_job(db_session), pdf=pdf)
     copied = rf.copy_application(app.id)
     stat = pdf.stat()
     pdf.write_bytes(b"B" * 64)  # same size, different bytes
@@ -231,7 +183,7 @@ def test_same_size_rerender_replaces_the_copy(db_session, folder_on, tmp_path):
 
 
 def test_failure_to_record_the_failure_still_does_not_raise(db_session, folder_on, tmp_path, monkeypatch):
-    app = _application(db_session, _job(db_session), pdf=_pdf(tmp_path))
+    app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
 
     def refuse(*args, **kwargs):
         raise PermissionError("no")
@@ -252,3 +204,97 @@ def test_failure_to_record_the_failure_still_does_not_raise(db_session, folder_o
     monkeypatch.setattr(rf, "SessionLocal", session_factory)
     assert rf.copy_application(app.id) is None
     assert len(calls) == 2
+
+
+# ---- hook points: render, cover letter, sync arrival (Task 5) ----
+
+
+def _stub_render(monkeypatch):
+    """Stand in for the TeX compiler, as test_applications_router does."""
+    monkeypatch.setattr(
+        base_resume_data,
+        "load_base_resume",
+        lambda slug, session=None: {
+            "contact": {"name": "Riley Quill", "email": "x@y.com"},
+            "summary": "Data scientist",
+            "skills": [],
+            "experience": [],
+            "projects": [],
+            "education": [],
+            "certifications": [],
+        },
+    )
+    monkeypatch.setattr(
+        pdf_render,
+        "render_document",
+        lambda data, **kw: pdf_render.RenderedDoc("latex", "rendered tex"),
+    )
+
+    def fake_compile_pdf(tex_text, out_dir, stem="resume"):
+        (out_dir / f"{stem}.tex").write_text(tex_text, encoding="utf-8")
+        path = out_dir / f"{stem}.pdf"
+        write_blank_pdf(path, 1)
+        return path
+
+    monkeypatch.setattr(pdf_render, "compile_pdf", fake_compile_pdf)
+
+
+def test_render_endpoint_copies_and_reports_where(db_session, folder_on, monkeypatch, client):
+    application = make_application(db_session, make_job(db_session))
+    _stub_render(monkeypatch)
+    response = client.post(f"/api/applications/{application.id}/render")
+    assert response.status_code == 200
+    body = response.json()
+    copy = Path(body["copy_path"])
+    assert copy.is_file() and folder_on in copy.parents
+    assert copy.read_bytes() == Path(body["pdf_path"]).read_bytes()
+
+
+def test_render_survives_a_failed_copy(db_session, folder_on, monkeypatch, client):
+    application = make_application(db_session, make_job(db_session))
+    _stub_render(monkeypatch)
+
+    def refuse(*args, **kwargs):
+        raise PermissionError("no")
+
+    monkeypatch.setattr(rf.shutil, "copyfile", refuse)
+    response = client.post(f"/api/applications/{application.id}/render")
+    assert response.status_code == 200
+    assert response.json()["copy_path"] is None
+    assert rf.last_error(db_session)["code"] == "write"
+
+
+def test_render_reports_no_copy_when_the_folder_is_off(db_session, tmp_path, monkeypatch, client):
+    monkeypatch.setattr(app_settings, "resumes_folder_default", None)
+    monkeypatch.setattr(app_settings, "applications_dir", tmp_path)
+    application = make_application(db_session, make_job(db_session))
+    _stub_render(monkeypatch)
+    response = client.post(f"/api/applications/{application.id}/render")
+    assert response.status_code == 200
+    assert response.json()["copy_path"] is None
+
+
+def test_cover_letter_render_copies(db_session, folder_on, tmp_path, monkeypatch, client):
+    application = make_application(db_session, make_job(db_session))
+    entry = QAEntry(application_id=application.id, kind="cover_letter", prompt="cover letter",
+                    answer="Dear Hiring Manager,\n\nI'm excited.\n\nSincerely,\nJane")
+    db_session.add(entry)
+    db_session.commit()
+    db_session.refresh(entry)
+    monkeypatch.setattr(
+        qa.base_resume_data,
+        "load_base_resume",
+        lambda slug, session=None: {"contact": {"name": "Jane Doe", "email": "j@x.com"}},
+    )
+
+    def fake_compile(source, out_dir, stem="cover_letter", **kwargs):
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / f"{stem}.pdf"
+        path.write_bytes(b"%PDF test")
+        return path
+
+    monkeypatch.setattr(qa.pdf_render, "compile_cover_letter_pdf", fake_compile)
+    response = client.post(f"/api/qa/{entry.id}/render")
+    assert response.status_code == 200
+    copies = [p for p in folder_on.rglob("*.pdf")]
+    assert [p.name for p in copies if p.name.endswith("_CoverLetter.pdf")]

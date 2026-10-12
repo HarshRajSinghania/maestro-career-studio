@@ -69,6 +69,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from tests.ats.fixtures import fake_embed_texts
+from tests.resumes_folder_fixtures import folder_on  # noqa: F401  shared fixture, see that module
 
 
 @pytest.fixture(autouse=True)

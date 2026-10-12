@@ -27,6 +27,7 @@ from app.services import (
     base_resume_data,
     pdf_render,
     qa as qa_service,
+    resumes_folder,
     role_titles,
 )
 
@@ -229,6 +230,7 @@ def render_cover_letter(entry_id: UUID, db: Annotated[Session, Depends(get_db)])
     entry.pdf_path = str(pdf_path)
     db.commit()
     db.refresh(entry)
+    resumes_folder.copy_application(application.id)  # never raises
     # Transient, unmapped (QAEntryRead.render_note): lives on the row, never in it.
     entry.render_note = render_note
     return entry

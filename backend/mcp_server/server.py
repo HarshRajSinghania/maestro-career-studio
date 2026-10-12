@@ -1154,7 +1154,8 @@ def render_pdf(target_type: Literal["base_resume", "application"], target_id: st
     by render_note, never by the flag. render_note is non-null only when the
     backend has no TeX and a LaTeX template was rendered through a Typst
     template instead; it names both. Returns the render result incl.
-    pdf_path, plus a `next` key: for an 'application' render this is the terminal
+    pdf_path (an application render also has copy_path: where the user finds the PDF
+    in their resumes folder, null when off), plus a `next` key: for an 'application' render this is the terminal
     apply-readiness hint (autofill_ready, incomplete/blocking groups, a conditional
     browser-handoff offer); for a 'base_resume' render it is always null — a
     base-resume preview isn't part of the score->tailor->render arc, so there is

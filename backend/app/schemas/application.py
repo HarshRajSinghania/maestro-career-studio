@@ -128,3 +128,5 @@ class RenderResult(BaseModel):
     # Non-null ONLY when the engine was substituted because TeX is absent;
     # says why, in the words the user sees.
     render_note: str | None = None
+    # Where the visible copy of the PDF sits in the resumes folder; null when there is none.
+    copy_path: str | None = None
