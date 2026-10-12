@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useLeaveGuard } from "@/hooks/use-leave-guard";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { apiFetch } from "@/lib/api";
 import { CONCEPT_ICONS } from "@/lib/concept-icons";
 import { couldnt } from "@/lib/error-text";
@@ -23,14 +24,16 @@ const UNAVAILABLE: Record<"not_here" | "always_on_copy", string> = {
   always_on_copy: "This copy keeps no resumes folder.",
 };
 
-const sentence = ({ message }: { message: string }) => message;
-
 type Patch = { enabled?: boolean; folder?: string | null };
 
 /** Where Maestro saves a visible copy of each finished resume PDF (Settings > Tailoring). */
 export function ResumesFolderSection() {
   const qc = useQueryClient();
   const id = useId();
+  // The typed folder path; null = the field is closed. It lives here, beside the save that takes it,
+  // and clears only once the server has taken it: a rejected path stays in the field to fix.
+  const [draft, setDraft] = useState<string | null>(null);
+  useLeaveGuard(draft !== null);
   const setting = useQuery({
     queryKey: RESUMES_FOLDER_KEY,
     queryFn: () => apiFetch<ResumesFolderSettings>(RESUMES_FOLDER_URL),
@@ -45,11 +48,15 @@ export function ResumesFolderSection() {
       }),
     onSuccess: (result, patch) => {
       qc.setQueryData(RESUMES_FOLDER_KEY, result);
-      if ("folder" in patch) toast.success("Resumes folder changed");
+      if ("folder" in patch) {
+        setDraft(null);
+        toast.success("Resumes folder changed");
+      }
     },
     onError: (error: Error, patch) =>
       toast.error(couldnt("folder" in patch ? "use that folder" : "save this setting", error)),
   });
+  const saveOnce = useSingleFlight(save.mutate);
 
   return (
     <SettingCard
@@ -68,23 +75,29 @@ export function ResumesFolderSection() {
         ) : (
           <div className="grid gap-4">
             <SettingCardAction>
-              <AutosaveStatus pending={save.isPending} failed={save.isError} />
+              <AutosaveStatus pending={save.isPending} failed={save.isError} idle={draft === null} />
             </SettingCardAction>
             <SwitchRow htmlFor={id} label="Save a copy of each resume">
               <Switch
                 id={id}
                 checked={data.enabled}
                 onCheckedChange={(checked) => {
-                  if (!save.isPending) save.mutate({ enabled: checked });
+                  if (!save.isPending) saveOnce({ enabled: checked });
                 }}
               />
             </SwitchRow>
             {data.enabled && (
-              <FolderRow data={data} saving={save.isPending} onSave={(f) => save.mutateAsync({ folder: f })} />
+              <FolderRow
+                data={data}
+                draft={draft}
+                onDraft={setDraft}
+                saving={save.isPending}
+                onSave={(folder) => saveOnce({ folder })}
+              />
             )}
-            {/* A sentence the server wrote about the last failed copy, not a thrown error. */}
+            {/* Server-composed fixed sentence, never exception text (test_frontend_error_words _ALLOWED). */}
             {data.last_error && (
-              <p className="text-destructive text-body-small">{sentence(data.last_error)}</p>
+              <p className="text-destructive text-body-small">{data.last_error.message}</p>
             )}
           </div>
         )
@@ -95,24 +108,34 @@ export function ResumesFolderSection() {
 
 function FolderRow({
   data,
+  draft,
+  onDraft,
   saving,
   onSave,
 }: {
   data: ResumesFolderSettings;
+  draft: string | null;
+  onDraft: (draft: string | null) => void;
   saving: boolean;
-  onSave: (folder: string | null) => Promise<unknown>;
+  onSave: (folder: string | null) => void;
 }) {
   const inputId = useId();
-  // The typed path; null = the field is closed. A rejected path stays in the field to fix.
-  const [draft, setDraft] = useState<string | null>(null);
-  useLeaveGuard(draft !== null);
 
   const open = useMutation({
     mutationFn: () => apiFetch<void>(`${RESUMES_FOLDER_URL}/open`, { method: "POST" }),
     onError: (error: Error) => toast.error(couldnt("open the folder", error)),
   });
+  const openOnce = useSingleFlight(open.mutate);
 
-  const submit = (folder: string | null) => onSave(folder).then(() => setDraft(null), () => {});
+  // Closing the editor (Save or Cancel) and resetting to the default each remove the focused
+  // control, so focus goes to "Change folder", which stays on screen.
+  const changeRef = useRef<HTMLButtonElement>(null);
+  const handoff = useRef({ editing: false, custom: data.custom });
+  useEffect(() => {
+    const prev = handoff.current;
+    if ((prev.editing && draft === null) || (prev.custom && !data.custom)) changeRef.current?.focus();
+    handoff.current = { editing: draft !== null, custom: data.custom };
+  }, [draft, data.custom]);
 
   return (
     <div className="grid gap-3">
@@ -125,16 +148,28 @@ function FolderRow({
           {data.folder_display}
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" pending={open.isPending} onClick={() => open.mutate()}>
+          <Button variant="outline" size="sm" pending={open.isPending} onClick={() => openOnce(undefined)}>
             Open folder
           </Button>
           {draft === null && (
-            <Button variant="outline" size="sm" onClick={() => setDraft(data.folder ?? "")}>
+            <Button
+              ref={changeRef}
+              variant="outline"
+              size="sm"
+              onClick={() => onDraft(data.folder ?? "")}
+            >
               Change folder
             </Button>
           )}
           {data.custom && draft === null && (
-            <Button variant="ghost" size="sm" disabled={saving} onClick={() => void submit(null)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              focusableWhenDisabled
+              disabled={saving}
+              className="data-disabled:pointer-events-none data-disabled:opacity-50"
+              onClick={() => onSave(null)}
+            >
               Use the default
             </Button>
           )}
@@ -148,17 +183,17 @@ function FolderRow({
             value={draft}
             // readOnly, not disabled, while it saves: a disabled field drops focus to <body>.
             readOnly={saving}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => onDraft(event.target.value)}
           />
           <div className={ACTION_ROW}>
-            <Button variant="ghost" onClick={() => setDraft(null)}>
+            <Button variant="ghost" onClick={() => onDraft(null)}>
               Cancel
             </Button>
             <Button
               focusableWhenDisabled
               disabled={saving || !draft.trim()}
               className="data-disabled:pointer-events-none data-disabled:opacity-50"
-              onClick={() => void submit(draft.trim())}
+              onClick={() => onSave(draft.trim())}
             >
               Save
             </Button>

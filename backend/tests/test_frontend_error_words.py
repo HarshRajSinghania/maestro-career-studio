@@ -57,6 +57,8 @@ _ALLOWED: dict[str, int] = {
     # The one reader of a thrown message, which shows it only when it is a
     # plain sentence (errorDetail).
     "lib/error-text.ts": 1,
+    # server-composed fixed sentence from resumes_folder.ERROR_SENTENCES, never exception text
+    "components/settings/resumes-folder-section.tsx": 1,
 }
 
 

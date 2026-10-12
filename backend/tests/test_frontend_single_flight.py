@@ -102,6 +102,9 @@ _SITES = [
     ("components/resume-versions/version-history-sheet.tsx", "restore"),
     # The low-stakes switch (a double click flipped it twice).
     ("components/settings/autofill-section.tsx", "saveOptions"),
+    # The Resumes folder card: the switch, Save path and Use the default share one guard.
+    ("components/settings/resumes-folder-section.tsx", "save"),
+    ("components/settings/resumes-folder-section.tsx", "open"),
 ]
 
 
