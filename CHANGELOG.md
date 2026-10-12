@@ -52,7 +52,7 @@ through a conversation and it still remembers what was said.
   folder you had to dig for, so now every resume PDF, and every cover letter PDF, also
   lands in your Documents folder, one folder per job. The copy happens after each render
   and after a job arrives from your second copy, and the first time it runs it copies the
-  PDFs you already have. Folders are named `Company – Job title (date)` under
+  resume PDFs you already have, with their cover letters. Folders are named `Company – Job title (date)` under
   `Documents/Maestro Career Studio/Applications` and keep their name if you edit the
   title later. Maestro only writes there: it never reads a copy back or deletes anything,
   and a re-render replaces the file with the same name. **Show in Finder** (**Show in File

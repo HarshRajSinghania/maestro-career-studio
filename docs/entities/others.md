@@ -244,7 +244,7 @@
     " (2)". The name is allocated under the write lock.
   - **When**: after every application resume render (web Create/Update PDF, studio Save and Tailor, quick tailor and the Companion, MCP
     `render_pdf`, whose application render returns a nullable `copy_path`; a base-resume render returns none), every cover-letter PDF render, and every laptop-side sync arrival (`POST /api/sync/jobs`,
-    `POST /api/sync/handover/return`). At startup a backfill copies every existing PDF once per root: requests coalesce, and a root is
+    `POST /api/sync/handover/return`). At startup a backfill copies each application's existing resume PDF (with its cover-letter PDFs) once per root: requests coalesce, and a root is
     marked done (`resumes_folder.backfilled`) only when a pass finished cleanly with no new request. Turning the feature on or changing
     the folder starts one.
   - **How**: one-way and atomic (temp file, then replace). A copy whose size and `mtime_ns` already match is skipped by `stat` alone;
