@@ -292,8 +292,8 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   persisted on `Application.artifact_dir`; resume/source/PDF, previews, cover letters and proposal `evidence/` colocate
   there. Upload constraints: `docs/entities/others.md`, "PDF upload staging".
 - **Resumes folder copies go one way.** `{#inv-resumes-folder-one-way}` After the commit, each finished PDF is copied into the
-  user's Documents folder, never read back or deleted there; a copy failure never fails the caller; `resumes_folder.*` is
-  machine-local, off without `RESUMES_FOLDER_DEFAULT` and on the always-on copy. Pinned by `tests/test_resumes_folder.py`.
+  resumes folder (Documents by default), never read back or deleted there; a copy failure never fails the caller;
+  `resumes_folder.*` is machine-local, off without `RESUMES_FOLDER_DEFAULT` and on the always-on copy. Pinned by `tests/test_resumes_folder.py`.
 - **Honesty invariant** `{#inv-honesty}`: an `add_keyword` on a skill the engine found NO evidence of (`fix_hint ==
   "absent"`) may only land in the skills section, never as a fabricated experience/project bullet. Enforced server-side
   in `save_resolutions` (guards MCP/API callers, not just the UI).
