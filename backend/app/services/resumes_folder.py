@@ -92,10 +92,13 @@ def display(path: Path, home: Path | None = None) -> str:
 
 def validate_folder(raw: str) -> Path:
     """The chosen custom root, or FolderRefused with a sentence for the user (no paths in it)."""
-    path = Path(raw.strip()).expanduser()
-    if not raw.strip() or not path.is_absolute():
-        raise FolderRefused("Enter the folder's full path.")
-    path = path.resolve()
+    try:
+        path = Path(raw.strip()).expanduser()  # RuntimeError for an unknown ~user, ValueError for a NUL
+        if not raw.strip() or not path.is_absolute():
+            raise FolderRefused("Enter the folder's full path.")
+        path = path.resolve()
+    except (RuntimeError, ValueError, OSError):
+        raise FolderRefused("Enter the folder's full path.") from None
     if not path.is_dir():
         raise FolderRefused("That folder doesn't exist. Create it first, then try again.")
     own = [app_settings.applications_dir, os.environ.get("MAESTRO_HOME")]

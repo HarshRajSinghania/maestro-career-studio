@@ -107,6 +107,13 @@ def test_put_a_folder_inside_the_data_folder_is_refused(client, folder_on, tmp_p
     assert r.json()["detail"] == "Choose a folder outside Maestro's own data folder."
 
 
+@pytest.mark.parametrize("raw", ["~nosuchuser-maestro/x", "/tmp/a\x00b"])
+def test_put_a_path_that_cant_be_read_is_refused_not_a_500(client, folder_on, raw):
+    r = client.put(URL, json={"folder": raw})
+    assert r.status_code == 422
+    assert r.json()["detail"] == "Enter the folder's full path."
+
+
 def test_put_an_unwritable_folder_is_refused(client, folder_on, tmp_path, monkeypatch):
     ok = tmp_path / "ok"
     ok.mkdir()
@@ -196,6 +203,13 @@ def test_open_never_creates_a_custom_folder(client, folder_on, tmp_path, opened)
     assert not ok.exists()
 
 
+def test_open_when_the_default_folder_cant_be_made_is_a_409(client, folder_on, tmp_path, opened):
+    (tmp_path / "Documents").write_text("a file where the folder should be")
+    r = client.post(f"{URL}/open")
+    assert (r.status_code, r.json()["detail"]) == (409, router_mod.CANT_OPEN)
+    assert opened["folder"] == []
+
+
 def test_open_failing_is_a_409(client, folder_on, monkeypatch):
     def boom(_p):
         raise folder_opener.OpenerUnavailable("open")
@@ -219,7 +233,7 @@ def test_show_copy_reveals_the_copy(client, folder_on, db_session, tmp_path, ope
 
 def test_show_copy_for_an_unknown_application(client, folder_on):
     r = client.post("/api/applications/00000000-0000-0000-0000-000000000000/show-copy")
-    assert r.status_code == 404
+    assert (r.status_code, r.json()["detail"]) == (404, router_mod.NOT_FOUND)
 
 
 def test_show_copy_without_a_pdf(client, folder_on, db_session, opened):
@@ -259,7 +273,7 @@ def test_show_copy_failing_to_open_is_a_409(client, folder_on, db_session, tmp_p
 def test_every_409_and_422_sentence_is_plain(client, folder_on, tmp_path, monkeypatch):
     """frontend/lib/error-text.ts shows a server detail only when isPlainSentence passes."""
     sentences = [
-        router_mod.UNAVAILABLE, router_mod.OFF, router_mod.NO_PDF, router_mod.NOT_SAVED, router_mod.CANT_OPEN,
+        router_mod.UNAVAILABLE, router_mod.OFF, router_mod.NO_PDF, router_mod.NOT_FOUND, router_mod.NOT_SAVED, router_mod.CANT_OPEN,
         *rf.ERROR_SENTENCES.values(),
     ]
     inside = tmp_path / "work" / "x"

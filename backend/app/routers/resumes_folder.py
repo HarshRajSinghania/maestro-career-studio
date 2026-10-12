@@ -21,6 +21,7 @@ UNAVAILABLE = "This copy of Maestro keeps no resumes folder."
 OFF = "Saving copies is turned off in Settings › Tailoring."
 NO_PDF = "Create the PDF first."
 NOT_SAVED = "Maestro couldn't save a copy to your resumes folder. Check Settings › Tailoring."
+NOT_FOUND = "This application doesn't exist."
 CANT_OPEN = "Maestro couldn't open the folder on this computer."  # no path: planning decision 9
 
 
@@ -74,11 +75,11 @@ def put_resumes_folder(payload: ResumesFolderUpdate, db: Annotated[Session, Depe
              dependencies=[Depends(_require_available)])
 def open_resumes_folder(db: Annotated[Session, Depends(get_db)]):
     base = rf.root(db)
-    if not rf.is_custom(db):
-        base.mkdir(parents=True, exist_ok=True)
     try:
+        if not rf.is_custom(db):
+            base.mkdir(parents=True, exist_ok=True)
         folder_opener.open_folder(base)
-    except folder_opener.OpenerUnavailable:
+    except (OSError, folder_opener.OpenerUnavailable):
         raise HTTPException(409, detail=CANT_OPEN) from None
 
 
@@ -87,7 +88,7 @@ def open_resumes_folder(db: Annotated[Session, Depends(get_db)]):
 def show_copy(application_id: UUID, db: Annotated[Session, Depends(get_db)]):
     application = db.get(Application, application_id)
     if application is None:
-        raise HTTPException(404, detail="Application not found")
+        raise HTTPException(404, detail=NOT_FOUND)
     if not rf.enabled(db):
         raise HTTPException(409, detail=OFF)
     if not application.pdf_path:
