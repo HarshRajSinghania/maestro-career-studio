@@ -42,8 +42,9 @@ for _secret in ("OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "OPENRO
 
 # The same walk would bring a live laptop's sync setup into every test: with
 # SYNC_PUBLIC_HOST set, every /api/sync path is the bare 404 whatever Host says.
-# Tests that need these set them per test.
-for _sync_setting in ("SYNC_PUBLIC_HOST", "SYNC_REMOTE_URL"):
+# Tests that need these set them per test. RESUMES_FOLDER_DEFAULT is blanked for the same reason: a
+# live launcher's value would make every test write copies into the developer's Documents folder.
+for _sync_setting in ("SYNC_PUBLIC_HOST", "SYNC_REMOTE_URL", "RESUMES_FOLDER_DEFAULT"):
     os.environ[_sync_setting] = ""
 
 # Same reason, same timing: `app.main` installs TrustedHostMiddleware from

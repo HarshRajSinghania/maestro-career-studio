@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     # "uv" under the `maestro` command (maestro_cs/home.py sets it); empty elsewhere. The connect
     # card swaps the Claude Desktop bundle download for `maestro connect claude-desktop`.
     maestro_install: str = ""
+    # Set by the `maestro` launcher (maestro_cs/home.py). Unset on Docker and a bare uvicorn, which
+    # turns the resumes folder off.
+    resumes_folder_default: Path | None = None
     # Hostname a published sync listener may send (SYNC_PUBLIC_HOST), for example
     # <mac>.<tailnet>.ts.net. Empty leaves the host allowlist unchanged. The host
     # middleware reads this on each request; it is never added to allowed_hosts.
