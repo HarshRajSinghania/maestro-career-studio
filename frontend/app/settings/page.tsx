@@ -18,6 +18,7 @@ import {
 } from "@/components/settings/models-section";
 import { PromptsSection } from "@/components/settings/prompts-section";
 import { QuickTailorSection } from "@/components/settings/quick-tailor-section";
+import { ResumesFolderSection } from "@/components/settings/resumes-folder-section";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
 import { SecondCopySection } from "@/components/settings/second-copy-section";
 import { CustomEndpointSection } from "@/components/settings/llm-endpoint";
@@ -80,7 +81,12 @@ export default function SettingsPage({
               <PromptsSection />
             </>
           ),
-          tailoring: <QuickTailorSection />,
+          tailoring: (
+            <>
+              <QuickTailorSection />
+              <ResumesFolderSection />
+            </>
+          ),
           agents: (
             <>
               <ConnectedAgentsCard />

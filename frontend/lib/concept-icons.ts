@@ -4,7 +4,7 @@
 // beside it or in its accessible name (docs/design-system/README.md, Iconography).
 import {
   Ban, BarChart3, BookOpen, BookPlus, Bot, BriefcaseBusiness, CalendarClock, CircleCheck, CircleDashed,
-  CircleHelp, CircleX, Ellipsis, FileInput, FileOutput, FilePen, FileText, FolderGit2, Handshake,
+  CircleHelp, CircleX, Ellipsis, FileInput, FileOutput, FilePen, FileText, FolderGit2, FolderOpen, Handshake,
   HeartPulse, IdCard, Inbox, Laptop, LayoutTemplate, Layers, Lock, Merge, MessageSquare, Minus, Paperclip,
   Mail, RefreshCw, RotateCcw, ScanSearch, School, ScrollText, SendHorizontal, Settings, SkipForward, Sparkles, Tags, TextQuote,
   ThumbsUp, TrendingDown, TrendingUp, TriangleAlert, UserRound, Wand2, Workflow,
@@ -35,6 +35,8 @@ export const CONCEPT_ICONS = {
   fromResume: FileInput,
   merged: Merge,
   project: FolderGit2,
+  // The visible folder that holds a copy of each finished resume PDF.
+  resumesFolder: FolderOpen,
   health: HeartPulse,
   skills: Tags,
   jobFacts: Layers,

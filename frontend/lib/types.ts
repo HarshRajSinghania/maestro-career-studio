@@ -316,6 +316,21 @@ export interface McpWorkflowSettings {
 }
 export type McpWorkflowSetting = SettingEnvelope<McpWorkflowSettings>;
 
+/** GET/PUT /api/settings/resumes-folder: where Maestro saves a visible copy of each finished PDF.
+ *  `folder_display` is server-made (it knows the home folder), so show it as it is. */
+export interface ResumesFolderSettings {
+  available: boolean;
+  reason: "not_here" | "always_on_copy" | null;
+  enabled: boolean;
+  folder: string | null;
+  folder_display: string | null;
+  default_folder: string | null;
+  custom: boolean;
+  platform: "macos" | "windows" | "linux";
+  picker: boolean;
+  last_error: { message: string; at: string } | null;
+}
+
 /** GET/PUT /api/settings/autofill-options: how far the Companion's fill may
  *  go. A bare object, no envelope. The fill re-reads it server-side. */
 export interface AutofillOptions {
