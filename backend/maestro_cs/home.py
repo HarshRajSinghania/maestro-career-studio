@@ -102,14 +102,30 @@ def _xdg_documents(environ: Mapping[str, str], user_home: Path) -> Path | None:
     return None
 
 
+def _home_or_none(user_home: Path | None) -> Path | None:
+    # Path.home() raises on Windows when USERPROFILE, HOMEDRIVE and HOMEPATH are all missing.
+    if user_home is not None:
+        return user_home
+    try:
+        return Path.home()
+    except RuntimeError:
+        return None
+
+
 def documents_dir(platform: str = sys.platform, environ: Mapping[str, str] = os.environ,
-                  user_home: Path | None = None, known_folder=_windows_documents) -> Path:
-    user_home = user_home or Path.home()
+                  user_home: Path | None = None, known_folder=_windows_documents) -> Path | None:
+    """The user's Documents folder, or None when nothing names one (the resumes folder then stays
+    off, its rule without RESUMES_FOLDER_DEFAULT). Windows asks the shell first, so a trimmed
+    environment with no home variables still finds it."""
     if platform == "win32":
         found = known_folder()
         if found:
             return Path(found)
-        return Path(environ.get("USERPROFILE") or user_home) / "Documents"
+        base = environ.get("USERPROFILE") or _home_or_none(user_home)
+        return Path(base) / "Documents" if base else None
+    user_home = _home_or_none(user_home)
+    if user_home is None:
+        return None
     if platform == "darwin":
         return user_home / "Documents"
     return _xdg_documents(environ, user_home) or user_home / "Documents"
@@ -232,8 +248,9 @@ def backend_env(home: Path, settings: Mapping[str, str], environ: Mapping[str, s
     if not any(env[k].strip() for k in given):
         for name in given:
             del env[name]
-        env["RESUMES_FOLDER_DEFAULT"] = str(
-            documents_dir(environ=environ).joinpath(APP_DIR_NAME, *RESUMES_SUBPATH))
+        documents = documents_dir(environ=environ)
+        if documents is not None:
+            env["RESUMES_FOLDER_DEFAULT"] = str(documents.joinpath(APP_DIR_NAME, *RESUMES_SUBPATH))
     env[_ORIGINS] = origins
     env.update(enforced)
     return child_env(env)

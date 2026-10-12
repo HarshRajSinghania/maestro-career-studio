@@ -389,6 +389,30 @@ def test_backend_env_sets_resumes_folder_default(tmp_path):
     assert env["RESUMES_FOLDER_DEFAULT"] == "/elsewhere"
 
 
+def test_documents_dir_asks_windows_before_the_home_directory(monkeypatch):
+    # A trimmed environment (no USERPROFILE, no HOMEDRIVE) makes Path.home() raise on Windows;
+    # the known-folder lookup must not need it.
+    def no_home():
+        raise RuntimeError("Could not determine home directory.")
+    monkeypatch.setattr(H.Path, "home", staticmethod(no_home))
+    assert H.documents_dir("win32", {}, known_folder=lambda: r"D:\Docs") == Path(r"D:\Docs")
+
+
+def test_documents_dir_is_none_when_nothing_names_a_home(monkeypatch):
+    def no_home():
+        raise RuntimeError("Could not determine home directory.")
+    monkeypatch.setattr(H.Path, "home", staticmethod(no_home))
+    assert H.documents_dir("win32", {}, known_folder=lambda: None) is None
+    assert H.documents_dir("darwin", {}) is None
+    assert H.documents_dir("linux", {}) is None
+
+
+def test_backend_env_leaves_the_resumes_folder_off_without_a_documents_folder(tmp_path, monkeypatch):
+    # Off without RESUMES_FOLDER_DEFAULT is the feature's own rule; a missing home must not stop the start.
+    monkeypatch.setattr(H, "documents_dir", lambda **kw: None)
+    assert _resumes_values(_backend(tmp_path)) == {}
+
+
 def test_documents_dir_ignores_an_unreadable_user_dirs_file(tmp_path):
     config = tmp_path / "cfg"
     config.mkdir()
