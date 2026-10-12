@@ -16,6 +16,7 @@ import { useSingleFlight } from "@/hooks/use-single-flight";
 import { apiFetch } from "@/lib/api";
 import { CONCEPT_ICONS } from "@/lib/concept-icons";
 import { couldnt } from "@/lib/error-text";
+import { focusIfDropped } from "@/lib/focus";
 import { RESUMES_FOLDER_KEY, RESUMES_FOLDER_URL } from "@/lib/resumes-folder";
 import type { ResumesFolderSettings } from "@/lib/types";
 
@@ -128,12 +129,12 @@ function FolderRow({
   const openOnce = useSingleFlight(open.mutate);
 
   // Closing the editor (Save or Cancel) and resetting to the default each remove the focused
-  // control, so focus goes to "Change folder", which stays on screen.
+  // control, so focus goes to "Change folder" unless the user already moved it elsewhere.
   const changeRef = useRef<HTMLButtonElement>(null);
   const handoff = useRef({ editing: false, custom: data.custom });
   useEffect(() => {
     const prev = handoff.current;
-    if ((prev.editing && draft === null) || (prev.custom && !data.custom)) changeRef.current?.focus();
+    if ((prev.editing && draft === null) || (prev.custom && !data.custom)) focusIfDropped(changeRef.current);
     handoff.current = { editing: draft !== null, custom: data.custom };
   }, [draft, data.custom]);
 
