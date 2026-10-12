@@ -476,7 +476,7 @@ never reads a copy back and never deletes anything, so you can rename or tidy yo
 own files, though a re-render replaces the file with the same name.
 
 **Show in Finder** (**Show in File Explorer** on Windows, **Show in folder** on
-Linux) on the PDF card and in the resume studio opens the copy. In Settings ›
+Linux) on the PDF card and in the tailored-resume studio opens the copy. In Settings ›
 Tailoring › **Resumes folder** you can switch it off, **Open folder**, **Change
 folder** (type a path or press **Choose…**) or **Use the default**. If a copy
 fails, for example because a drive is unplugged, the last problem shows there.

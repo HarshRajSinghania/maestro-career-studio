@@ -56,11 +56,11 @@ through a conversation and it still remembers what was said.
   `Documents/Maestro Career Studio/Applications` and keep their name if you edit the
   title later. Maestro only writes there: it never reads a copy back or deletes anything,
   and a re-render replaces the file with the same name. **Show in Finder** (**Show in File
-  Explorer** on Windows) on the PDF card and in the studio opens the folder, and
+  Explorer** on Windows) on the PDF card and in the tailored-resume studio opens the folder, and
   Settings › Tailoring › Resumes folder switches it off, picks another folder (**Choose…**
   opens your system's folder dialog) and shows the last problem. It is on with the
   `maestro` command, and not on the Docker route or on the second copy that stays on.
-  MCP `render_pdf` now returns `copy_path`.
+  MCP `render_pdf` on an application now returns `copy_path`.
 - **Claude as an AI provider.** Add a Claude API key in Settings › AI & models
   (or `ANTHROPIC_API_KEY` in `.env` / `maestro.env`). Claude Haiku 5.5, Sonnet 5.5
   and Opus 5.5 are listed in the model pickers, and **Find Claude models** lists

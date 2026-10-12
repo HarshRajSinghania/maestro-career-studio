@@ -539,7 +539,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   - **Apply readiness** reads `setup/status`'s `autofill` block; the server cannot see whether the client holds
     browser tools, so the render offer says the handoff needs them rather than asserting the capability.
 - **Onboarding workflow** (`workflow.py`): `kb_ingest_resume` (drafts) → `kb_approve_points` (the user's gate)
-  → `create_base_resume_from_kb` → `render_pdf` (returns `copy_path`, the visible copy) walks ingest-several → KB → role-targeted bases with zero
+  → `create_base_resume_from_kb` → `render_pdf` (an application render returns a nullable `copy_path`, the visible copy) walks ingest-several → KB → role-targeted bases with zero
   in-house LLM (the client agent parses/authors; ingest the CURRENT resume first — over single-source MCP
   calls `_seed_profile` is first-write-wins). Ingest hints are offer-only (multi-resume loop, same
   mass-capture lesson as `score_ats`); `brief=true` suppresses before any settings read. Hint options carry
