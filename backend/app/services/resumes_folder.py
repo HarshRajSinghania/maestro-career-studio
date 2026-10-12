@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings as app_settings
+from app.db import begin_write
 from app.models.application import Application
 from app.models.job import Job
 from app.models.setting import Setting
@@ -72,16 +73,20 @@ def root(db: Session) -> Path | None:
 
 _ILLEGAL = re.compile(r'[/\\:*?"<>|\x00-\x1f\x7f]')
 _COMPANY_MAX, _TITLE_MAX = 35, 48
+# Filenames top out at 255 UTF-8 bytes (Linux, APFS). The whole name stays under 200: the separator
+# (5 bytes), the date suffix (13) and a clash suffix like " (99)" (5) leave 177 for the two parts.
+_COMPANY_BYTES, _TITLE_BYTES = 70, 107
 
 
-def _clean(text: str | None, limit: int) -> str:
+def _clean(text: str | None, limit: int, max_bytes: int) -> str:
     text = _ILLEGAL.sub(" ", unicodedata.normalize("NFC", text or ""))
-    text = re.sub(r"\s+", " ", text).strip()[:limit].rstrip(". ")
+    text = re.sub(r"\s+", " ", text).strip()[:limit]
+    text = text.encode()[:max_bytes].decode(errors="ignore").rstrip(". ")  # never splits a character
     return text or "Untitled"
 
 
 def folder_label(company: str | None, title: str | None, day: date) -> str:
-    return f"{_clean(company, _COMPANY_MAX)} – {_clean(title, _TITLE_MAX)} ({day.isoformat()})"
+    return f"{_clean(company, _COMPANY_MAX, _COMPANY_BYTES)} – {_clean(title, _TITLE_MAX, _TITLE_BYTES)} ({day.isoformat()})"
 
 
 def _folder_for(db: Session, application: Application, job: Job) -> str:
@@ -89,6 +94,13 @@ def _folder_for(db: Session, application: Application, job: Job) -> str:
     key = APP_KEY_PREFIX + application.id.hex
     saved = _get(db, key)
     if saved:
+        return saved
+    # Two applications can race to the same name under different keys, so take SQLite's write lock
+    # before reading the names in use, and hold it through the commit below.
+    begin_write(db)
+    saved = _get(db, key)
+    if saved:
+        db.commit()  # release the lock
         return saved
     base = folder_label(job.company, job.title, application.created_at.astimezone().date())
     taken = {

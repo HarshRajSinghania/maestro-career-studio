@@ -1,11 +1,14 @@
 """Visible copies of finished resumes ({#inv-resumes-folder-one-way})."""
+import threading
 from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.orm import sessionmaker
 
 from app.config import settings as app_settings
+from app.db import begin_write
 from app.models.application import Application
 from app.models.job import Job
 from app.models.setting import Setting
@@ -95,3 +98,43 @@ def test_folder_name_is_saved_and_clashes_get_a_number(db_session, folder_on):
     job.title = "Renamed"
     db_session.commit()
     assert rf._folder_for(db_session, first, job) == name_one  # stable after a title edit
+
+
+def test_folder_label_fits_the_filename_byte_limit():
+    day = date(2026, 1, 2)
+    name = rf.folder_label("会" * 80, "職" * 80, day)
+    assert len(name.encode()) <= 200 and name.endswith(" (2026-01-02)")
+    # Accents and emoji are cut on character boundaries, never mid-byte.
+    name = rf.folder_label("é" * 80, "🚀" * 80, day)
+    assert len(name.encode()) <= 200 and name.endswith(" (2026-01-02)")
+    assert "�" not in name and name.encode().decode() == name
+    # Latin names keep their character caps.
+    assert rf.folder_label("C" * 80, "T" * 80, day) == f"{'C' * 35} – {'T' * 48} (2026-01-02)"
+
+
+def test_overlapping_first_copies_of_two_applications_get_different_names(db_session, folder_on, _test_engine, monkeypatch):
+    job = _job(db_session)
+    first, second = _application(db_session, job), _application(db_session, job)
+    results = {}
+    chose_a_name = threading.Event()
+    label = rf.folder_label
+
+    def watched_label(*args):
+        if threading.current_thread() is not threading.main_thread():
+            chose_a_name.set()  # the late copy got past the lock (or there is none)
+        return label(*args)
+
+    monkeypatch.setattr(rf, "folder_label", watched_label)
+
+    def late_allocation():
+        with sessionmaker(bind=_test_engine, autoflush=False, autocommit=False)() as db:
+            results["second"] = rf._folder_for(db, db.get(Application, second.id), db.get(Job, job.id))
+
+    begin_write(db_session)  # the first copy is mid-allocation, holding the write lock
+    thread = threading.Thread(target=late_allocation)
+    thread.start()
+    chose_a_name.wait(timeout=0.5)  # fixed code never gets here until the lock is released
+    name_one = rf._folder_for(db_session, first, job)  # commits, releasing the lock
+    thread.join(timeout=60)
+    assert not thread.is_alive()
+    assert results["second"] == f"{name_one} (2)"
