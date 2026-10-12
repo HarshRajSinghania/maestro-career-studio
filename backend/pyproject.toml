@@ -22,7 +22,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "sqlalchemy>=2.1.1",
-    "alembic>=1.13",
+    "alembic>=1.20.0",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.6",
     "openai>=1.54",
@@ -69,7 +69,7 @@ Issues = "https://github.com/seinun-ai/maestro-career-studio/issues"
 tracing = ["langfuse>=4"]
 dev = [
     "pytest>=9.1.1",
-    "pytest-asyncio>=0.24",
+    "pytest-asyncio>=1.4.0",
     # Parallel workers for the suite (`pytest -n auto --dist loadfile`); see
     # tests/conftest.py for why each worker mints its own database.
     "pytest-xdist>=3.6",
@@ -78,7 +78,7 @@ dev = [
     # to 0.16.2 in CI against 0.12.0 locally and reported 449 errors on a tree
     # that linted clean. The rule set is now pinned in [tool.ruff.lint] too, so
     # this bound is belt-and-braces — lift it deliberately, with a run.
-    "ruff>=0.7,<0.17",
+    "ruff>=0.16.9,<0.17",
     "respx>=0.21",
     "playwright>=1.63.0",
 ]
