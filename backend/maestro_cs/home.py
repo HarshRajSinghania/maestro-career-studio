@@ -62,6 +62,59 @@ def default_home(platform: str = sys.platform, environ: Mapping[str, str] = os.e
     return Path(environ.get("XDG_DATA_HOME") or user_home / ".local" / "share") / "maestro-career-studio"
 
 
+RESUMES_SUBPATH = ("Applications",)  # <Documents>/Maestro Career Studio/Applications
+
+
+def _windows_documents() -> str | None:
+    """The real Documents folder (FOLDERID_Documents), honouring a OneDrive redirect."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class GUID(ctypes.Structure):
+            _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD),
+                        ("Data3", wintypes.WORD), ("Data4", wintypes.BYTE * 8)]
+
+        folder = GUID(0xFDD39AD0, 0x238F, 0x46AF, (wintypes.BYTE * 8)(
+            0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7))
+        out = ctypes.c_wchar_p()
+        if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(folder), 0, None, ctypes.byref(out)):
+            return None
+        try:
+            return out.value
+        finally:
+            ctypes.windll.ole32.CoTaskMemFree(out)
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def _xdg_documents(environ: Mapping[str, str], user_home: Path) -> Path | None:
+    config = Path(environ.get("XDG_CONFIG_HOME") or user_home / ".config") / "user-dirs.dirs"
+    try:
+        lines = config.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        key, sep, value = line.strip().partition("=")
+        if sep and key == "XDG_DOCUMENTS_DIR":
+            value = value.strip().strip('"').replace("$HOME", str(user_home))
+            return Path(value) if value else None
+    return None
+
+
+def documents_dir(platform: str = sys.platform, environ: Mapping[str, str] = os.environ,
+                  user_home: Path | None = None, known_folder=_windows_documents) -> Path:
+    user_home = user_home or Path.home()
+    if platform == "win32":
+        found = known_folder()
+        if found:
+            return Path(found)
+        return Path(environ.get("USERPROFILE") or user_home) / "Documents"
+    if platform == "darwin":
+        return user_home / "Documents"
+    return _xdg_documents(environ, user_home) or user_home / "Documents"
+
+
 def resolve_home(environ: Mapping[str, str] = os.environ) -> Path:
     raw = environ.get("MAESTRO_HOME", "").strip()
     home = Path(raw).expanduser() if raw else default_home(environ=environ)
@@ -173,6 +226,9 @@ def backend_env(home: Path, settings: Mapping[str, str], environ: Mapping[str, s
     # A name set in maestro.env wins over the shell in any capitalisation.
     env = _without(environ, blocked | {k.upper() for k in settings})
     env.update(_without(settings, blocked))
+    # A default, not enforced: maestro.env or the shell may point it elsewhere (tests, scratch stacks).
+    env.setdefault("RESUMES_FOLDER_DEFAULT",
+                   str(documents_dir(environ=environ).joinpath(APP_DIR_NAME, *RESUMES_SUBPATH)))
     env[_ORIGINS] = origins
     env.update(enforced)
     return child_env(env)

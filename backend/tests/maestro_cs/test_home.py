@@ -361,3 +361,29 @@ def test_read_env_file_bad_encoding_is_a_sentence(tmp_path):
     path.write_bytes(b"A=\xff\xfe\n")
     with pytest.raises(HomeError, match="Cannot read .*UTF-8"):
         H.read_env_file(path)
+
+
+def test_documents_dir_per_platform(tmp_path):
+    assert H.documents_dir("darwin", {}, Path("/Users/u")) == Path("/Users/u/Documents")
+    # Windows: the known-folder lookup wins (OneDrive-redirected Documents), else USERPROFILE.
+    assert H.documents_dir("win32", {"USERPROFILE": r"C:\Users\u"}, Path("/x"),
+                           known_folder=lambda: r"D:\OneDrive\Documents") == Path(r"D:\OneDrive\Documents")
+    fallback = H.documents_dir("win32", {"USERPROFILE": r"C:\Users\u"}, Path("/x"), known_folder=lambda: None)
+    assert str(fallback).startswith(r"C:\Users\u") and fallback.name == "Documents"
+    # Linux: user-dirs.dirs, with $HOME expanded; a missing file falls back to ~/Documents.
+    config = tmp_path / "cfg"
+    config.mkdir()
+    (config / "user-dirs.dirs").write_text('# x\nXDG_DOCUMENTS_DIR="$HOME/Dokumente"\n', encoding="utf-8")
+    assert H.documents_dir("linux", {"XDG_CONFIG_HOME": str(config)}, Path("/home/u")) == Path("/home/u/Dokumente")
+    assert H.documents_dir("linux", {"XDG_CONFIG_HOME": str(tmp_path / "none")}, Path("/home/u")) == Path(
+        "/home/u/Documents"
+    )
+
+
+def test_backend_env_sets_resumes_folder_default(tmp_path):
+    env = _backend(tmp_path, ports=Ports(18001, 18000))
+    expected = H.documents_dir(environ={}) / H.APP_DIR_NAME / "Applications"  # _backend passes environ={}
+    assert env["RESUMES_FOLDER_DEFAULT"] == str(expected)
+    # A maestro.env line overrides it (it is a default, not an enforced value).
+    env = _backend(tmp_path, settings={"RESUMES_FOLDER_DEFAULT": "/elsewhere"})
+    assert env["RESUMES_FOLDER_DEFAULT"] == "/elsewhere"
