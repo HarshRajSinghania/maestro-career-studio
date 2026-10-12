@@ -23,7 +23,41 @@ buttons, park less and Part 8 added 2026-10-11). Read it first.
 tasks (19, 20, 20a) render the run states into C's single Next card; ask the planner for the canvas
 mockups before starting them.
 
-**Task order:** 1 → 1a → 2–10 → 10a → 11 → 12–16 → 17 → 18 → 18a → 19 → 20 → 20a → 20b → (21) → 22 → 23. Where this plan and the design differ, this plan says so under "Adjustments" and why.
+Where this plan and the design differ, this plan says so under "Adjustments" and why.
+
+## Phases (owner, 2026-10-11): slow down, one phase at a time
+
+The owner re-cut this plan into three phases, each built, checked live and documented before the
+next starts. Task numbers stay as written below (other docs cite them); this section decides WHEN
+each runs. Each phase ends with its own slice of Task 22 (docs for what that phase shipped) and of
+Task 23 (gate plus the owner's live check). Main must be merged in before Phase 1 starts.
+
+**Done:** Task 1 (spike, 21245658) and Task 1a (engine fills hidden tabs, 06f00226).
+
+**Phase 1: the new panel look (direction C), no behavior change.** Today's four steps redrawn
+as C's one-next-step card with the four-segment progress bar; same features. Its own plan:
+`docs/plans/2026-10-11-companion-panel-c.md`. No task below belongs to Phase 1.
+
+**Phase 2: one job at a time, moving through the pages by itself, in the current tab.**
+- Answers: Tasks 2, 3, 4, 5 (Screening answers dial).
+- Apply link and sign-in: Tasks 6, 7, 15, 16.
+- Recording the user's submit: Task 9.
+- Page reading and Next: Tasks 12, 13, 14.
+- The driver, ONE record in the current tab: Task 17's `drive()` only (its `next()` scheduler and
+  the record list wait for Phase 3).
+- Per-tab job memory: Task 18. Try harder: Task 18a.
+- The one-job panel states from Task 20: running card, Needs you with Resume, always-remembered
+  answers with Undo, walls with Skip this job, Ready to submit, the 8 s auto-mark. (The Queue view,
+  run list and run log are Phase 3.)
+- Task 20a's **Apply** only (queue as the user's yes, then drive this tab). **Queue** is Phase 3.
+- Learn from the fix and the known-gaps list: Tasks 10a, 20b.
+- Phase 2 order: 2 → 3 → 4 → 5 → 6 → 7 → 9 → 10a → 12 → 13 → 14 → 15 → 16 → 17 (drive) → 18 →
+  18a → 20 (one-job parts) → 20a (Apply) → 20b → docs → gate and live check.
+
+**Phase 3: the queue and parallel applications.** Tasks 8 (queue-run list), 10 (run log counts),
+11 (Prepare queued jobs), 17's `next()` and record list, 19 (Queue view, run window, pacing), the
+Queue-view and run-log parts of 20, 20a's **Queue** button, then (21) if Phase 2's live check asks
+for it, docs, gate and live check.
 
 ---
 
