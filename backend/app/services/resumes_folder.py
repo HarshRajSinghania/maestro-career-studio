@@ -36,6 +36,7 @@ ENABLED_KEY = PREFIX + "enabled"      # row exists only as "off"
 PATH_KEY = PREFIX + "path"            # custom root; no row = the default
 LAST_ERROR_KEY = PREFIX + "last_error"  # JSON {code, path, at}
 APP_KEY_PREFIX = PREFIX + "app."      # + application uuid hex -> folder name
+COPIED_KEY_PREFIX = PREFIX + "copied."  # + application uuid hex -> JSON {root, files: {name: [size, mtime_ns]}}
 
 logger = logging.getLogger(__name__)
 
@@ -275,9 +276,36 @@ def _sources(db: Session, application: Application) -> tuple[Path | None, list[P
     return resume, [p for p in (resume, *letters) if p is not None]
 
 
-def _attempt(application_id: UUID, *, log_traceback: bool = True) -> tuple[bool, Path | None]:
+def _stamps(files: list[Path]) -> dict[str, list[int]]:
+    """The sources as they are now: {file name: [size, mtime_ns]}."""
+    stamps = {}
+    for src in files:
+        st = src.stat()
+        stamps[src.name] = [st.st_size, st.st_mtime_ns]
+    return stamps
+
+
+def _already_copied(db: Session, application: Application, base: Path, stamps: dict) -> bool:
+    """True when these exact files were copied into this root before. The folder is not looked at:
+    a copy the user deleted or renamed stays that way until the resume changes or they reveal it."""
+    raw = _get(db, COPIED_KEY_PREFIX + application.id.hex)
+    if raw is None:
+        return False
+    try:
+        record = json.loads(raw)
+    except ValueError:
+        return False
+    return isinstance(record, dict) and record.get("root") == str(base) and record.get("files") == stamps
+
+
+def _attempt(
+    application_id: UUID, *, respect_record: bool = False, log_traceback: bool = True
+) -> tuple[bool, Path | None]:
     """(ok, resume copy). ok is False only when a copy was due and failed.
 
+    respect_record (the backfill): skip an application whose files were already copied into this root
+    and haven't changed since, without touching the folder. Everything else copies unconditionally and
+    refreshes the record, so a new PDF or a reveal always brings the copy back.
     log_traceback=False logs a failure as one line: a backfill pass keeps the traceback for its first.
     """
     try:
@@ -293,15 +321,23 @@ def _attempt(application_id: UUID, *, log_traceback: bool = True) -> tuple[bool,
             resume, files = _sources(db, application)
             if not files:
                 return True, None
+            stamps = _stamps(files)
+            base = root(db)
+            if base is None:  # became unavailable mid-call (the sync key appeared)
+                return True, None
+            if respect_record and _already_copied(db, application, base, stamps):
+                name = _get(db, APP_KEY_PREFIX + application_id.hex)
+                return True, base / name / resume.name if name and resume is not None else None
             base = _ready_root(db)
             if base is None:
                 return True, None
             folder = base / _folder_for(db, application, job)
             folder.mkdir(exist_ok=True)
             placed = {src: _place(src, folder) for src in files}
+            _put(db, COPIED_KEY_PREFIX + application_id.hex, json.dumps({"root": str(base), "files": stamps}))
             if _get(db, LAST_ERROR_KEY) is not None:
                 _put(db, LAST_ERROR_KEY, None)
-                db.commit()
+            db.commit()
             return True, placed.get(resume) if resume is not None else None
     except Exception as exc:  # noqa: BLE001 — never raise into the render (planning decision 8)
         logger.warning("Couldn't save a copy of application %s to the resumes folder%s",
@@ -383,7 +419,7 @@ def _backfill_pass() -> int | None:
         return None
     copied, failed = 0, False
     for application_id in ids:
-        ok, path = _attempt(application_id, log_traceback=not failed)
+        ok, path = _attempt(application_id, respect_record=True, log_traceback=not failed)
         copied += path is not None
         failed = failed or not ok
     return copied

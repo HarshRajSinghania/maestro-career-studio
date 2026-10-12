@@ -244,8 +244,9 @@
     " (2)". The name is allocated under the write lock.
   - **When**: after every application resume render (web Create/Update PDF, studio Save and Tailor, quick tailor and the Companion, MCP
     `render_pdf`, whose application render returns a nullable `copy_path`; a base-resume render returns none), every cover-letter PDF render, and every laptop-side sync arrival (`POST /api/sync/jobs`,
-    `POST /api/sync/handover/return`). At every start a backfill copies each application's existing resume PDF (with its cover-letter PDFs), skipping files already
-    copied (a `stat` each); it stops only when the folder itself is missing or unwritable (one recorded error), not for one application's failure. Requests coalesce, so a root change during a pass triggers another pass. Turning
+    `POST /api/sync/handover/return`). At every start a backfill copies each application's existing resume PDF (with its cover-letter PDFs), skipping applications whose files
+    were already copied into this root and haven't changed (the per-application record `resumes_folder.copied.<id>`; the folder is not
+    looked at, so a copy the user deleted or renamed stays gone until that resume is re-rendered or revealed); it stops only when the folder itself is missing or unwritable (one recorded error), not for one application's failure. Requests coalesce, so a root change during a pass triggers another pass. Turning
     the feature on, changing the folder, or pressing Save after a failed copy starts one.
   - **How**: one-way and atomic (temp file, then replace). A copy whose size and `mtime_ns` already match is skipped by `stat` alone;
     a re-render replaces the same-named file; nothing in the folder is ever read back or deleted. A failure never reaches the caller
@@ -254,7 +255,7 @@
     `GET` then reports `reason` `not_here` or `always_on_copy` and every other route answers 409. The `maestro` launcher sets
     `RESUMES_FOLDER_DEFAULT` as a default (`maestro.env` or the shell may override it; blank means unset).
   - **Settings** (all machine-local, `resumes_folder.` in `LOCAL_SETTING_PREFIXES`): `enabled` (a row exists only as "off"; default on),
-    `path` (custom root; no row = the default), `last_error`, `app.<id>`.
+    `path` (custom root; no row = the default), `last_error`, `app.<id>`, `copied.<id>` (JSON `{root, files: {name: [size, mtime_ns]}}`, written after every file of an application is placed).
   - **Endpoints**: `GET/PUT /api/settings/resumes-folder` (state; `{enabled, folder}`, `folder: null` = use the default, an unusable folder is
     a 422 sentence, a successful change, or a Save after a failed copy, clears `last_error` and starts a backfill), `POST .../open` (reveals the root; 204, 409 when the OS
     cannot), `POST .../choose` (the native folder dialog, `{folder: str | null}`, never saves; one dialog at a time, else 409) and

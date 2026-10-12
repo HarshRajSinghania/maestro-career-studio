@@ -1,6 +1,7 @@
 """Visible copies of finished resumes ({#inv-resumes-folder-one-way})."""
 import builtins
 import os
+import shutil
 from datetime import date
 from pathlib import Path
 
@@ -38,7 +39,7 @@ def test_defaults_on_with_the_default_root(folder_on, db_session):
 
 
 def test_settings_are_machine_local(db_session):
-    for key in (rf.ENABLED_KEY, rf.PATH_KEY, rf.LAST_ERROR_KEY, rf.APP_KEY_PREFIX + "ab"):
+    for key in (rf.ENABLED_KEY, rf.PATH_KEY, rf.LAST_ERROR_KEY, rf.APP_KEY_PREFIX + "ab", rf.COPIED_KEY_PREFIX + "ab"):
         assert registry.is_profile_row(Setting(key=key, value="x")) is False
 
 
@@ -374,6 +375,70 @@ def test_backfill_copies_everything_and_a_second_pass_writes_nothing(db_session,
     monkeypatch.setattr(rf.shutil, "copyfile", lambda *a, **k: (writes.append(a), real_copyfile(*a, **k))[1])
     assert rf.backfill() == 3  # still covers them all, by stat alone
     assert writes == []
+
+
+def _count_writes(monkeypatch):
+    writes = []
+    real_copyfile = rf.shutil.copyfile
+    monkeypatch.setattr(rf.shutil, "copyfile", lambda *a, **k: (writes.append(a), real_copyfile(*a, **k))[1])
+    return writes
+
+
+def test_backfill_does_not_bring_back_a_folder_the_user_deleted(db_session, folder_on, tmp_path, monkeypatch):
+    app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
+    rf.backfill()
+    folder = rf.copy_path_for(app.id).parent
+    shutil.rmtree(folder)
+    writes = _count_writes(monkeypatch)
+    rf.backfill()
+    assert not folder.exists() and writes == []
+    assert rf.copy_application(app.id) is not None  # a render, or Show in Finder, brings it back
+    assert folder.is_dir()
+
+
+def test_backfill_leaves_a_renamed_copy_alone(db_session, folder_on, tmp_path, monkeypatch):
+    app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
+    rf.backfill()
+    copy = rf.copy_path_for(app.id)
+    copy.rename(copy.with_name("My tidy name.pdf"))
+    writes = _count_writes(monkeypatch)
+    rf.backfill()
+    assert sorted(p.name for p in copy.parent.iterdir()) == ["My tidy name.pdf"] and writes == []
+
+
+def test_backfill_copies_a_source_that_changed_since_the_record(db_session, folder_on, tmp_path):
+    pdf = make_pdf(tmp_path)
+    app = make_application(db_session, make_job(db_session), pdf=pdf)
+    rf.backfill()
+    copy = rf.copy_path_for(app.id)
+    copy.unlink()
+    stat = pdf.stat()
+    pdf.write_bytes(b"%PDF a re-render made while copies were off")
+    os.utime(pdf, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+    rf.backfill()
+    assert copy.read_bytes() == pdf.read_bytes()
+
+
+def test_a_failed_copy_writes_no_record_and_the_next_pass_retries(db_session, folder_on, tmp_path, monkeypatch):
+    app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
+    with monkeypatch.context() as broken:
+        broken.setattr(rf, "_place", lambda *a: (_ for _ in ()).throw(PermissionError("no")))
+        rf.backfill()
+    db_session.expire_all()
+    assert rf._get(db_session, rf.COPIED_KEY_PREFIX + app.id.hex) is None
+    rf.backfill()
+    assert rf.copy_path_for(app.id) is not None
+
+
+def test_a_root_change_copies_everything_into_the_new_root(db_session, folder_on, tmp_path):
+    app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
+    rf.backfill()
+    custom = tmp_path / "elsewhere"
+    custom.mkdir()
+    _set_root(custom)
+    rf.backfill()
+    assert len(list(custom.rglob("*.pdf"))) == 1
+    assert rf.copy_path_for(app.id).is_relative_to(custom)
 
 
 def test_backfill_fills_a_new_root(db_session, folder_on, tmp_path):

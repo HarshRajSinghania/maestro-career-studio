@@ -473,8 +473,9 @@ The copy happens after you create or update a PDF, after a cover letter is
 rendered and after a job arrives from your second copy. Every start also
 copies the resume PDFs you already have, with their cover letters, skipping the ones
 already there, and so does changing the folder or switching copies back on. Maestro only writes there. It
-never reads a copy back and never deletes anything, so you can rename or tidy your
-own files, though a re-render replaces the file with the same name.
+never reads a copy back and never deletes anything. Deleting or renaming a copy is
+fine: Maestro brings a job's copy back only when that resume changes (a new PDF) or
+you click **Show in Finder**.
 
 **Show in Finder** (**Show in File Explorer** on Windows, **Show in folder** on
 Linux) on the PDF card and in the tailored-resume studio opens the copy. In Settings ›

@@ -55,7 +55,8 @@ through a conversation and it still remembers what was said.
   you already have, with their cover letters, skipping the ones already there. Folders are named `Company – Job title (date)` under
   `Documents/Maestro Career Studio/Applications` and keep their name if you edit the
   title later. Maestro only writes there: it never reads a copy back or deletes anything,
-  and a re-render replaces the file with the same name. **Show in Finder** (**Show in File
+  a re-render replaces the file with the same name, and a copy you delete or rename
+  stays that way until that resume changes or you click Show in Finder. **Show in Finder** (**Show in File
   Explorer** on Windows) on the PDF card and in the tailored-resume studio opens the folder, and
   Settings › Tailoring › Resumes folder switches it off, picks another folder (**Choose…**
   opens your system's folder dialog) and shows the last problem. It is on with the
