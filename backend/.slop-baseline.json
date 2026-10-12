@@ -1,10 +1,10 @@
 {
   "structure": {
     "root": "backend",
-    "modules": 761,
-    "total_loc": 227617,
-    "src_loc": 65270,
-    "test_loc": 162347,
+    "modules": 764,
+    "total_loc": 228908,
+    "src_loc": 65853,
+    "test_loc": 163055,
     "orphan_modules": [],
     "test_only_reachable": [],
     "orphan_loc": 0,
@@ -242,6 +242,14 @@
         "lines": 23
       },
       {
+        "file": "tests/browser/test_spike_background_fill.py",
+        "line": 428,
+        "name": "test_visibility_retries_replace_only_the_failed_trial",
+        "complexity": 25,
+        "params": 3,
+        "lines": 51
+      },
+      {
         "file": "app/services/kb_consolidation.py",
         "line": 1072,
         "name": "_merge_skills",
@@ -312,6 +320,14 @@
         "complexity": 24,
         "params": 3,
         "lines": 57
+      },
+      {
+        "file": "scripts/spike_background_fill.py",
+        "line": 262,
+        "name": "accept_result",
+        "complexity": 24,
+        "params": 2,
+        "lines": 37
       },
       {
         "file": "app/services/explore_build_areas.py",
@@ -392,25 +408,9 @@
         "complexity": 23,
         "params": 1,
         "lines": 73
-      },
-      {
-        "file": "app/services/placement_targets.py",
-        "line": 83,
-        "name": "canonicalize",
-        "complexity": 23,
-        "params": 3,
-        "lines": 63
-      },
-      {
-        "file": "app/services/autofill_pick.py",
-        "line": 275,
-        "name": "_with_llm",
-        "complexity": 23,
-        "params": 7,
-        "lines": 27
       }
     ],
-    "hotspot_count": 764,
+    "hotspot_count": 780,
     "error_masking": [
       {
         "file": "tests/test_tracing.py",
@@ -494,8 +494,8 @@
       }
     ],
     "error_masking_count": 16,
-    "internal_import_edges": 3386,
-    "imports_per_module": 4.45,
+    "internal_import_edges": 3390,
+    "imports_per_module": 4.44,
     "entry_points_used": [
       "app.main",
       "app.tools.backup_db",
@@ -512,6 +512,7 @@
       "scripts.health_golden",
       "scripts.live_provider_check",
       "scripts.memory_profile",
+      "scripts.spike_background_fill",
       "scripts.sync_key",
       "scripts.template_parity"
     ]
@@ -614,6 +615,7 @@
       "scripts.live_provider_check",
       "scripts.memory_profile",
       "scripts.sync_key",
+      "scripts.spike_background_fill",
       "scripts.template_parity",
       "migrations.env",
       "app.tools.backup_db"
@@ -638,7 +640,7 @@
     {
       "rank": "P2",
       "signal": "complexity_concentration",
-      "detail": "764 function(s) over threshold. worst: mcp_server/tests/test_server.py:596 cc=42",
+      "detail": "780 function(s) over threshold. worst: mcp_server/tests/test_server.py:596 cc=42",
       "why": "Complexity mass concentrating in few functions is the erosion signature.",
       "action": "Decompose the top 3. Do not touch the tail."
     },
@@ -651,16 +653,16 @@
     }
   ],
   "metrics": {
-    "total_loc": 227617,
-    "src_loc": 65270,
-    "test_loc": 162347,
-    "modules": 761,
+    "total_loc": 228908,
+    "src_loc": 65853,
+    "test_loc": 163055,
+    "modules": 764,
     "orphan_loc": 0,
     "duplication_pct": 0.48,
     "duplicated_lines": 381,
     "clone_count": 43,
-    "complexity_hotspots": 764,
+    "complexity_hotspots": 780,
     "error_masking": 16,
-    "imports_per_module": 4.45
+    "imports_per_module": 4.44
   }
 }
