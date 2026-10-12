@@ -28,6 +28,28 @@ image tag is the same version with the leading `v` removed (`0.2.0`).
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-10-12
+
+Updating to 0.10.0 could leave the web app showing pages from the version you
+just left: no styles, and a banner saying the update hadn't finished. This
+release clears that leftover cache every time Maestro starts.
+
+### Breaking changes
+
+None.
+
+### Fixed
+
+- **After `maestro update`, the web app no longer serves the previous version's
+  pages.** Next.js keeps a page cache inside the installed app, and an update left
+  the old one behind, so pages pointed at scripts and a stylesheet that no longer
+  existed. `maestro run` now clears that cache before the web app starts, so
+  updating to 0.10.1 also repairs a 0.10.0 install that shows an unstyled page.
+- **A page opened before an update now says so.** The banner reads "Maestro CS
+  was updated. Reload this page to use the new version." with a Reload button,
+  instead of saying the update didn't finish. Any other version mismatch still
+  points at How to update.
+
 ## [0.10.0] — 2026-10-12
 
 Until now Maestro spoke two AI dialects, OpenAI and Gemini, so a Claude key

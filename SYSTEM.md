@@ -855,6 +855,12 @@ citation. Priority lives in the item text, not in the ordinal.
 
 ## 12. Gotchas that have bitten before
 
+- **An update served the old version's pages** (2026-10-12, 0.10.0): Next writes `.next/server/route-cache` inside the
+  installed bundle at run time; uv replaces only shipped files, so 0.9.0's cached HTML (dead script and CSS links) outlived
+  the update → `maestro run` clears it before the web starts (`runtime.clear_web_cache`).
+- **Playwright makes every tab visible** (2026-10-11 spike): launch or `connect_over_cdp`, `document.hidden` stays false, so
+  background-tab behaviour can't be measured attached → run Chromium unattached over the DevTools HTTP endpoints
+  (`scripts/spike_background_fill.py`); macOS also hides every tab of a covered window.
 - **Sync MCP tools deadlock on the event loop** (2026-10-10 spike): a same-backend REST call blocks single-worker
   uvicorn → `http.offload_tools` uses its own worker limiter; pinned by `tests/test_mcp_http_loopback.py`.
 - **Owned-session prompt reads never seed** (2026-10-10): a lazy INSERT waited out `busy_timeout` behind a caller's

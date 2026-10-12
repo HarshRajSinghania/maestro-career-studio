@@ -265,6 +265,8 @@ def run(ctx: Context) -> int:
                 print(exc, file=out)
             return 0
         specs = build_specs(ctx)
+        if web_cmd_override(ctx.environ) is None:
+            runtime.clear_web_cache(ctx.environ)  # a cache from the previous version must not be served
         ready = {"backend_url": ctx.backend_url, "web_url": ctx.web_url}
         return Supervisor(ctx.run_dir, specs, ready=ready, out=out).run()
     finally:

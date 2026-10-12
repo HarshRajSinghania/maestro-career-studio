@@ -15,3 +15,24 @@ export function imagesDisagree(frontend: string, backend: string | undefined): b
   if (frontend.startsWith("dev") || backend.startsWith("dev")) return false;
   return frontend !== backend;
 }
+
+function release(version: string): number[] | null {
+  const parts = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  return parts ? parts.slice(1).map(Number) : null;
+}
+
+/**
+ * True when the page's JavaScript is an older release than the backend: the tab was
+ * opened before an update. The web app and the backend update together in a uv
+ * install, so this almost always means "reload", not "the update failed".
+ * Compared as numbers ("0.10.0" sorts before "0.9.0" as text).
+ */
+export function pageIsOlder(frontend: string, backend: string | undefined): boolean {
+  const page = release(frontend);
+  const server = backend === undefined ? null : release(backend);
+  if (!page || !server) return false;
+  for (let i = 0; i < 3; i += 1) {
+    if (page[i] !== server[i]) return page[i] < server[i];
+  }
+  return false;
+}

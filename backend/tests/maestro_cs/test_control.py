@@ -606,6 +606,27 @@ def free_ports(monkeypatch, busy=(), versions=None):
     return asked
 
 
+def test_run_clears_the_web_cache_before_it_starts_the_web_app(tmp_path, monkeypatch):
+    web = tmp_path / "web"
+    cache = web / ".next" / "server" / "route-cache"
+    cache.mkdir(parents=True)
+    (web / "server.js").write_text("//", encoding="utf-8")
+    rig = Rig(tmp_path, environ={"MAESTRO_WEB_DIR": str(web), "MAESTRO_NODE": "/n/node"})
+    free_ports(monkeypatch)
+    seen = {}
+
+    class Recording:
+        def __init__(self, run_dir, specs, **kwargs):
+            seen["cache_there"] = cache.exists()
+
+        def run(self):
+            return 0
+
+    monkeypatch.setattr(control, "Supervisor", Recording)
+    assert control.run(rig.ctx) == 0
+    assert seen == {"cache_there": False}
+
+
 def test_run_with_a_docker_maestro_on_the_port_explains_and_exits_zero(rig, monkeypatch, capsys):
     # Exit 0 on purpose: launchd (KeepAlive SuccessfulExit=false) and systemd (Restart=on-failure)
     # restart a non-zero `run` forever; there is nothing to retry until the user stops the other one.

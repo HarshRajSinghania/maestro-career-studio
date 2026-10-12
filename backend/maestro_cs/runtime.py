@@ -31,6 +31,16 @@ def web_dir_ok(environ: Mapping[str, str] = os.environ) -> bool:
     return (web_dir(environ) / "server.js").is_file()
 
 
+def clear_web_cache(environ: Mapping[str, str] = os.environ) -> None:
+    """Drop Next's runtime page cache before the web app starts.
+
+    Next writes `.next/server/route-cache` at run time, inside the installed bundle. It is not
+    in the wheel, so an update (uv replaces only the files the old package shipped) leaves the
+    previous build's pages behind, and the new server serves them: HTML pointing at scripts and
+    a stylesheet that no longer exist, and the old version number. Next rebuilds it on demand."""
+    shutil.rmtree(web_dir(environ) / ".next" / "server" / "route-cache", ignore_errors=True)
+
+
 def demo_resume() -> Path | None:
     """The example resume: bundled in the wheel, else the checkout's copy for source runs."""
     for candidate in (_PACKAGE / "data" / "example.json",

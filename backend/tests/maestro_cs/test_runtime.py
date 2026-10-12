@@ -37,6 +37,25 @@ def test_web_dir_ok_needs_server_js(tmp_path):
     assert R.web_dir_ok(env)
 
 
+def test_clear_web_cache_removes_only_the_runtime_page_cache(tmp_path):
+    # Next writes .next/server/route-cache at run time, inside the installed bundle. An update
+    # replaces only the files the old package shipped, so that cache would outlive it and the
+    # new server would serve the old build's pages (scripts and styles that no longer exist).
+    web = tmp_path / "web"
+    stale = web / ".next" / "server" / "route-cache" / "APP_PAGE" / "abc" / "$"
+    stale.mkdir(parents=True)
+    (stale / "applications.html").write_text("old build", encoding="utf-8")
+    shipped = web / ".next" / "server" / "app"
+    shipped.mkdir(parents=True)
+    (shipped / "applications.html").write_text("new build", encoding="utf-8")
+    (web / ".next" / "BUILD_ID").write_text("new", encoding="utf-8")
+    R.clear_web_cache({"MAESTRO_WEB_DIR": str(web)})
+    assert not (web / ".next" / "server" / "route-cache").exists()
+    assert (shipped / "applications.html").read_text(encoding="utf-8") == "new build"
+    assert (web / ".next" / "BUILD_ID").exists()
+    R.clear_web_cache({"MAESTRO_WEB_DIR": str(web)})  # nothing to clear is not an error
+
+
 def test_demo_resume_falls_back_to_the_checkout():
     path = R.demo_resume()
     assert path is not None and path.name == "example.json" and path.is_file()
