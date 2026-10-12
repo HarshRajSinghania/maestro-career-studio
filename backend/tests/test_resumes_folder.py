@@ -1,5 +1,5 @@
 """Visible copies of finished resumes ({#inv-resumes-folder-one-way})."""
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -75,3 +75,23 @@ def test_defaults_on_with_the_default_root(folder_on, db_session):
 def test_settings_are_machine_local(db_session):
     for key in (rf.ENABLED_KEY, rf.PATH_KEY, rf.BACKFILLED_KEY, rf.LAST_ERROR_KEY, rf.APP_KEY_PREFIX + "ab"):
         assert registry.is_profile_row(Setting(key=key, value="x")) is False
+
+
+def test_folder_label_is_readable_and_safe():
+    assert rf.folder_label("ComEd", "Data Scientist", date(2026, 10, 11)) == "ComEd – Data Scientist (2026-10-11)"
+    assert rf.folder_label('A/B: "C"*', "Sr. ML <Eng>|?", date(2026, 1, 2)) == "A B C – Sr. ML Eng (2026-01-02)"
+    assert rf.folder_label("", None, date(2026, 1, 2)) == "Untitled – Untitled (2026-01-02)"
+    assert rf.folder_label("Co...  ", "Role. ", date(2026, 1, 2)) == "Co – Role (2026-01-02)"
+    long = rf.folder_label("C" * 80, "T" * 80, date(2026, 1, 2))
+    assert len(long) < 100 and long.endswith("(2026-01-02)")
+
+
+def test_folder_name_is_saved_and_clashes_get_a_number(db_session, folder_on):
+    job = _job(db_session, company="Acme", title="Data Scientist")
+    first, second = _application(db_session, job), _application(db_session, job)
+    name_one = rf._folder_for(db_session, first, job)
+    name_two = rf._folder_for(db_session, second, job)
+    assert name_two == f"{name_one} (2)"
+    job.title = "Renamed"
+    db_session.commit()
+    assert rf._folder_for(db_session, first, job) == name_one  # stable after a title edit

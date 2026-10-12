@@ -6,11 +6,18 @@ and never raises into the request that triggered it.
 """
 from __future__ import annotations
 
+import re
+import unicodedata
+from datetime import date
 from pathlib import Path
 
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings as app_settings
+from app.models.application import Application
+from app.models.job import Job
 from app.models.setting import Setting
 from app.services.sync import status as sync_status
 
@@ -61,3 +68,43 @@ def root(db: Session) -> Path | None:
         return None
     custom = _get(db, PATH_KEY)
     return Path(custom) if custom else app_settings.resumes_folder_default
+
+
+_ILLEGAL = re.compile(r'[/\\:*?"<>|\x00-\x1f\x7f]')
+_COMPANY_MAX, _TITLE_MAX = 35, 48
+
+
+def _clean(text: str | None, limit: int) -> str:
+    text = _ILLEGAL.sub(" ", unicodedata.normalize("NFC", text or ""))
+    text = re.sub(r"\s+", " ", text).strip()[:limit].rstrip(". ")
+    return text or "Untitled"
+
+
+def folder_label(company: str | None, title: str | None, day: date) -> str:
+    return f"{_clean(company, _COMPANY_MAX)} – {_clean(title, _TITLE_MAX)} ({day.isoformat()})"
+
+
+def _folder_for(db: Session, application: Application, job: Job) -> str:
+    """The application's folder name: chosen once, saved, then never recomputed."""
+    key = APP_KEY_PREFIX + application.id.hex
+    saved = _get(db, key)
+    if saved:
+        return saved
+    base = folder_label(job.company, job.title, application.created_at.astimezone().date())
+    taken = {
+        value.casefold()  # APFS and NTFS ignore case
+        for value in db.scalars(
+            select(Setting.value).where(Setting.key.startswith(APP_KEY_PREFIX, autoescape=True))
+        )
+        if value
+    }
+    name, n = base, 2
+    while name.casefold() in taken:
+        name, n = f"{base} ({n})", n + 1
+    db.add(Setting(key=key, value=name))
+    try:
+        db.commit()
+    except IntegrityError:  # a concurrent first copy of the same application won the insert
+        db.rollback()
+        return _get(db, key) or name
+    return name
