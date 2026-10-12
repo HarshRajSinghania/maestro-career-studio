@@ -1,10 +1,10 @@
 {
   "structure": {
     "root": "backend",
-    "modules": 761,
-    "total_loc": 227617,
-    "src_loc": 65270,
-    "test_loc": 162347,
+    "modules": 771,
+    "total_loc": 229628,
+    "src_loc": 66043,
+    "test_loc": 163585,
     "orphan_modules": [],
     "test_only_reachable": [],
     "orphan_loc": 0,
@@ -410,7 +410,7 @@
         "lines": 27
       }
     ],
-    "hotspot_count": 764,
+    "hotspot_count": 771,
     "error_masking": [
       {
         "file": "tests/test_tracing.py",
@@ -494,8 +494,8 @@
       }
     ],
     "error_masking_count": 16,
-    "internal_import_edges": 3386,
-    "imports_per_module": 4.45,
+    "internal_import_edges": 3439,
+    "imports_per_module": 4.46,
     "entry_points_used": [
       "app.main",
       "app.tools.backup_db",
@@ -638,7 +638,7 @@
     {
       "rank": "P2",
       "signal": "complexity_concentration",
-      "detail": "764 function(s) over threshold. worst: mcp_server/tests/test_server.py:596 cc=42",
+      "detail": "771 function(s) over threshold. worst: mcp_server/tests/test_server.py:596 cc=42",
       "why": "Complexity mass concentrating in few functions is the erosion signature.",
       "action": "Decompose the top 3. Do not touch the tail."
     },
@@ -651,16 +651,16 @@
     }
   ],
   "metrics": {
-    "total_loc": 227617,
-    "src_loc": 65270,
-    "test_loc": 162347,
-    "modules": 761,
+    "total_loc": 229628,
+    "src_loc": 66043,
+    "test_loc": 163585,
+    "modules": 771,
     "orphan_loc": 0,
     "duplication_pct": 0.48,
     "duplicated_lines": 381,
     "clone_count": 43,
-    "complexity_hotspots": 764,
+    "complexity_hotspots": 771,
     "error_masking": 16,
-    "imports_per_module": 4.45
+    "imports_per_module": 4.46
   }
 }
