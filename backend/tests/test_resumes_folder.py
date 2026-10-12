@@ -148,11 +148,15 @@ def test_copies_resume_and_cover_letter_pdfs_only(db_session, folder_on, tmp_pat
     assert copied.parent.parent == folder_on
 
 
-def test_second_copy_is_a_no_op(db_session, folder_on, tmp_path):
+def test_second_copy_is_a_no_op(db_session, folder_on, tmp_path, monkeypatch):
     app = _application(db_session, _job(db_session), pdf=_pdf(tmp_path))
     first = rf.copy_application(app.id)
     before = first.stat().st_mtime_ns
+    writes = []
+    real_copyfile = rf.shutil.copyfile
+    monkeypatch.setattr(rf.shutil, "copyfile", lambda *a, **k: writes.append(a) or real_copyfile(*a, **k))
     assert rf.copy_application(app.id) == first
+    assert writes == []  # copystat restores the mtime, so only a spy proves nothing was rewritten
     assert first.stat().st_mtime_ns == before
     assert not [p for p in first.parent.iterdir() if p.name.startswith(".maestro-")]
 
@@ -212,3 +216,39 @@ def test_no_pdf_means_no_folder(db_session, folder_on):
     app = _application(db_session, _job(db_session))
     assert rf.copy_application(app.id) is None
     assert not folder_on.exists()
+
+
+def test_same_size_rerender_replaces_the_copy(db_session, folder_on, tmp_path):
+    pdf = _pdf(tmp_path)
+    pdf.write_bytes(b"A" * 64)
+    app = _application(db_session, _job(db_session), pdf=pdf)
+    copied = rf.copy_application(app.id)
+    stat = pdf.stat()
+    pdf.write_bytes(b"B" * 64)  # same size, different bytes
+    os.utime(pdf, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))  # one second later
+    assert rf.copy_application(app.id) == copied
+    assert copied.read_bytes() == b"B" * 64
+
+
+def test_failure_to_record_the_failure_still_does_not_raise(db_session, folder_on, tmp_path, monkeypatch):
+    app = _application(db_session, _job(db_session), pdf=_pdf(tmp_path))
+
+    def refuse(*args, **kwargs):
+        raise PermissionError("no")
+
+    def cannot_open(*args, **kwargs):
+        raise OSError("database file unavailable")
+
+    monkeypatch.setattr(rf.shutil, "copyfile", refuse)
+    real_session = rf.SessionLocal
+    calls = []
+
+    def session_factory():
+        calls.append(1)
+        if len(calls) > 1:  # the first session runs the copy; the one that records the error fails
+            cannot_open()
+        return real_session()
+
+    monkeypatch.setattr(rf, "SessionLocal", session_factory)
+    assert rf.copy_application(app.id) is None
+    assert len(calls) == 2

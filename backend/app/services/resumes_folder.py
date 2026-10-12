@@ -18,7 +18,7 @@ from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings as app_settings
@@ -152,7 +152,7 @@ def _record_error(exc: Exception) -> None:
                 "at": datetime.now(UTC).isoformat(),
             }))
             db.commit()
-    except SQLAlchemyError:
+    except Exception:  # noqa: BLE001 — opening the session can raise OSError too (planning decision 8)
         logger.warning("Couldn't record the resumes folder error", exc_info=True)
 
 
@@ -173,7 +173,9 @@ def _same(src: os.stat_result, target: Path) -> bool:
         st = target.stat()  # stat only: an iCloud/OneDrive placeholder stats without downloading
     except FileNotFoundError:
         return False
-    return st.st_size == src.st_size and abs(st.st_mtime - src.st_mtime) < 2
+    # copystat carries the source's exact mtime over, so equality means "this is the copy we made".
+    # A coarse filesystem (FAT) rounds it and just rewrites each time, which costs nothing.
+    return st.st_size == src.st_size and st.st_mtime_ns == src.st_mtime_ns
 
 
 def _place(src: Path, folder: Path) -> Path:
