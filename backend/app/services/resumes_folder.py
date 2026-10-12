@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import unicodedata
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -274,3 +275,40 @@ def copy_path_for(application_id: UUID) -> Path | None:
             return path if path.exists() else None
     except Exception:  # noqa: BLE001 — planning decision 8
         return None
+
+
+_BACKFILL = threading.Lock()
+
+
+def backfill() -> int | None:
+    """Copy every application's PDFs once per root. Returns how many resumes were copied."""
+    if availability() is not None or not _BACKFILL.acquire(blocking=False):
+        return None
+    try:
+        with SessionLocal() as db:
+            if not enabled(db):
+                return None
+            target = str(root(db))
+            if _get(db, BACKFILLED_KEY) == target:
+                return 0
+            ids = list(db.scalars(select(Application.id).where(Application.pdf_path.is_not(None))))
+        results = [_attempt(application_id) for application_id in ids]
+        if all(ok for ok, _ in results):  # a failed run stays unmarked, so the next start retries
+            with SessionLocal() as db:
+                _put(db, BACKFILLED_KEY, target)
+                db.commit()
+        return sum(1 for _, path in results if path is not None)
+    except Exception:  # noqa: BLE001 — runs as a thread target and from the PUT handler (planning decision 8)
+        logger.warning("The resumes folder backfill stopped", exc_info=True)
+        return None
+    finally:
+        _BACKFILL.release()
+
+
+def start_backfill() -> threading.Thread | None:
+    """Fill the folder in the background so startup never waits on a slow drive."""
+    if availability() is not None:
+        return None
+    thread = threading.Thread(target=backfill, name="resumes-folder-backfill", daemon=True)
+    thread.start()
+    return thread

@@ -298,3 +298,63 @@ def test_cover_letter_render_copies(db_session, folder_on, tmp_path, monkeypatch
     assert response.status_code == 200
     copies = [p for p in folder_on.rglob("*.pdf")]
     assert [p.name for p in copies if p.name.endswith("_CoverLetter.pdf")]
+
+
+def test_backfill_copies_all_once_per_root(db_session, folder_on, tmp_path, monkeypatch):
+    for i in range(3):
+        make_application(
+            db_session, make_job(db_session, company=f"Co{i}"), pdf=make_pdf(tmp_path, f"R{i}.pdf")
+        )
+    assert rf.backfill() == 3
+    assert len(list(folder_on.iterdir())) == 3
+    calls = []
+    monkeypatch.setattr(rf, "_attempt", lambda i: calls.append(i) or (True, None))
+    assert rf.backfill() == 0 and calls == []  # marker matches the root: nothing to do
+    custom = tmp_path / "elsewhere"
+    custom.mkdir()
+    db_session.add(Setting(key=rf.PATH_KEY, value=str(custom)))
+    db_session.commit()
+    rf.backfill()
+    assert len(calls) == 3  # a new root fills again
+
+
+def test_backfill_with_a_failure_runs_again_next_time(db_session, folder_on, tmp_path, monkeypatch):
+    make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
+    monkeypatch.setattr(rf, "_attempt", lambda i: (False, None))
+    rf.backfill()
+    db_session.expire_all()
+    assert rf._get(db_session, rf.BACKFILLED_KEY) is None
+
+
+def test_backfill_never_raises(db_session, folder_on, tmp_path, monkeypatch):
+    make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
+
+    def boom(_application_id):
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(rf, "_attempt", boom)
+    assert rf.backfill() is None
+    db_session.expire_all()
+    assert rf._get(db_session, rf.BACKFILLED_KEY) is None
+    assert rf._BACKFILL.acquire(blocking=False)  # the lock was released
+    rf._BACKFILL.release()
+
+
+def test_start_backfill_runs_it_on_a_thread(folder_on, monkeypatch):
+    started = []
+
+    class FakeThread:
+        def __init__(self, target, name, daemon):
+            started.append((target, name, daemon))
+
+        def start(self):
+            started.append("start")
+
+    monkeypatch.setattr(rf.threading, "Thread", FakeThread)
+    assert rf.start_backfill() is not None
+    assert started == [(rf.backfill, "resumes-folder-backfill", True), "start"]
+
+
+def test_start_backfill_is_a_no_op_when_unavailable(monkeypatch):
+    monkeypatch.setattr(app_settings, "resumes_folder_default", None)
+    assert rf.start_backfill() is None

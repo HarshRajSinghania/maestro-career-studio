@@ -43,7 +43,7 @@ from app.routers import (
     version,
 )
 from app.services import automations as automation_prompts
-from app.services import http_client, memory, seeding, tracing
+from app.services import http_client, memory, resumes_folder, seeding, tracing
 from app.services.llm import LLMProviderError
 from app.services.sync.hooks import NotOwnedHere
 from mcp_server.http import McpEndpoint
@@ -137,6 +137,7 @@ async def lifespan(app: FastAPI):
     status.ensure_machine_id()
     _log_llm_config()
     automation_prompts.load_cards()  # a malformed skill file fails startup, not a page
+    resumes_folder.start_backfill()  # no-op unless this machine keeps a resumes folder
     async with mcp_endpoint.run():  # fresh session managers on every lifespan
         yield
     tracing.shutdown()
