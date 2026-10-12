@@ -76,16 +76,31 @@ export function ShowCopyButton({
 export function ResumesFolderNote({ applicationId }: { applicationId: string }) {
   const { data } = useResumesFolder();
   const [dismissed, setDismissed] = useLocalStorageState(NOTE_DISMISSED_KEY, parseFlag, serializeFlag);
+  if (!data || !copiesOn(data) || dismissed) return null;
+  return (
+    <NoteBody applicationId={applicationId} folderDisplay={data.folder_display} onDismiss={() => setDismissed(true)} />
+  );
+}
+
+// Its own component so dismissing UNMOUNTS it: useFocusHandoff hands focus on in its unmount cleanup, and
+// the ref exists when the hook first runs (the outer note mounts before the query has answered).
+function NoteBody({
+  applicationId,
+  folderDisplay,
+  onDismiss,
+}: {
+  applicationId: string;
+  folderDisplay: string | null;
+  onDismiss: () => void;
+}) {
   const noteRef = useRef<HTMLDivElement>(null);
-  // Dismiss removes the focused button: focus goes to the nearest control that stays.
   useFocusHandoff(noteRef);
-  if (!copiesOn(data) || dismissed) return null;
   return (
     <div
       ref={noteRef}
       className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 rounded-corner-md bg-surface-container-low py-1.5 pr-1.5 pl-3 text-body-small"
     >
-      <span>A copy is saved in {data!.folder_display}.</span>
+      <span>A copy is saved in {folderDisplay}.</span>
       <ShowCopyButton
         applicationId={applicationId}
         variant="link"
@@ -98,13 +113,7 @@ export function ResumesFolderNote({ applicationId }: { applicationId: string }) 
       >
         Change folder
       </GuardedLink>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Dismiss"
-        className="ml-auto"
-        onClick={() => setDismissed(true)}
-      >
+      <Button variant="ghost" size="icon-sm" aria-label="Dismiss" className="ml-auto" onClick={onDismiss}>
         <X className="size-4" />
       </Button>
     </div>
