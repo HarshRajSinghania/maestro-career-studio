@@ -340,37 +340,80 @@ def test_backfill_never_raises(db_session, folder_on, tmp_path, monkeypatch):
     rf._BACKFILL.release()
 
 
-def test_a_root_change_during_a_pass_is_not_lost(db_session, folder_on, tmp_path, monkeypatch):
-    """The overlapping request fails the lock, so the running pass must loop for the new root."""
-    first = tmp_path / "first"
-    second = tmp_path / "second"
-    first.mkdir()
-    second.mkdir()
-    db_session.add(Setting(key=rf.PATH_KEY, value=str(first)))
-    db_session.commit()
+def _set_root(path):
+    with rf.SessionLocal() as db:
+        rf._put(db, rf.PATH_KEY, str(path))
+        db.commit()
+
+
+def _applications_in(db_session, tmp_path, count):
     pdfs = []
-    for i in range(3):
+    for i in range(count):
         pdf = make_pdf(tmp_path, f"R{i}.pdf")
         pdfs.append(pdf)
         make_application(db_session, make_job(db_session, company=f"Co{i}"), pdf=pdf)
-    real_attempt, calls, overlap = rf._attempt, [], []
+    return pdfs
+
+
+def test_a_root_change_during_a_pass_is_not_lost(db_session, folder_on, tmp_path, monkeypatch):
+    """The PUT commits the new root, then asks for a backfill: the running pass must loop for it."""
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    _set_root(first)
+    pdfs = _applications_in(db_session, tmp_path, 3)
+    real_attempt, calls = rf._attempt, []
+
+    class NoThread:  # the request is the flag start_backfill raises before it spawns anything
+        def __init__(self, **kwargs):
+            pass
+
+        def start(self):
+            pass
 
     def attempt(application_id):
         calls.append(application_id)
-        if len(calls) == 1:  # mid-pass: the user picks another folder and the PUT asks for a backfill
-            with rf.SessionLocal() as db:
-                rf._put(db, rf.PATH_KEY, str(second))
-                db.commit()
-            overlap.append(rf.backfill())
-        return real_attempt(application_id)
+        result = real_attempt(application_id)
+        if len(calls) == 1:  # the first copy is done, then the user picks another folder
+            _set_root(second)
+            monkeypatch.setattr(rf.threading, "Thread", NoThread)
+            rf.start_backfill()
+        return result
 
     monkeypatch.setattr(rf, "_attempt", attempt)
     rf.backfill()
-    assert overlap == [None]  # the overlapping request never ran its own pass
     db_session.expire_all()
     assert rf._get(db_session, rf.BACKFILLED_KEY) == str(second)
-    for pdf in pdfs:
+    for pdf in pdfs:  # the first application too: the second pass repairs the split
         assert len(list(second.rglob(pdf.name))) == 1
+
+
+def test_a_root_that_goes_there_and_back_is_filled_in_full(db_session, folder_on, tmp_path, monkeypatch):
+    """A to B to A during one pass: the start and end roots match, but a copy landed in B."""
+    a_root, b_root = tmp_path / "a", tmp_path / "b"
+    a_root.mkdir()
+    b_root.mkdir()
+    _set_root(a_root)
+    pdfs = _applications_in(db_session, tmp_path, 3)
+    real_attempt, calls = rf._attempt, []
+
+    def attempt(application_id):
+        calls.append(application_id)
+        result = real_attempt(application_id)
+        if len(calls) == 1:
+            _set_root(b_root)
+            rf.backfill()  # overlapping request: raises the flag, fails the lock
+        elif len(calls) == 2:  # this copy landed in B
+            _set_root(a_root)
+            rf.backfill()
+        return result
+
+    monkeypatch.setattr(rf, "_attempt", attempt)
+    rf.backfill()
+    db_session.expire_all()
+    assert rf._get(db_session, rf.BACKFILLED_KEY) == str(a_root)
+    for pdf in pdfs:
+        assert len(list(a_root.rglob(pdf.name))) == 1
 
 
 def test_a_pass_whose_root_became_unavailable_writes_no_marker(

@@ -291,16 +291,17 @@ def _backfill_pass() -> int | None:
             return 0
         ids = list(db.scalars(select(Application.id).where(Application.pdf_path.is_not(None))))
     results = [_attempt(application_id) for application_id in ids]
+    copied = sum(1 for _, path in results if path is not None)
+    # Mark the root done only if nobody asked for another backfill while this pass ran. Comparing the
+    # first and last root misses A to B to A, which leaves some copies in B. The flag, raised after
+    # each root change commits, catches every change.
+    if _BACKFILL_WANTED.is_set() or not all(ok for ok, _ in results):
+        return copied  # unmarked: the loop (or the next start) runs a full pass again
     with SessionLocal() as db:
-        current = root(db)
-        if current is None or not enabled(db):
-            return sum(1 for _, path in results if path is not None)
-        if current != target:  # the root moved mid-pass, so this pass may have split its copies
-            _BACKFILL_WANTED.set()
-        elif all(ok for ok, _ in results):  # a failed run stays unmarked, so the next start retries
+        if root(db) == target and enabled(db):
             _put(db, BACKFILLED_KEY, str(target))
             db.commit()
-    return sum(1 for _, path in results if path is not None)
+    return copied
 
 
 def backfill() -> int | None:
@@ -331,6 +332,9 @@ def start_backfill() -> threading.Thread | None:
     """Fill the folder in the background so startup never waits on a slow drive."""
     if availability() is not None:
         return None
+    # Raise the flag here, in the caller's thread: the PUT handler commits the new root first, so a
+    # pass already running sees the request before it could mark the old root done.
+    _BACKFILL_WANTED.set()
     thread = threading.Thread(target=backfill, name="resumes-folder-backfill", daemon=True)
     thread.start()
     return thread
