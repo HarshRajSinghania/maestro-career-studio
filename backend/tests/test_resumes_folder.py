@@ -164,7 +164,7 @@ def test_every_start_copies_what_an_earlier_failure_missed(db_session, folder_on
     assert rf.copy_application(app.id) is None
     db_session.expire_all()
     assert rf.last_error(db_session)["code"] == "missing"
-    assert rf.backfill() == 0  # still unplugged: nothing copied, nothing raised
+    assert rf.backfill() is None  # still unplugged: the pass ends on the folder, nothing raised
     custom.mkdir()  # drive back
     assert rf.backfill() == 1  # the next start fills it
     assert (next(custom.iterdir()) / "Riley_Quill_DataScientist_Resume.pdf").is_file()
@@ -387,21 +387,75 @@ def test_backfill_fills_a_new_root(db_session, folder_on, tmp_path):
     assert len(list(custom.rglob("*.pdf"))) == 1
 
 
-def test_backfill_stops_at_the_first_failed_copy(db_session, folder_on, tmp_path, monkeypatch):
+def test_one_application_that_cannot_be_copied_blocks_no_other(db_session, folder_on, tmp_path, monkeypatch):
+    bad = make_application(db_session, make_job(db_session, company="Bad"), pdf=make_pdf(tmp_path, "Bad.pdf"))
+    good = make_application(db_session, make_job(db_session, company="Good"), pdf=make_pdf(tmp_path, "Good.pdf"))
+    real_place, real_attempt, attempted = rf._place, rf._attempt, []
+
+    def place(src, folder):
+        if src.name == "Bad.pdf":
+            raise PermissionError("unreadable")
+        return real_place(src, folder)
+
+    monkeypatch.setattr(rf, "_place", place)
+    monkeypatch.setattr(rf, "_attempt", lambda i, **kw: attempted.append(i) or real_attempt(i, **kw))
+    for _ in range(2):  # a persistent failure, at two starts in a row
+        attempted.clear()
+        rf.backfill()
+        assert sorted(attempted) == sorted([bad.id, good.id])
+        assert rf.copy_path_for(good.id) is not None
+        assert rf.copy_path_for(bad.id) is None
+
+
+def test_a_missing_root_ends_the_pass_with_one_recorded_error(db_session, folder_on, tmp_path, monkeypatch):
+    db_session.add(Setting(key=rf.PATH_KEY, value=str(tmp_path / "unplugged")))
+    db_session.commit()
     for i in range(3):
         make_application(
             db_session, make_job(db_session, company=f"Co{i}"), pdf=make_pdf(tmp_path, f"R{i}.pdf")
         )
-    calls = []
-    monkeypatch.setattr(rf, "_attempt", lambda i: calls.append(i) or (False, None))
-    assert rf.backfill() == 0
-    assert len(calls) == 1  # the rest would fail the same way
+    attempted, recorded = [], []
+    real_record = rf._record_error
+    monkeypatch.setattr(rf, "_attempt", lambda i, **kw: attempted.append(i) or (False, None))
+    monkeypatch.setattr(rf, "_record_error", lambda exc: (recorded.append(exc), real_record(exc))[1])
+    rf.backfill()
+    assert attempted == [] and len(recorded) == 1
+    db_session.expire_all()
+    assert rf.last_error(db_session)["code"] == "missing"
+
+
+def test_an_unwritable_root_ends_the_pass_with_one_recorded_error(db_session, folder_on, tmp_path, monkeypatch):
+    make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
+    attempted = []
+    monkeypatch.setattr(rf, "_attempt", lambda i, **kw: attempted.append(i) or (True, None))
+    monkeypatch.setattr(rf.tempfile, "mkstemp", lambda *a, **k: (_ for _ in ()).throw(PermissionError("read-only")))
+    rf.backfill()
+    assert attempted == []
+    db_session.expire_all()
+    assert rf.last_error(db_session)["code"] == "write"
+
+
+def test_a_pass_logs_a_traceback_for_the_first_failure_only(db_session, folder_on, tmp_path, monkeypatch, caplog):
+    for i in range(3):
+        make_application(
+            db_session, make_job(db_session, company=f"Co{i}"), pdf=make_pdf(tmp_path, f"R{i}.pdf")
+        )
+
+    def place(src, folder):
+        raise PermissionError("unreadable")
+
+    monkeypatch.setattr(rf, "_place", place)
+    with caplog.at_level("WARNING", logger=rf.logger.name):
+        rf.backfill()
+    saves = [r for r in caplog.records if r.getMessage().startswith("Couldn't save a copy")]
+    assert len(saves) == 3
+    assert [bool(r.exc_info) for r in saves] == [True, False, False]
 
 
 def test_backfill_never_raises(db_session, folder_on, tmp_path, monkeypatch):
     make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
 
-    def boom(_application_id):
+    def boom(_application_id, **_kw):
         raise RuntimeError("disk on fire")
 
     monkeypatch.setattr(rf, "_attempt", boom)
@@ -441,9 +495,9 @@ def test_a_root_change_during_a_pass_is_not_lost(db_session, folder_on, tmp_path
         def start(self):
             pass
 
-    def attempt(application_id):
+    def attempt(application_id, **kw):
         calls.append(application_id)
-        result = real_attempt(application_id)
+        result = real_attempt(application_id, **kw)
         if len(calls) == 1:  # the first copy is done, then the user picks another folder
             _set_root(second)
             monkeypatch.setattr(rf.threading, "Thread", NoThread)
@@ -465,9 +519,9 @@ def test_a_root_that_goes_there_and_back_is_filled_in_full(db_session, folder_on
     pdfs = _applications_in(db_session, tmp_path, 3)
     real_attempt, calls = rf._attempt, []
 
-    def attempt(application_id):
+    def attempt(application_id, **kw):
         calls.append(application_id)
-        result = real_attempt(application_id)
+        result = real_attempt(application_id, **kw)
         if len(calls) == 1:
             _set_root(b_root)
             rf.backfill()  # overlapping request: raises the flag, fails the lock

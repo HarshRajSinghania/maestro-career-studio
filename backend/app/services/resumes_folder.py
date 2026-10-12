@@ -275,8 +275,11 @@ def _sources(db: Session, application: Application) -> tuple[Path | None, list[P
     return resume, [p for p in (resume, *letters) if p is not None]
 
 
-def _attempt(application_id: UUID) -> tuple[bool, Path | None]:
-    """(ok, resume copy). ok is False only when a copy was due and failed."""
+def _attempt(application_id: UUID, *, log_traceback: bool = True) -> tuple[bool, Path | None]:
+    """(ok, resume copy). ok is False only when a copy was due and failed.
+
+    log_traceback=False logs a failure as one line: a backfill pass keeps the traceback for its first.
+    """
     try:
         if availability() is not None:
             return True, None
@@ -301,8 +304,8 @@ def _attempt(application_id: UUID) -> tuple[bool, Path | None]:
                 db.commit()
             return True, placed.get(resume) if resume is not None else None
     except Exception as exc:  # noqa: BLE001 — never raise into the render (planning decision 8)
-        logger.warning("Couldn't save a copy of application %s to the resumes folder",
-                       application_id, exc_info=True)
+        logger.warning("Couldn't save a copy of application %s to the resumes folder%s",
+                       application_id, "" if log_traceback else f": {exc}", exc_info=log_traceback)
         _record_error(exc)
         return False, None
 
@@ -344,22 +347,45 @@ _BACKFILL = threading.Lock()
 _BACKFILL_WANTED = threading.Event()
 
 
+def _root_failure() -> Exception | None:
+    """Why the root can't take a copy right now (missing, unwritable), else None."""
+    try:
+        with SessionLocal() as db:
+            base = _ready_root(db)  # the default root is made; a custom one must already be there
+        if base is None:
+            return None
+        fd, probe = tempfile.mkstemp(prefix=".maestro-probe-", dir=base)
+        os.close(fd)
+        os.unlink(probe)
+    except Exception as exc:  # noqa: BLE001 — never raise (planning decision 8)
+        return exc
+    return None
+
+
 def _backfill_pass() -> int | None:
     """One pass over every application with a resume PDF. Resumes copied (or already there), or None.
 
-    It stops at the first failed copy: the rest would fail the same way, and one traceback per
-    application at every start is noise. The next start, a Save in Settings or a reveal retries.
+    If the folder itself is missing or unwritable, every copy would fail the same way: record that
+    once and end the pass. Otherwise every application is tried, so one bad source file blocks no
+    other; only the first failure logs a traceback. The next start, a Save in Settings or a reveal
+    retries.
     """
     with SessionLocal() as db:
         if root(db) is None or not enabled(db):
             return None
         ids = list(db.scalars(select(Application.id).where(Application.pdf_path.is_not(None))))
-    copied = 0
+    if not ids:
+        return 0
+    failure = _root_failure()
+    if failure is not None:
+        logger.warning("The resumes folder can't take copies", exc_info=failure)
+        _record_error(failure)
+        return None
+    copied, failed = 0, False
     for application_id in ids:
-        ok, path = _attempt(application_id)
+        ok, path = _attempt(application_id, log_traceback=not failed)
         copied += path is not None
-        if not ok:
-            break
+        failed = failed or not ok
     return copied
 
 

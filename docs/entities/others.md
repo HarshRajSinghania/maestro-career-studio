@@ -245,7 +245,7 @@
   - **When**: after every application resume render (web Create/Update PDF, studio Save and Tailor, quick tailor and the Companion, MCP
     `render_pdf`, whose application render returns a nullable `copy_path`; a base-resume render returns none), every cover-letter PDF render, and every laptop-side sync arrival (`POST /api/sync/jobs`,
     `POST /api/sync/handover/return`). At every start a backfill copies each application's existing resume PDF (with its cover-letter PDFs), skipping files already
-    copied (a `stat` each); it stops at the first failed copy. Requests coalesce, so a root change during a pass triggers another pass. Turning
+    copied (a `stat` each); it stops only when the folder itself is missing or unwritable (one recorded error), not for one application's failure. Requests coalesce, so a root change during a pass triggers another pass. Turning
     the feature on, changing the folder, or pressing Save after a failed copy starts one.
   - **How**: one-way and atomic (temp file, then replace). A copy whose size and `mtime_ns` already match is skipped by `stat` alone;
     a re-render replaces the same-named file; nothing in the folder is ever read back or deleted. A failure never reaches the caller
