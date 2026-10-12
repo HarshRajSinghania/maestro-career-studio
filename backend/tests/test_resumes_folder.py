@@ -340,6 +340,56 @@ def test_backfill_never_raises(db_session, folder_on, tmp_path, monkeypatch):
     rf._BACKFILL.release()
 
 
+def test_a_root_change_during_a_pass_is_not_lost(db_session, folder_on, tmp_path, monkeypatch):
+    """The overlapping request fails the lock, so the running pass must loop for the new root."""
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    db_session.add(Setting(key=rf.PATH_KEY, value=str(first)))
+    db_session.commit()
+    pdfs = []
+    for i in range(3):
+        pdf = make_pdf(tmp_path, f"R{i}.pdf")
+        pdfs.append(pdf)
+        make_application(db_session, make_job(db_session, company=f"Co{i}"), pdf=pdf)
+    real_attempt, calls, overlap = rf._attempt, [], []
+
+    def attempt(application_id):
+        calls.append(application_id)
+        if len(calls) == 1:  # mid-pass: the user picks another folder and the PUT asks for a backfill
+            with rf.SessionLocal() as db:
+                rf._put(db, rf.PATH_KEY, str(second))
+                db.commit()
+            overlap.append(rf.backfill())
+        return real_attempt(application_id)
+
+    monkeypatch.setattr(rf, "_attempt", attempt)
+    rf.backfill()
+    assert overlap == [None]  # the overlapping request never ran its own pass
+    db_session.expire_all()
+    assert rf._get(db_session, rf.BACKFILLED_KEY) == str(second)
+    for pdf in pdfs:
+        assert len(list(second.rglob(pdf.name))) == 1
+
+
+def test_a_pass_whose_root_became_unavailable_writes_no_marker(
+    db_session, folder_on, tmp_path, monkeypatch
+):
+    make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
+    real_attempt = rf._attempt
+
+    def attempt(application_id):
+        result = real_attempt(application_id)
+        monkeypatch.setattr(app_settings, "resumes_folder_default", None)
+        return result
+
+    monkeypatch.setattr(rf, "_attempt", attempt)
+    rf.backfill()
+    db_session.expire_all()
+    assert rf._get(db_session, rf.BACKFILLED_KEY) is None
+
+
 def test_start_backfill_runs_it_on_a_thread(folder_on, monkeypatch):
     started = []
 

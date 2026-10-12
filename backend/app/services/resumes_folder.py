@@ -278,31 +278,53 @@ def copy_path_for(application_id: UUID) -> Path | None:
 
 
 _BACKFILL = threading.Lock()
+_BACKFILL_WANTED = threading.Event()
+
+
+def _backfill_pass() -> int | None:
+    """One pass over every application for the root as it is now. Resumes copied, or None."""
+    with SessionLocal() as db:
+        target = root(db)  # read once: _attempt re-reads the root per application
+        if target is None or not enabled(db):
+            return None
+        if _get(db, BACKFILLED_KEY) == str(target):
+            return 0
+        ids = list(db.scalars(select(Application.id).where(Application.pdf_path.is_not(None))))
+    results = [_attempt(application_id) for application_id in ids]
+    with SessionLocal() as db:
+        current = root(db)
+        if current is None or not enabled(db):
+            return sum(1 for _, path in results if path is not None)
+        if current != target:  # the root moved mid-pass, so this pass may have split its copies
+            _BACKFILL_WANTED.set()
+        elif all(ok for ok, _ in results):  # a failed run stays unmarked, so the next start retries
+            _put(db, BACKFILLED_KEY, str(target))
+            db.commit()
+    return sum(1 for _, path in results if path is not None)
 
 
 def backfill() -> int | None:
-    """Copy every application's PDFs once per root. Returns how many resumes were copied."""
-    if availability() is not None or not _BACKFILL.acquire(blocking=False):
+    """Copy every application's PDFs once per root. Returns how many resumes the last pass copied.
+
+    Requests coalesce: one that arrives while a pass runs sets the flag and returns None, and the
+    running pass loops once more for it. Set the flag first, then try the lock, so none is lost.
+    """
+    if availability() is not None:
         return None
-    try:
-        with SessionLocal() as db:
-            if not enabled(db):
-                return None
-            target = str(root(db))
-            if _get(db, BACKFILLED_KEY) == target:
-                return 0
-            ids = list(db.scalars(select(Application.id).where(Application.pdf_path.is_not(None))))
-        results = [_attempt(application_id) for application_id in ids]
-        if all(ok for ok, _ in results):  # a failed run stays unmarked, so the next start retries
-            with SessionLocal() as db:
-                _put(db, BACKFILLED_KEY, target)
-                db.commit()
-        return sum(1 for _, path in results if path is not None)
-    except Exception:  # noqa: BLE001 — runs as a thread target and from the PUT handler (planning decision 8)
-        logger.warning("The resumes folder backfill stopped", exc_info=True)
-        return None
-    finally:
-        _BACKFILL.release()
+    _BACKFILL_WANTED.set()
+    copied = None
+    while _BACKFILL_WANTED.is_set():
+        if not _BACKFILL.acquire(blocking=False):
+            return None  # the holder re-checks the flag after it releases
+        try:
+            _BACKFILL_WANTED.clear()
+            copied = _backfill_pass()
+        except Exception:  # noqa: BLE001 — runs as a thread target and from the PUT handler (planning decision 8)
+            logger.warning("The resumes folder backfill stopped", exc_info=True)
+            copied = None
+        finally:
+            _BACKFILL.release()
+    return copied
 
 
 def start_backfill() -> threading.Thread | None:
