@@ -436,6 +436,10 @@ def _backfill_pass() -> int | None:
         logger.warning("The resumes folder can't take copies", exc_info=failure)
         _record_error(failure)
         return None
+    with SessionLocal() as db:  # the folder is fine now: no copy may run (all match their records), so clear here
+        if _get(db, LAST_ERROR_KEY) is not None:
+            _put(db, LAST_ERROR_KEY, None)
+            db.commit()
     copied, failed = 0, False
     for application_id in ids:
         ok, path = _attempt(application_id, respect_record=True, log_traceback=not failed)

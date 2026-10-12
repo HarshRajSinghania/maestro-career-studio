@@ -433,6 +433,25 @@ def test_a_failed_copy_writes_no_record_and_the_next_pass_retries(db_session, fo
     assert rf.copy_path_for(app.id) is not None
 
 
+def test_a_usable_root_clears_the_error_a_missing_drive_left_even_if_no_copy_runs(
+    db_session, folder_on, tmp_path, monkeypatch
+):
+    custom = tmp_path / "usb"
+    custom.mkdir()
+    _set_root(custom)
+    make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
+    assert rf.backfill() == 1  # records what was copied
+    custom.rename(tmp_path / "usb-unplugged")
+    assert rf.backfill() is None  # start with the drive out
+    db_session.expire_all()
+    assert rf.last_error(db_session)["code"] == "missing"
+    (tmp_path / "usb-unplugged").rename(custom)  # drive back; every application matches its record
+    writes = _count_writes(monkeypatch)
+    assert rf.backfill() == 1
+    db_session.expire_all()
+    assert rf.last_error(db_session) is None and writes == []
+
+
 def test_a_copy_runs_while_holding_its_applications_lock(db_session, folder_on, tmp_path, monkeypatch):
     app = make_application(db_session, make_job(db_session), pdf=make_pdf(tmp_path))
     app_id, seen, real_place = app.id, [], rf._place
