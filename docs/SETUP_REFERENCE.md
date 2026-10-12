@@ -50,6 +50,12 @@ deleting the folder deletes your data.
   template whose words would print on top of each other is refused. Install
   MacTeX 2026, or update TeX Live 2025 from its final repository:
   `sudo tlmgr option repository https://ftp.math.utah.edu/pub/tex/historic/systems/texlive/2025/tlnet-final && sudo tlmgr update --self --all`
+- **Resumes folder:** `maestro` sets `RESUMES_FOLDER_DEFAULT` to
+  `Documents/Maestro Career Studio/Applications` (your real Documents folder on
+  Windows and Linux) for each run, which is what turns the
+  [resumes folder](USING_MAESTRO.md#your-resumes-folder) on. A value in `maestro.env` or your shell
+  wins, and a blank one counts as unset. The Docker route sets nothing, so it
+  keeps PDFs in `applications/` only.
 - **What it contacts, and when:** [PRIVACY.md](../PRIVACY.md#what-the-maestro-command-and-first-start-download).
 - **Updating** is `maestro update`; see [Updating](../README.md#updating).
 

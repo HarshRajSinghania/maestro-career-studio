@@ -15,6 +15,10 @@
     "inv-staged-artifact-removal": [
       {"path": "backend/app/services/application_writes.py", "symbol": "stage_resume_update"}
     ],
+    "inv-resumes-folder-one-way": [
+      {"path": "backend/tests/test_resumes_folder.py", "symbol": "test_never_reads_the_copy"},
+      {"path": "backend/app/services/resumes_folder.py", "symbol": "PREFIX"}
+    ],
     "inv-stable-artifact-dir": [
       {"path": "backend/tests/test_application_artifacts.py", "symbol": "test_get_dir_allocates_collision_safe_folder_once"},
       {"path": "backend/app/services/application_artifacts.py", "symbol": "def get_dir"}

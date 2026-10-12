@@ -169,6 +169,8 @@ A uv install keeps everything in one folder per user: the database, resumes, set
 | Windows | `%APPDATA%\Maestro Career Studio` |
 | Linux | `$XDG_DATA_HOME/maestro-career-studio` (default `~/.local/share/maestro-career-studio`) |
 
+Finished resume PDFs are also copied to `Documents/Maestro Career Studio/Applications`, one folder per job (Settings › Tailoring › Resumes folder).
+
 On the Docker route everything stays inside the folder you cloned (`data/`, `base_resumes/`, `applications/`, `settings/` and more; the [full list](docs/SETUP_REFERENCE.md#where-your-files-live-docker)). Your files are yours, never uploaded. Every application's PDF is saved in `applications/`, and `career.md` exports your whole career history as one Markdown file.
 
 ## Troubleshooting

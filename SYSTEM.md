@@ -82,7 +82,7 @@ backend/
                        ats, base_resumes, templates, qa, resume_versions,
                        resume_lint, career_kb, exports, chat, explore, referrals,
                        settings, autofill, proposals, automations, setup, role_categories,
-                       version, agent_runs, countries)
+                       version, agent_runs, countries, resumes_folder)
     services/          business logic (ats/, tailoring_session, gap_analysis,
                        role_categories, countries, kb_import, exports, gap_enrichment,
                        placement_targets, ats_score, base_eligibility, application_writes,
@@ -90,7 +90,7 @@ backend/
                        pdf_render (dual-engine: pdflatex + typst), pdf_preview,
                        jd_extraction, resume_lint, health_*, career_kb,
                        chat_agent + chat_tools, transcript (chat rows as neutral parts; NULL `parts` = legacy row), llm_providers/ (neutral LLM types, errors, registry (model id to provider), OpenAI-compatible, Gemini and Claude adapters), attachment_extract (bounded DOCX/PPTX + notes; decks are documents),
-                       autofill_choose + autofill_slots + jev (Companion fill),
+                       autofill_choose + autofill_slots + jev (Companion fill), resumes_folder (visible PDF copies),
                        automations (page catalog), agent_runs + inbox_readiness, …)
     automations/skills/  the agent prompts, one <name>/SKILL.md each: the Automations
                        source of the Automations page; indexed by docs/skills/README.md
@@ -225,7 +225,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
 7. **Output** — Resume tab: the ONE before/after compare panel + PDF card;
    **Create PDF** renders the tailored draft and shows the shared rasterized
    page preview inline (**Update PDF** refreshes it); download/open actions become
-   available immediately. "Edit resume" → the studio (`/applications/[id]/resume`),
+   available immediately, and a copy lands in the visible resumes folder (**Show in Finder**; §6 inv-resumes-folder-one-way). "Edit resume" → the studio (`/applications/[id]/resume`),
    where Save chains render → re-score automatically.
 8. **Apply package** — Q&A tab: questions, cover letter (tone). Outreach/cold messages
    are asked as free-form questions (no dedicated cold-message generator); the QA
@@ -291,6 +291,9 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   `applications/Company_Role_YYYYMMDD_<idprefix>/`, allocated once via `services/application_artifacts.get_dir`,
   persisted on `Application.artifact_dir`; resume/source/PDF, previews, cover letters and proposal `evidence/` colocate
   there. Upload constraints: `docs/entities/others.md`, "PDF upload staging".
+- **Resumes folder copies go one way.** `{#inv-resumes-folder-one-way}` After the commit, each finished PDF is copied into the
+  user's Documents folder, never read back or deleted there; a copy failure never fails the caller; `resumes_folder.*` is
+  machine-local, off without `RESUMES_FOLDER_DEFAULT` and on the always-on copy. Pinned by `tests/test_resumes_folder.py`.
 - **Honesty invariant** `{#inv-honesty}`: an `add_keyword` on a skill the engine found NO evidence of (`fix_hint ==
   "absent"`) may only land in the skills section, never as a fabricated experience/project bullet. Enforced server-side
   in `save_resolutions` (guards MCP/API callers, not just the UI).
@@ -536,7 +539,7 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   - **Apply readiness** reads `setup/status`'s `autofill` block; the server cannot see whether the client holds
     browser tools, so the render offer says the handoff needs them rather than asserting the capability.
 - **Onboarding workflow** (`workflow.py`): `kb_ingest_resume` (drafts) → `kb_approve_points` (the user's gate)
-  → `create_base_resume_from_kb` → `render_pdf` walks ingest-several → KB → role-targeted bases with zero
+  → `create_base_resume_from_kb` → `render_pdf` (returns `copy_path`, the visible copy) walks ingest-several → KB → role-targeted bases with zero
   in-house LLM (the client agent parses/authors; ingest the CURRENT resume first — over single-source MCP
   calls `_seed_profile` is first-write-wins). Ingest hints are offer-only (multi-resume loop, same
   mass-capture lesson as `score_ats`); `brief=true` suppresses before any settings read. Hint options carry
@@ -875,21 +878,8 @@ citation. Priority lives in the item text, not in the ordinal.
   in desktop apps → `engines.find_pdflatex` searches TeX homes after PATH; every run spawns its absolute path.
 - **A seeded template copies source only on INSERT** (2026-09-20): import landed rows after migrations, restoring
   old bytes → `template_registry.SUPERSEDED_SEED_DIGESTS` resyncs at seed time, including Classic when another template is default.
-- **`foreign_keys` is per connection, and defaults OFF** (2026-09-19): `journal_mode` persists in the file; `foreign_keys`,
-  `synchronous` and `busy_timeout` reset every connect, so 21 `ondelete=` cascades silently stopped → every SQLite
-  engine goes through `app.db.make_engine`.
-- **Autogenerate fully qualifies a TypeDecorator** (2026-09-19): `app.models.types.UTCDateTime()` is unimportable in a
-  revision → use the impl type by hand. Alembic compares compiled DDL (no `compare_type` hook); `alembic check` skips
-  server defaults (the parity test passes `compare_server_default=True`).
-- **A Boolean `server_default="false"` is TEXT on SQLite** (2026-09-19): `'false'` is truthy in Python, so every
-  user template read as the default → use `expression.false()` (pinned by `test_db_portability`).
-- **`Session.commit()` flushes first** (2026-09-19): a teardown that deletes rows and commits also lands a
-  never-flushed `add`, AFTER the deletes, leaking it into the next test → `rollback()` before a teardown clear.
-- **`with sqlite3.connect(...)` commits but does not CLOSE** (2026-09-19): a leaked read lock and an open handle →
-  `app/tools/backup_db.py` closes every connection in a `finally`; the context manager is not a closer.
-- **SQLite's `CURRENT_TIMESTAMP` has no microseconds** (2026-09-19): same-second rows tied against the ORM's `.ffffff`
-  binds and "oldest wins" fell to a uuid4 tie-break → the APP writes every timestamp; never test `updated_at ==
-  created_at` for "never edited".
+- **SQLite and Alembic traps** (per-connection `foreign_keys`, TypeDecorator autogenerate, Boolean defaults, `commit()` flushing,
+  unclosed `sqlite3.connect`, timestamp resolution): `docs/entities/others.md`, "SQLite and Alembic gotchas".
 - **One path, every job** (2026-09-01): LinkedIn's list rewrites only `?currentJobId=` and the matcher dropped the
   query string, so every job was the first one saved. A query-keyed board needs its key in BOTH `posting_id` tables
   (§7); an SPA's `<head>` JSON-LD is the PREVIOUS job's until checked.

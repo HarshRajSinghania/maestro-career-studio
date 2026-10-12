@@ -461,6 +461,27 @@ means three real exposures:
 Use it on jobs you have looked at yourself. Everything is written down —
 proposals, your yes, and the screenshots behind them.
 
+### Your resumes folder
+
+Every finished resume PDF, and every cover letter PDF, is also copied to a folder
+you can see: `Documents/Maestro Career Studio/Applications` (on Windows, your real
+Documents folder, even when OneDrive moved it). Each job gets one folder named
+`Company – Job title (date)`. The name is chosen once, so editing the job title
+later does not move it, and two jobs with the same name get a "(2)" on the second.
+
+The copy happens after you create or update a PDF, after a cover letter is
+rendered and after a job arrives from your second copy. The first start after
+this arrives copies the PDFs you already have. Maestro only writes there. It
+never reads a copy back and never deletes anything, so you can rename or tidy your
+own files, though a re-render replaces the file with the same name.
+
+**Show in Finder** (**Show in File Explorer** on Windows, **Show in folder** on
+Linux) on the PDF card and in the resume studio opens the copy. In Settings ›
+Tailoring › **Resumes folder** you can switch it off, **Open folder**, **Change
+folder** (type a path or press **Choose…**) or **Use the default**. If a copy
+fails, for example because a drive is unplugged, the last problem shows there.
+The Docker route keeps PDFs in `applications/` instead and has no resumes folder.
+
 ### Leave with everything
 
 `career.md` is your whole career history as one Markdown file — downloadable from

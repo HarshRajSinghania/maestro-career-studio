@@ -235,6 +235,33 @@
   compose/context + typed job preferences. Returns `{draft}` and persists **nothing** — Profile puts it into the
   persona editor as a dirty edit; only `PUT /api/settings/persona` saves; an empty Career KB 422s with an
   import-first message.
+- **Resumes folder** (`services/resumes_folder.py`, `folder_opener.py`, `folder_picker.py`, `routers/resumes_folder.py`; on screen
+  Settings › Tailoring › **Resumes folder**; invariant: SYSTEM.md §6 inv-resumes-folder-one-way): a visible copy of each finished PDF.
+  - **Where**: `<Documents>/Maestro Career Studio/Applications/<Company> – <Job title> (<YYYY-MM-DD>)/` holds the tailored resume PDF and any
+    cover-letter PDF. Documents is `~/Documents` on macOS, the real (possibly OneDrive-redirected) Documents folder on Windows and
+    `XDG_DOCUMENTS_DIR` on Linux (`home.documents_dir`). A folder name is OS-safe, capped in characters and in 200 UTF-8 bytes, chosen
+    once per application and saved (`resumes_folder.app.<application id hex>`), so a later title edit does not move it; a clash gets
+    " (2)". The name is allocated under the write lock.
+  - **When**: after every application resume render (web Create/Update PDF, studio Save and Tailor, quick tailor and the Companion, MCP
+    `render_pdf`, which returns `copy_path`), every cover-letter PDF render, and every laptop-side sync arrival (`POST /api/sync/jobs`,
+    `POST /api/sync/handover/return`). At startup a backfill copies every existing PDF once per root: requests coalesce, and a root is
+    marked done (`resumes_folder.backfilled`) only when a pass finished cleanly with no new request. Turning the feature on or changing
+    the folder starts one.
+  - **How**: one-way and atomic (temp file, then replace). A copy whose size and `mtime_ns` already match is skipped by `stat` alone;
+    a re-render replaces the same-named file; nothing in the folder is ever read back or deleted. A failure never reaches the caller
+    (catch-all) and is recorded as `resumes_folder.last_error` (`{code, path, at}`, `missing` or `write`), shown as a sentence in Settings.
+  - **Availability**: off without `RESUMES_FOLDER_DEFAULT` (Docker, bare uvicorn) and on the always-on copy (`sync_status.is_remote`);
+    `GET` then reports `reason` `not_here` or `always_on_copy` and every other route answers 409. The `maestro` launcher sets
+    `RESUMES_FOLDER_DEFAULT` as a default (`maestro.env` or the shell may override it; blank means unset).
+  - **Settings** (all machine-local, `resumes_folder.` in `LOCAL_SETTING_PREFIXES`): `enabled` (a row exists only as "off"; default on),
+    `path` (custom root; no row = the default), `backfilled`, `last_error`, `app.<id>`.
+  - **Endpoints**: `GET/PUT /api/settings/resumes-folder` (state; `{enabled, folder}`, `folder: null` = use the default, an unusable folder is
+    a 422 sentence, a successful change clears `last_error` and starts a backfill), `POST .../open` (reveals the root; 204, 409 when the OS
+    cannot), `POST .../choose` (the native folder dialog, `{folder: str | null}`, never saves; one dialog at a time, else 409) and
+    `POST /api/applications/{id}/show-copy` (heals a missing copy, then reveals the file; 409 when off or no PDF yet).
+  - **UI**: a switch, the folder (relative to home, `Documents › Maestro Career Studio › Applications`), **Open folder**, **Change folder** (typed path plus **Choose…**, the native dialog on
+    macOS, Windows and Linux with `zenity`), **Use the default** and the last error. The PDF card and both studios carry **Show in
+    Finder** / **Show in File Explorer** / **Show in folder** (`resumes-folder-actions.tsx`); the PDF card shows a one-time dismissible note.
 - **In-app chat: interaction model** (SYSTEM.md §7; "chips in, cards out"): assistant prose renders Markdown (content passed to
   tools stays plain); `propose_edits` stages ANY typed-op set as an approval card (`proposal_ops`, validated and scope-checked at
   propose time, applied via the standard `/edits` PATCH); proposal cards persist their resolution via `PATCH
@@ -876,3 +903,18 @@
     schtasks create/query/delete of the rendered XML on Windows, admin runner), `uv-wheel`, `uv-smoke` (`scripts/smoke_uv_install.py`: install, start, score over
     `/mcp`, backup, loopback and Host/Origin checks, stop), `uv-upgrade` (`scripts/upgrade_check.py`: old wheel to new via `update --source`);
     `pypi.yml` repeats build and smoke on a tag, then publishes through PyPI trusted publishing.
+- **SQLite and Alembic gotchas**:
+  - `foreign_keys` is per connection and defaults OFF: `journal_mode` persists in the file, but `foreign_keys`, `synchronous` and
+    `busy_timeout` reset on every connect, so 21 `ondelete=` cascades once silently stopped. Every SQLite engine goes through
+    `app.db.make_engine`.
+  - Autogenerate fully qualifies a TypeDecorator: `app.models.types.UTCDateTime()` is unimportable in a revision, so use the impl type
+    by hand. Alembic compares compiled DDL (no `compare_type` hook), and `alembic check` skips server defaults (the parity test
+    passes `compare_server_default=True`).
+  - A Boolean `server_default="false"` is TEXT on SQLite: `'false'` is truthy in Python, so every user template read as the default.
+    Use `expression.false()` (pinned by `test_db_portability`).
+  - `Session.commit()` flushes first: a teardown that deletes rows and commits also lands a never-flushed `add`, AFTER the deletes,
+    leaking it into the next test. `rollback()` before a teardown clear.
+  - `with sqlite3.connect(...)` commits but does not CLOSE, leaving a read lock and an open handle: `app/tools/backup_db.py` closes
+    every connection in a `finally`; the context manager is not a closer.
+  - SQLite's `CURRENT_TIMESTAMP` has no microseconds: same-second rows tied against the ORM's `.ffffff` binds and "oldest wins" fell to a
+    uuid4 tie-break. The APP writes every timestamp; never test `updated_at == created_at` for "never edited".

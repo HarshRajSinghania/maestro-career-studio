@@ -83,6 +83,10 @@ These have real coverage and are unlikely to move under you.
   strict JSON output, streaming tool calls for chat. Expect model-dependent
   rough edges, and use the per-model **Test** button in Settings to measure
   what your model can actually do before relying on it.
+- **The resumes folder is for the uv install only.** On the Docker route and on a
+  second copy that stays on, PDFs stay in `applications/`. On Windows, Show in
+  File Explorer, the folder dialog and a OneDrive-moved Documents folder have not been
+  tried on a real desktop yet.
 - **Onboarding import takes at most 10 files** and does not connect related
   items of different kinds, so a certificate can land next to the job it
   belongs to instead of inside it.
