@@ -2596,6 +2596,19 @@ def test_the_rail_numeral_is_centered_without_a_clipped_line_box():
     assert "stg-num" in PANEL_SOURCE
 
 
+def test_a_locked_row_is_not_drawn_but_stays_in_the_document():
+    """Direction C draws no future steps: the progress bar says where you are.
+
+    The locked `li.stg` rows stay in the DOM (every pin on them above still
+    holds, and a screen reader loses nothing it had: the rail's state is in the
+    progress bar's label), and the stylesheet is what hides them. Asserted
+    against the stylesheet because the fake document has no cascade.
+    """
+    block = re.search(r"^\.stg\.locked\s*\{([^}]*)\}", PANEL_CSS, re.M)
+    assert block, "no .stg.locked rule"
+    assert re.search(r"display:\s*none", block.group(1)), block.group(1)
+
+
 def test_the_footer_note_has_its_own_line_above_the_actions():
     """The note overlapped the Draft/Applied chips ("Attached Ajey_…pdf. Check
     the upload before you submit.") and the primary wrapped onto three lines

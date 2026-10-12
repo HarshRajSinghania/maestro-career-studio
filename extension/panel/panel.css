@@ -202,7 +202,7 @@ body {
 
 /* ------- progress: four segments and "Step N of 4 · Name" ---------------- */
 
-.progress { flex: none; padding: 12px 14px 0; }
+.progress { flex: none; padding: 12px 16px 0; background: var(--cs-surface); }
 .progress:empty { display: none; }
 .progress-bar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
 .seg-bar { height: 4px; border-radius: 999px; background: var(--cs-line); }
@@ -212,20 +212,23 @@ body {
 
 /* ------- the rail: the one dynamic region, and the only one that scrolls ---- */
 
+/* Direction C: the rail is the white page the Next card sits on, so the card's
+ * low surface reads against it. Finished steps are lines on that page and
+ * steps to come are not drawn. */
 .rail {
-  flex: 1; overflow-y: auto; padding: 10px 10px 12px; margin: 0;
-  list-style: none;
-  display: flex; flex-direction: column; gap: 6px;
+  flex: 1; overflow-y: auto; padding: 12px 16px 16px; margin: 0;
+  list-style: none; background: var(--cs-surface);
+  display: flex; flex-direction: column; gap: 8px;
 }
 /* `flex: none` because a flex item shrinks by default: an open step taller
  * than the rail was squeezed to fit and `overflow: hidden` cut its bottom off
  * mid-sentence. Unshrunk, the rail overflows and scrolls instead. */
 .stg {
   flex: none;
-  background: var(--cs-surface); border: 1px solid var(--cs-line);
-  border-radius: 14px; overflow: hidden;
+  border-radius: 12px; overflow: hidden;
 }
-.stg-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+/* A step is a compact line (32px) by default: the done row, and the skipped one. */
+.stg-row { display: flex; align-items: center; gap: 8px; padding: 0 4px; min-height: 32px; }
 /* A DONE ROW THAT REOPENS is the same line rendered as a real `<button>` (see
  * `renderRail`), so this is the reset that keeps a control looking like the row
  * it replaced: the UA gives a button its own font, its own background, its own
@@ -243,7 +246,9 @@ body {
 button.stg-row {
   width: 100%; text-align: left; cursor: pointer;
   font: inherit; color: inherit; background: none; border: none;
+  border-radius: 8px;
 }
+.stg:not(.active) > button.stg-row:hover:not(:disabled) { background: var(--cs-surface-2); }
 button.stg-row:disabled { opacity: .6; cursor: default; }
 /* THE RING GOES INSIDE, and without this line a keyboard user tabbing onto a
  * done row sees NOTHING at all. `.stg` is `overflow: hidden` (it clips the
@@ -272,24 +277,56 @@ button.stg-row:focus-visible { outline-offset: -2px; }
   font-weight: 700; font-size: 11px; line-height: 22px; font-family: var(--cs-font);
   background: var(--cs-surface-2); color: var(--cs-muted);
 }
-.stg.done .stg-num { background: var(--cs-good-tonal); color: var(--cs-good); }
-.stg.active { border-color: var(--cs-primary); box-shadow: 0 0 0 1px var(--cs-primary); }
-.stg.active .stg-num { background: var(--cs-primary); color: var(--cs-on-primary); }
-/* Two greyed states that must not look alike. `locked` is "not yet"; `skipped`
- * is "not required on the path you took" — it is dashed rather than solid so a
- * glance never reads it as a step that is still coming, and it is never a tick.
- * The mockup had no skipped scenario; the honesty rule is decisions.js's. */
-.stg.locked { opacity: .55; }
-.stg.skipped { opacity: .7; border-style: dashed; }
-.stg-name { font-weight: 700; font-size: 13px; }
-/* A locked or not-needed row's words, visible (lock + "Not yet", minus + "Not needed"). */
+/* Done: the circle-check alone, in success, with no chip behind it. Its slot
+ * is 16px, so the name starts where the Next card's content would. */
+.stg.done .stg-num { width: 16px; height: 16px; background: none; color: var(--cs-good); }
+/* THE NEXT CARD (`.stg.active`): low surface, 12px radius, 16px padding. The
+ * eyebrow is drawn here and is not text in the row, so the row still reads
+ * "1 Job" to a reader that has no CSS; the step's name is the card title and
+ * the open body sits inside the card. The numeral is the progress bar's job now
+ * (a separate rule, so `.stg-num`'s own box above is untouched). */
+.stg.active { background: var(--cs-surface-2); padding: 16px; }
+.stg.active > .stg-row { flex-wrap: wrap; padding: 0; min-height: 0; gap: 4px 8px; }
+.stg.active > .stg-row::before {
+  content: "Next"; flex: 0 0 100%;
+  font: 600 12px/1.4 var(--cs-font); color: var(--cs-primary);
+}
+/* The way back (the active row while another is open) is a button with no body: the card's
+ * padding moves onto the button, so the whole card is the target and its focus ring sits on
+ * the card's own edge instead of hugging the words. */
+.stg.active:has(> button.stg-row) { padding: 0; }
+.stg.active > button.stg-row { padding: 16px; border-radius: 12px; }
+.stg.active > button.stg-row:hover:not(:disabled) { background: var(--cs-muted-container); }
+.stg.active .stg-num { display: none; }
+/* The terminal row, finished and current (it prints a circle-check in its numeral): it is
+ * nothing's "Next", so it drops the eyebrow and keeps its tick, drawn like a done row's. */
+.stg.active > .stg-row:has(.stg-num svg)::before { display: none; }
+.stg.active .stg-num:has(svg) { display: flex; width: 16px; height: 16px; background: none; color: var(--cs-good); }
+.stg.active .stg-name { font-size: 17px; font-weight: 600; line-height: 1.3; }
+/* Not drawn: C shows no step to come, and the progress bar says where you are.
+ * The rows stay in the DOM, so nothing that reads them changes. `skipped` is "not required
+ * on the path you took" and reads like a done line with the minus mark and
+ * "Not needed" in place of a tick; it is never a tick. */
+.stg.locked { display: none; }
+.stg.skipped .stg-num { display: none; }
+.stg.skipped .stg-name { color: var(--cs-muted); }
+/* The minus takes the done line's tick slot (the state's wrapper dissolves so its icon can lead
+ * the row), and "Not needed" follows the name in muted words. */
+.stg.skipped .stg-state { display: contents; }
+.stg.skipped .stg-state > svg { order: -1; width: 16px; height: 16px; flex: none; }
+.stg.skipped .stg-state ~ .stg-sum { margin-left: auto; max-width: none; text-wrap: balance; }
+/* A done or skipped line that was reopened: the line and its body share one outlined card,
+ * so the Next card stays the only filled one on the page. */
+.stg:not(.active):has(> .stg-body) { border: 1px solid var(--cs-line); padding: 3px 11px 12px; }
+.stg-name { font-weight: 500; font-size: 13px; }
+/* A not-needed row's words, visible (minus + "Not needed"). */
 .stg-state { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--cs-muted);
   font-size: 12px; white-space: nowrap; }
 .stg-state ~ .stg-sum { margin-left: 8px; }
 .stg-sum { color: var(--cs-muted); font-size: 12px; margin-left: auto; text-align: right; max-width: 55%; }
-/* The active row's body. Indented past the numeral rather than under it, so the
-   step's content reads as belonging to the step. */
-.stg-body { padding: 2px 12px 12px 44px; font-size: 13px; }
+/* A step's open body: inside the card, under the title, full width. */
+.stg-body { padding: 12px 0 0; font-size: 13px; }
+.stg:not(.active) > .stg-body { padding: 8px 0 0; }
 
 /* The Job stage's editable preview: label beside field, three rows. */
 .kv { display: grid; grid-template-columns: 76px 1fr; gap: 6px 10px; margin: 6px 0 10px; }
