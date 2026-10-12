@@ -573,7 +573,9 @@ this contract. Code citing "§4" lands here; the table says which file to open.
   the scored best preselected, or a bound application's own `base_resume`); Save job scores the
   bases in the same press, and an unscored saved job is scored once when Job opens. `hasForm` is
   NOT a stage input. ONE row shows a body (the active one, or a DONE row reopened as view state;
-  the active row is the way back); the footer's one primary follows the OPEN row: Save job (then
+  the active row is the way back). Painted as direction C: a `#progress` bar ("Step N of 4", from the
+  active row), the active row as a "Next" card, done rows as compact lines, locked rows hidden by CSS
+  (still in the DOM); `scripts/panel_preview.py` renders each state. The footer's one primary follows the OPEN row: Save job (then
   Update scores), Quick tailor (Create PDF when an application lacks its PDF), Autofill.
   The panel document is a family of scripts (panel.html owns roster and order): `panel.js`
   owns the store, the loaders and the generation guard; per-STAGE bodies (`panel/stages/*.js`)

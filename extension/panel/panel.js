@@ -97,9 +97,10 @@
  * Both are enforced by scope rather than by agreement, which is the only kind
  * of enforcement this arrangement has.
  *
- * WHAT RENDERS WHAT: three regions are constant chrome — header (mark + the
- * one deep link), identity (title / company / chip / ATS rings), footer
- * (status + exactly one primary CTA) — and the rail is the dynamic one. The
+ * WHAT RENDERS WHAT: four regions are constant chrome — header (mark + the
+ * one deep link), identity (title / company / chip / ATS rings), progress
+ * (four segments and "Step N of 4"), footer (status + exactly one primary CTA)
+ * — and the rail is the dynamic one. The
  * active stage is COMPUTED from the store, never from what the user last
  * clicked (design: "stage inference, not stage navigation").
  */
@@ -1677,8 +1678,10 @@
       appUrl: card.settings?.appUrl, job: card.job, application: card.application,
     });
     if (!link) return null;
-    // The arrow is an icon beside the words (aria-hidden); "opens in a new tab" rides the accessible name.
-    const anchor = attach(node("a", "linkish", link.label), icon("external-link", { size: 12 }));
+    // An icon button: the glyph is aria-hidden and the words ride a visually hidden span, so `textContent`
+    // still reads "Open in Maestro CS" and the aria-label still carries "opens in a new tab".
+    const anchor = attach(node("a", "linkish"), icon("external-link", { size: 16 }),
+                          node("span", "vh", link.label));
     anchor.href = link.href;
     anchor.target = "_blank";
     anchor.rel = "noopener noreferrer";
@@ -1756,6 +1759,17 @@
     return ats;
   }
 
+  /** "Company · status" on ONE muted line, under the title. The separator is drawn only between two
+   * things: a page with no saved job has no company, and a status chip alone needs no dot. It is hidden
+   * from the accessibility tree, which reads the company and the chip as the two facts they are. */
+  function coLine() {
+    const company = card.job?.company ?? "";
+    const chip = matchChip();
+    const sep = company && chip ? node("span", "sep", "\u00b7") : null;
+    if (sep) sep.setAttribute("aria-hidden", "true");
+    return attach(node("div", "co-line"), node("div", "co", company), sep, chip);
+  }
+
   function renderIdentity(decision) {
     const who = node("div", "who");
     // With no job in the library, the tab's host is the only thing we honestly
@@ -1764,27 +1778,54 @@
     attach(who,
            node("div", "title",
                 card.job ? (card.job.title || "Untitled job") : hostOf(card.url)),
-           node("div", "co", card.job?.company ?? ""));
-    const row1 = attach(node("div", "row1"), who, matchChip());
+           coLine());
+    // The two tools sit at the header's top right, icon-only; a page the panel reads nothing about
+    // (`chrome://`) has neither, so there is no empty box either.
+    const refresh = refreshControl();
+    const link = deepLinkAnchor();
+    const tools = refresh || link ? attach(node("div", "id-tools"), refresh, link) : null;
+    const row1 = attach(node("div", "row1"), who, tools);
 
     const children = [row1, renderAts()];
     // The shortcut's own copy, under the identity rather than in the footer:
     // it explains what the rail is about to skip, so it belongs beside what it
     // is about.
     if (decision.shortcutNote) children.push(node("div", "sub", decision.shortcutNote));
-    // THE LINK IS LAST, on a line only Refresh shares, and it took a
-    // measurement to get there. Beside the chip in `row1` was the obvious home and the wrong one:
-    // `who` and a `flex: none` link compete for one axis, and at the widths a
-    // side panel is actually dragged to (measured at 320/360/400) the job title
-    // was left 104px and five wrapped lines — a header that pushed the rail off
-    // screen to make room for a link. Down here it competes with nothing, and
-    // the block's bottom-right is where a card's one way out belongs anyway.
-    // Refresh sits at that line's left: the link keeps its right edge, and
-    // neither competes with the title.
-    const refresh = refreshControl();
-    const link = deepLinkAnchor();
-    if (refresh || link) children.push(attach(node("div", "id-foot"), refresh, link));
     region("identity").replaceChildren(...children);
+  }
+
+  /** Where the user IS, in four segments and a label: "Step N of 4 · Name".
+   *
+   * N and the name come from the ACTIVE row of `railModel` (`decision.stage`),
+   * never from `open`: a reopened done row is a thing the user is looking at,
+   * and the bar is the same fact `aria-current` reports. The segments BEFORE
+   * the active one are `done` and the active one is `active`, the rest bare:
+   * the bar says how far along the journey is, by position, and leaves each
+   * row's own tick, skip and "Not yet" to the rail (a job applied inside the
+   * web app has Fill never ticked here, and the bar still has passed it).
+   * One `role="img"` carries the words, so
+   * the four spans are not announced as four things; the visible label is
+   * hidden from the tree because the image already says it.
+   *
+   * Nothing on a page the panel reads nothing about (`refreshControl`'s own
+   * rule): a settings tab has no journey, and a bar at "Step 1" would claim one. */
+  function renderProgress(decision) {
+    if (card.tabId === null || !isWebPage(card.url)) {
+      region("progress").replaceChildren();
+      return;
+    }
+    const rows = railModel(decision);
+    const active = rows.find((row) => row.state === "active");
+    const label = `Step ${active.n} of ${rows.length} \u00b7 ${active.name}`;
+    const bar = node("div", "progress-bar");
+    bar.setAttribute("role", "img");
+    bar.setAttribute("aria-label", label);
+    attach(bar, ...rows.map((row) => node(
+      "span", row.n < active.n ? "seg-bar done"
+        : row.n === active.n ? "seg-bar active" : "seg-bar")));
+    const words = node("div", "progress-label", label);
+    words.setAttribute("aria-hidden", "true");
+    region("progress").replaceChildren(bar, words);
   }
 
   /** Refresh (`refreshPage`), or nothing on a page the panel reads nothing
@@ -1799,9 +1840,11 @@
    * the page (job, application, drafts, base resumes), not the page itself. */
   function refreshControl() {
     if (card.tabId === null || !isWebPage(card.url)) return null;
-    const button = actionButton("refresh", "Refresh", () => {
+    const button = actionButton("refresh", "", () => {
       refreshPage().catch((err) => console.warn("[maestro-cs] panel could not refresh:", err));
     });
+    // Icon-only: the word stays for `textContent` and the screen reader in a visually hidden span.
+    attach(button, icon("rotate-cw", { size: 16 }), node("span", "vh", "Refresh"));
     button.id = REFRESH_ID;
     button.setAttribute("aria-label", "Refresh from Maestro CS");
     button.disabled = card.busy !== null;
@@ -2660,6 +2703,7 @@
     // rather than where it takes them from.
     withPlaceKept(() => {
       renderIdentity(decision);
+      renderProgress(decision);
       renderRail(decision, open);
     });
     renderFoot(open);

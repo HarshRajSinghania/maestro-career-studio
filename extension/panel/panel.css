@@ -131,45 +131,59 @@ body {
 }
 
 .identity {
-  flex: none; padding: 14px 14px 12px; background: var(--cs-surface);
+  flex: none; padding: 14px 16px 12px; background: var(--cs-surface);
   border-bottom: 1px solid var(--cs-line);
 }
-.identity .row1 { display: flex; align-items: flex-start; gap: 10px; }
+.identity .row1 { display: flex; align-items: flex-start; gap: 8px; }
 /* min-width on a flex child, because `flex: 1` alone does not let it shrink
- * below its content and a long job title then pushes the chip off the panel. */
+ * below its content and a long job title then pushes the tools off the panel. */
 .identity .who { flex: 1; min-width: 0; }
-.identity .title { font: 700 15px/1.3 var(--cs-font); overflow-wrap: anywhere; }
-.identity .co { color: var(--cs-muted); font-size: 12.5px; margin-top: 2px; }
-/* The deep link: the block's LAST child, on its own line, pushed right by the
- * auto margin. Not in `.row1` beside the chip, which is where it first went and
- * where measuring killed it — `.who` and a nowrap link share one axis there, so
- * at 400px the job title got 104px and wrapped five times. Nothing shares this
- * line, so nothing has to give. Its own 8px of padding is the hover target and
- * leaves the text 22px off the edge, exactly as it sat in the band this
- * replaced. */
-.identity .linkish {
-  display: block; width: fit-content; white-space: nowrap;
-  margin: 10px 0 0 auto;
+.identity .title { font: 600 16px/1.3 var(--cs-font); overflow-wrap: anywhere; }
+/* "Company · status": one muted line under the title. It wraps only when the pair cannot fit. */
+.identity .co-line {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; margin-top: 2px;
+  color: var(--cs-muted); font-size: 13px; line-height: 20px;
 }
-/* The last line holds Refresh at its left and the link at its right; the
- * link's auto margin does the pushing, so a line with no Refresh (a
- * `chrome://` tab) is the link alone exactly as before. Refresh is a button
- * dressed as `.linkish`, hence the three UA resets, and its -8px margin lines
- * its text up with the job title above. `:disabled` spelled out, as for
- * `.fork button`: this rule sets `cursor`. */
-.identity .id-foot { display: flex; align-items: flex-start; }
+.identity .co { min-width: 0; overflow-wrap: anywhere; }
+.identity .co:empty { display: none; }
+.identity .sep { flex: none; }
+/* The two tools, at the header's top right: 32px icon buttons, muted, the first in tab order. The -4px
+ * and -8px margins put the glyphs (not the 32px hit squares) on the title's row and the panel's
+ * content edge, as in the mockup. Each keeps its words in a visually hidden span (`.vh`) and its
+ * aria-label. Refresh is a button dressed as `.linkish`, hence the UA resets; `:disabled` is spelled
+ * out as for `.fork button`, because this rule sets `cursor`. */
+.identity .id-tools { display: flex; flex: none; gap: 2px; margin: -4px -8px 0 0; }
+.identity .linkish,
 .identity .refresh {
-  border: none; background: none; cursor: pointer;
-  margin: 10px 0 0 -8px; white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0; border: none; background: none; border-radius: 8px;
+  color: var(--cs-muted); cursor: pointer;
 }
+.identity .linkish:hover,
+.identity .refresh:hover:not(:disabled):not([aria-disabled="true"]) {
+  color: var(--cs-primary); background: var(--cs-primary-tonal);
+}
+.identity .linkish .ico { margin: 0; vertical-align: 0; }
 .identity .refresh:disabled,
 .identity .refresh[aria-disabled="true"] { opacity: .6; cursor: default; }
+/* Words for a screen reader and for `textContent`, nothing for the eye: an icon-only control's name. */
+.vh {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
 .chip {
   font: 700 10.5px/1 var(--cs-font); border-radius: 999px; padding: 5px 9px;
   flex: none; margin-top: 2px; letter-spacing: .02em;
 }
+/* The status chip on the header's line is the line's own size (22px, 12px, medium), not the 10.5px
+ * badge it was beside the title. */
+.identity .co-line .chip {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 8px; margin: 0;
+  font: 500 12px/1 var(--cs-font); letter-spacing: 0;
+}
 /* "Not saved yet": a neutral outline, a fact and not a warning. */
 .chip.outline { border: 1px solid var(--cs-line); padding: 4px 8px; color: var(--cs-muted); }
+.identity .co-line .chip.outline { padding: 0 7px; }
 .chip.lib { background: var(--cs-primary-tonal); color: var(--cs-primary); }
 /* An application status's colour role (shared/status-roles.js): the web status chip's pairs. */
 .chip.role-muted { background: var(--cs-muted-container); color: var(--cs-on-muted-container); }
@@ -179,43 +193,56 @@ body {
 .chip.role-success { background: var(--cs-success-container); color: var(--cs-on-success-container); }
 .chip.role-error { background: var(--cs-error-container); color: var(--cs-on-error-container); }
 
-.ats { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.ats { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 /* The arc is `--v` percent of the ring; the hole is the surface punched back
  * out of it. Both come from the store, and the panel computes neither: every
  * number is the backend's (design §4.2). */
 .ring {
-  width: 44px; height: 44px; border-radius: 50%; flex: none;
-  display: grid; place-items: center; font: 800 13px/1 var(--cs-font);
+  width: 36px; height: 36px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; font: 700 12px/1 var(--cs-font);
   background:
     radial-gradient(closest-side, var(--cs-surface) 74%, transparent 75% 100%),
     conic-gradient(var(--ring-color, var(--cs-primary)) calc(var(--v, 0) * 1%), var(--cs-line) 0);
 }
 .ring.empty { color: var(--cs-muted); font-weight: 600; }
 .ats .arrow { color: var(--cs-muted); display: inline-flex; }
-.ats .lbl { font-size: 11px; color: var(--cs-muted); text-align: center; margin-top: 3px; }
+.ats .lbl { font-size: 11px; color: var(--cs-muted); text-align: center; margin-top: 2px; }
 .ats .delta {
-  font: 700 12px/1 var(--cs-font); color: var(--cs-good);
+  font: 600 12px/1 var(--cs-font); color: var(--cs-good);
   background: var(--cs-good-tonal); border-radius: 999px;
   padding: 5px 9px; margin-left: auto;
 }
 .ats .hint { color: var(--cs-muted); font-size: 12px; margin-left: 4px; }
 
+/* ------- progress: four segments and "Step N of 4 · Name" ---------------- */
+
+.progress { flex: none; padding: 12px 16px 0; background: var(--cs-surface); }
+.progress:empty { display: none; }
+.progress-bar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.seg-bar { height: 4px; border-radius: 999px; background: var(--cs-line); }
+.seg-bar.done { background: var(--cs-good); }
+.seg-bar.active { background: var(--cs-primary); }
+.progress-label { margin-top: 8px; color: var(--cs-muted); font-size: 12px; }
+
 /* ------- the rail: the one dynamic region, and the only one that scrolls ---- */
 
+/* Direction C: the rail is the white page the Next card sits on, so the card's
+ * low surface reads against it. Finished steps are lines on that page and
+ * steps to come are not drawn. */
 .rail {
-  flex: 1; overflow-y: auto; padding: 10px 10px 12px; margin: 0;
-  list-style: none;
-  display: flex; flex-direction: column; gap: 6px;
+  flex: 1; overflow-y: auto; padding: 12px 16px 16px; margin: 0;
+  list-style: none; background: var(--cs-surface);
+  display: flex; flex-direction: column; gap: 8px;
 }
 /* `flex: none` because a flex item shrinks by default: an open step taller
  * than the rail was squeezed to fit and `overflow: hidden` cut its bottom off
  * mid-sentence. Unshrunk, the rail overflows and scrolls instead. */
 .stg {
   flex: none;
-  background: var(--cs-surface); border: 1px solid var(--cs-line);
-  border-radius: 14px; overflow: hidden;
+  border-radius: 12px; overflow: hidden;
 }
-.stg-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+/* A step is a compact line (32px) by default: the done row, and the skipped one. */
+.stg-row { display: flex; align-items: center; gap: 8px; padding: 0 4px; min-height: 32px; }
 /* A DONE ROW THAT REOPENS is the same line rendered as a real `<button>` (see
  * `renderRail`), so this is the reset that keeps a control looking like the row
  * it replaced: the UA gives a button its own font, its own background, its own
@@ -233,7 +260,9 @@ body {
 button.stg-row {
   width: 100%; text-align: left; cursor: pointer;
   font: inherit; color: inherit; background: none; border: none;
+  border-radius: 8px;
 }
+.stg:not(.active) > button.stg-row:hover:not(:disabled) { background: var(--cs-surface-2); }
 button.stg-row:disabled { opacity: .6; cursor: default; }
 /* THE RING GOES INSIDE, and without this line a keyboard user tabbing onto a
  * done row sees NOTHING at all. `.stg` is `overflow: hidden` (it clips the
@@ -262,24 +291,56 @@ button.stg-row:focus-visible { outline-offset: -2px; }
   font-weight: 700; font-size: 11px; line-height: 22px; font-family: var(--cs-font);
   background: var(--cs-surface-2); color: var(--cs-muted);
 }
-.stg.done .stg-num { background: var(--cs-good-tonal); color: var(--cs-good); }
-.stg.active { border-color: var(--cs-primary); box-shadow: 0 0 0 1px var(--cs-primary); }
-.stg.active .stg-num { background: var(--cs-primary); color: var(--cs-on-primary); }
-/* Two greyed states that must not look alike. `locked` is "not yet"; `skipped`
- * is "not required on the path you took" — it is dashed rather than solid so a
- * glance never reads it as a step that is still coming, and it is never a tick.
- * The mockup had no skipped scenario; the honesty rule is decisions.js's. */
-.stg.locked { opacity: .55; }
-.stg.skipped { opacity: .7; border-style: dashed; }
-.stg-name { font-weight: 700; font-size: 13px; }
-/* A locked or not-needed row's words, visible (lock + "Not yet", minus + "Not needed"). */
+/* Done: the circle-check alone, in success, with no chip behind it. Its slot
+ * is 16px, so the name starts where the Next card's content would. */
+.stg.done .stg-num { width: 16px; height: 16px; background: none; color: var(--cs-good); }
+/* THE NEXT CARD (`.stg.active`): low surface, 12px radius, 16px padding. The
+ * eyebrow is drawn here and is not text in the row, so the row still reads
+ * "1 Job" to a reader that has no CSS; the step's name is the card title and
+ * the open body sits inside the card. The numeral is the progress bar's job now
+ * (a separate rule, so `.stg-num`'s own box above is untouched). */
+.stg.active { background: var(--cs-surface-2); padding: 16px; }
+.stg.active > .stg-row { flex-wrap: wrap; padding: 0; min-height: 0; gap: 4px 8px; }
+.stg.active > .stg-row::before {
+  content: "Next"; flex: 0 0 100%;
+  font: 600 12px/1.4 var(--cs-font); color: var(--cs-primary);
+}
+/* The way back (the active row while another is open) is a button with no body: the card's
+ * padding moves onto the button, so the whole card is the target and its focus ring sits on
+ * the card's own edge instead of hugging the words. */
+.stg.active:has(> button.stg-row) { padding: 0; }
+.stg.active > button.stg-row { padding: 16px; border-radius: 12px; }
+.stg.active > button.stg-row:hover:not(:disabled) { background: var(--cs-muted-container); }
+.stg.active .stg-num { display: none; }
+/* The terminal row, finished and current (it prints a circle-check in its numeral): it is
+ * nothing's "Next", so it drops the eyebrow and keeps its tick, drawn like a done row's. */
+.stg.active > .stg-row:has(.stg-num svg)::before { display: none; }
+.stg.active .stg-num:has(svg) { display: flex; width: 16px; height: 16px; background: none; color: var(--cs-good); }
+.stg.active .stg-name { font-size: 17px; font-weight: 600; line-height: 1.3; }
+/* Not drawn: C shows no step to come, and the progress bar says where you are.
+ * The rows stay in the DOM, so nothing that reads them changes. `skipped` is "not required
+ * on the path you took" and reads like a done line with the minus mark and
+ * "Not needed" in place of a tick; it is never a tick. */
+.stg.locked { display: none; }
+.stg.skipped .stg-num { display: none; }
+.stg.skipped .stg-name { color: var(--cs-muted); }
+/* The minus takes the done line's tick slot (the state's wrapper dissolves so its icon can lead
+ * the row), and "Not needed" follows the name in muted words. */
+.stg.skipped .stg-state { display: contents; }
+.stg.skipped .stg-state > svg { order: -1; width: 16px; height: 16px; flex: none; }
+.stg.skipped .stg-state ~ .stg-sum { margin-left: auto; max-width: none; text-wrap: balance; }
+/* A done or skipped line that was reopened: the line and its body share one outlined card,
+ * so the Next card stays the only filled one on the page. */
+.stg:not(.active):has(> .stg-body) { border: 1px solid var(--cs-line); padding: 3px 11px 12px; }
+.stg-name { font-weight: 500; font-size: 13px; }
+/* A not-needed row's words, visible (minus + "Not needed"). */
 .stg-state { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--cs-muted);
   font-size: 12px; white-space: nowrap; }
 .stg-state ~ .stg-sum { margin-left: 8px; }
 .stg-sum { color: var(--cs-muted); font-size: 12px; margin-left: auto; text-align: right; max-width: 55%; }
-/* The active row's body. Indented past the numeral rather than under it, so the
-   step's content reads as belonging to the step. */
-.stg-body { padding: 2px 12px 12px 44px; font-size: 13px; }
+/* A step's open body: inside the card, under the title, full width. */
+.stg-body { padding: 12px 0 0; font-size: 13px; }
+.stg:not(.active) > .stg-body { padding: 8px 0 0; }
 
 /* The Job stage's editable preview: label beside field, three rows. */
 .kv { display: grid; grid-template-columns: 76px 1fr; gap: 6px 10px; margin: 6px 0 10px; }
@@ -297,12 +358,14 @@ button.stg-row:focus-visible { outline-offset: -2px; }
  * (a UA button brings its own font, its centred text and its own background).
  * The radio dot and the selected tint are the mockup's unchanged. */
 .baserow {
-  width: 100%; text-align: left; font: 400 14px/1.5 var(--cs-font); color: var(--cs-text);
-  display: flex; align-items: center; gap: 9px; padding: 8px 10px;
-  border: 1px solid var(--cs-line); border-radius: 10px; margin-bottom: 6px;
+  width: 100%; text-align: left; font: 400 13px/1.5 var(--cs-font); color: var(--cs-text);
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border: none; border-radius: 8px; margin-bottom: 4px;
   background: var(--cs-surface); cursor: pointer;
 }
-.baserow.sel { border-color: var(--cs-primary); background: var(--cs-primary-tonal); }
+/* Direction C's selectable row: the chosen one wears a 1.5px ring, drawn as a shadow so the
+ * keyboard focus ring (an `outline`) can sit on a selected row without replacing it. */
+.baserow.sel { box-shadow: 0 0 0 1.5px var(--cs-primary); }
 /* Information only, beside a bound application: no pointer, nothing to press. */
 .baserow.ro { cursor: default; }
 .baserow .r {
@@ -311,9 +374,10 @@ button.stg-row:focus-visible { outline-offset: -2px; }
 }
 .baserow.sel .r {
   border-color: var(--cs-primary); background: var(--cs-primary);
-  box-shadow: inset 0 0 0 2.5px var(--cs-primary-tonal);
+  box-shadow: inset 0 0 0 2.5px var(--cs-surface);
 }
-.baserow b { font-size: 13px; }
+.baserow b { font-size: 13px; font-weight: 500; }
+.baserow.sel b { font-weight: 600; }
 /* The composite, as the backend computed it. `good` marks the top of the
  * RANKING and never merely the top of the list — an all-unscored library has
  * no best, and a green chip on the first row would invent one.
@@ -356,17 +420,28 @@ button.stg-row:focus-visible { outline-offset: -2px; }
  * declarations after `cursor` are what an anchor needs to look like the button
  * beside it: a UA link brings its own colour and underline and does not lay
  * itself out as a box. */
-.fork { display: flex; gap: 8px; margin: 8px 0 2px; }
+.fork {
+  display: flex; gap: 2px; padding: 2px; margin: 8px 0 2px;
+  border: 1px solid var(--cs-line); border-radius: 999px; background: var(--cs-surface);
+}
 /* The one-line explanation of each choice under a fork level (and a disabled
  * limb's reason): one line apart, so two sentences do not read as one. */
-.fork ~ .sub { margin-top: 6px; }
+.fork ~ .sub { margin-top: 8px; }
 .fork button, .fork a {
-  flex: 1; font: 700 13px/1 var(--cs-font); padding: 11px 10px; border-radius: 10px;
-  border: 1px solid var(--cs-line); background: var(--cs-surface);
+  flex: 1; display: inline-flex; align-items: center; justify-content: center;
+  font: 600 13px/1.25 var(--cs-font); min-height: 32px; padding: 6px 12px; border-radius: 999px;
+  border: none; background: transparent;
   color: var(--cs-text); cursor: pointer;
-  text-align: center; text-decoration: none; min-width: 0;
+  text-align: center; text-decoration: none; min-width: 0; text-wrap: balance;
 }
-.fork button.sel { border-color: var(--cs-primary); background: var(--cs-primary-tonal); color: var(--cs-primary); }
+.fork button.sel { background: var(--cs-secondary-container); color: var(--cs-on-secondary-container); }
+/* A hairline between two limbs that are both still just choices; a selected limb needs none. */
+.fork > :not(:first-child) { position: relative; }
+.fork > :not(:first-child)::before {
+  content: ""; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 1px; background: var(--cs-line);
+}
+.fork > .sel::before, .fork > .sel + *::before,
+.fork > :focus-visible::before, .fork > :focus-visible + *::before { display: none; }
 /* A limb that is out of reach while an action runs, and this rule is what says
  * so — `disabled` alone does NOT. The block above sets `background`, `color`
  * and `cursor: pointer` explicitly, and an author declaration beats the UA
@@ -388,34 +463,31 @@ button.stg-row:focus-visible { outline-offset: -2px; }
  * and the reason it is spelled out again rather than cross-referenced: the
  * selector that would share it does not exist). */
 .seg {
-  display: flex; background: var(--cs-surface-2); border-radius: 10px;
-  padding: 3px; gap: 3px; margin: 4px 0 10px;
+  display: flex; background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 999px;
+  padding: 2px; gap: 2px; margin: 8px 0 12px;
 }
 /* `balance` and a real line height: at the narrowest panel (320px) "Saved
  * answers + AI" does not fit one line, and a greedy wrap strands "AI" alone
  * under "Saved answers +". Balanced, both labels break the same way. */
 .seg button {
-  flex: 1; border: none; border-radius: 8px; font: 600 12px/1.25 var(--cs-font);
-  padding: 7px 6px; background: none; color: var(--cs-muted); cursor: pointer;
+  flex: 1; border: none; border-radius: 999px; font: 600 12px/1.25 var(--cs-font);
+  padding: 6px 8px; min-height: 30px; background: none; color: var(--cs-muted); cursor: pointer;
   text-wrap: balance;
 }
-.seg button.on {
-  background: var(--cs-surface); color: var(--cs-text);
-  box-shadow: 0 1px 3px oklch(0 0 0 / 12%);
-}
+.seg button.on { background: var(--cs-secondary-container); color: var(--cs-on-secondary-container); }
 .seg button:disabled { opacity: .6; cursor: default; }
 
 /* One progress row per thing the fill has something true to say about. The
  * mockup's `.prog` rules unchanged — the mark, the name, and the counts pushed
  * to the right by `margin-left: auto`. */
 .prog {
-  display: flex; align-items: center; gap: 8px; padding: 7px 0;
-  border-bottom: 1px solid var(--cs-line); font-size: 12.5px;
+  display: flex; align-items: center; gap: 8px; padding: 6px 0; min-height: 32px;
+  border-bottom: 1px solid var(--cs-line); font-size: 13px;
 }
 .prog:last-of-type { border-bottom: none; }
 .prog .st {
-  flex: none; width: 82px; display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11.5px; font-weight: 600;
+  flex: none; width: 88px; display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600;
 }
 .prog .st.done { color: var(--cs-good); }
 .prog .st.skipped { color: var(--cs-muted); }
@@ -429,20 +501,20 @@ button.stg-row:focus-visible { outline-offset: -2px; }
  * frame to scroll). So the button reset first, then the link's own colour and
  * rule. The mockup's `.needs` box hangs off it below. */
 /* The fill loop's report: a heading per group of rows, count lines between. */
-.loop .grp, .flagged .grp { margin-top: 12px; font-size: 12px; font-weight: 700;
-  display: flex; align-items: center; gap: 5px; }
+.loop .grp, .flagged .grp { margin-top: 16px; font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; gap: 6px; }
 /* The count beside a heading: a small neutral chip. */
 .grp-n { font-size: 11px; font-weight: 700; line-height: 1; padding: 3px 7px; border-radius: 999px;
   background: var(--cs-muted-container); color: var(--cs-on-muted-container); }
-.loop .check-line { margin-top: 12px; }
+.loop .check-line { margin-top: 8px; }
 .loop .check-line + .grp { margin-top: 6px; }
-.loop .count { margin-top: 8px; }
+.loop .count { margin-top: 4px; font-size: 12px; }
 .loop .grp + .resid, .flagged .grp + .resid { margin-top: 2px; }
 .resid { list-style: none; margin: 8px 0 0; padding: 0; }
-.resid li { margin-top: 5px; font-size: 12px; }
+.resid li { margin-top: 6px; font-size: 13px; }
 .resid button {
   border: none; background: none; padding: 0; text-align: left;
-  font: 600 12px/1.4 var(--cs-font); color: var(--cs-primary);
+  font: 600 13px/1.4 var(--cs-font); color: var(--cs-primary);
   cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
 }
 .resid .kindmark { color: var(--cs-muted); }
@@ -596,11 +668,13 @@ button.stg-row:focus-visible { outline-offset: -2px; }
  * chips and squeezed the primary onto three lines (owner's screenshot,
  * 2026-09-27). */
 .p-foot {
-  flex: none; padding: 12px 14px; background: var(--cs-surface);
+  flex: none; padding: 12px 16px; background: var(--cs-surface);
   border-top: 1px solid var(--cs-line);
   display: flex; flex-direction: column; align-items: stretch;
 }
-.sub { color: var(--cs-muted); font-size: 12px; min-width: 0; }
+.sub { color: var(--cs-muted); font-size: 13px; line-height: 1.4; min-width: 0; }
+/* The small print: a field's label and the counts under a heading stay at C's 12px label size. */
+.sub.count, .sub.check-line, label.sub { font-size: 12px; }
 /* The footer's one sentence, and two kinds of it. A backend that cannot be
  * reached must not read like "that button is coming": same slot, different
  * weight and colour. `--cs-danger-text` sits on the panel's own surface rather
@@ -619,40 +693,52 @@ button.stg-row:focus-visible { outline-offset: -2px; }
 .note .ico { margin-right: 5px; }
 .linkish .ico { margin-left: 4px; vertical-align: -1px; }
 .stg-num .ico { vertical-align: 0; }
-/* The action row: the status segment at the left, the primary pushed right by
- * its own auto margin. It WRAPS: at 320px Draft, Applied, Stop and a spinning
- * primary are 29px wider than the row, and a primary on a line of its own
- * beats one hanging off the panel. */
+/* The action row. The status segment takes a line of its own (its "Status" label hangs in the
+ * margin to its left, as in direction C) and the primary takes the next one, full width. The row
+ * WRAPS, so that at 320px a primary on a line of its own still beats one hanging off the panel; Stop,
+ * when a fill runs, shares the primary's line (see `.stop + .cta`). */
 .foot-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
-.status-seg { display: flex; gap: 6px; }
+.status-seg {
+  position: relative; display: flex; align-items: center; gap: 2px;
+  flex: 1 1 calc(100% - 48px); margin-left: 48px; padding: 2px;
+  border: 1px solid var(--cs-line); border-radius: 999px; background: var(--cs-surface);
+}
+/* The visible word for the group; its accessible name is the radiogroup's `aria-label`, so the empty
+ * alternative keeps the pseudo-element out of what a screen reader reads. */
+.status-seg::before {
+  content: "Status" / ""; position: absolute; left: -48px; top: 50%; transform: translateY(-50%);
+  font-size: 12px; line-height: 1; color: var(--cs-muted);
+}
 .status-seg button {
-  white-space: nowrap;
-  font: 700 12px/1 var(--cs-font); padding: 8px 12px; border-radius: 999px;
-  border: 1px solid var(--cs-line); background: var(--cs-surface);
-  color: var(--cs-muted); cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  white-space: nowrap; flex: 1;
+  font: 500 13px/1 var(--cs-font); height: 28px; padding: 0 12px; border-radius: 999px;
+  border: none; background: transparent;
+  color: var(--cs-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
 }
 /* The selected one of the pair: the secondary container and a leading check, whichever it is. */
-.status-seg button.on { background: var(--cs-secondary-container); color: var(--cs-on-secondary-container);
-  border-color: transparent; }
+.status-seg button.on { background: var(--cs-secondary-container); color: var(--cs-on-secondary-container); }
 /* Never wraps and never shrinks: a primary broken over three lines ("Fill /
- * this / form") reads as three buttons. */
+ * this / form") reads as three buttons. Full width comes from the row (`width: 100%` on a
+ * `flex: none` item puts it on a line of its own), not from letting it flex. */
 .cta {
-  margin-left: auto; flex: none; white-space: nowrap; min-width: 96px;
-  font: 700 13.5px/1 var(--cs-font);
+  flex: none; width: 100%; white-space: nowrap; min-width: 96px; height: 36px; padding: 0 16px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font: 500 14px/1 var(--cs-font);
   background: var(--cs-primary); color: var(--cs-on-primary);
-  border: none; border-radius: 12px; padding: 12px 18px; cursor: pointer;
-  box-shadow: var(--cs-shadow);
+  border: none; border-radius: 8px; cursor: pointer;
 }
+.cta.spin::after { margin-left: 0; }
 /* An action is running. The button is out of reach either way — `disabled` is
    the real guard — and this is what says so before the user presses it again. */
-.cta:disabled { opacity: .6; cursor: default; box-shadow: none; }
+.cta:disabled { opacity: .6; cursor: default; }
 /* Stop, beside the running fill's spinner: outlined, so it never reads as the
-   primary it sits next to. */
+   primary it sits next to. The primary then takes the rest of Stop's line. */
 .stop {
-  font: 700 13px/1 var(--cs-font); padding: 11px 14px; border-radius: 12px;
+  flex: none; height: 36px; padding: 0 16px; font: 500 14px/1 var(--cs-font); border-radius: 8px;
   border: 1px solid var(--cs-line); background: var(--cs-surface);
   color: var(--cs-text); cursor: pointer;
 }
+.stop + .cta { flex: 1 0 auto; width: auto; }
 .stop:disabled { opacity: .6; cursor: default; }
 /* One spinner for every busy button on this surface, so a user who has waited
    once recognises the wait. */
@@ -685,18 +771,21 @@ button.stg-row:focus-visible { outline-offset: -2px; }
 .seg button:hover:not(:disabled):not([aria-disabled="true"]), .status-seg button:hover:not(:disabled):not([aria-disabled="true"]) {
   background: color-mix(in oklab, var(--cs-surface), var(--cs-text) 6%);
 }
-.seg button.on:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--cs-surface); }
-.status-seg button.on:hover:not(:disabled):not([aria-disabled="true"]) {
-  background: color-mix(in oklab, var(--cs-secondary-container), var(--cs-on-secondary-container) 8%);
-}
+.seg button.on:hover:not(:disabled):not([aria-disabled="true"]),
+.status-seg button.on:hover:not(:disabled):not([aria-disabled="true"]),
 .fork button.sel:hover:not(:disabled):not([aria-disabled="true"]) {
-  background: color-mix(in oklab, var(--cs-primary-tonal), var(--cs-primary) 8%);
+  background: color-mix(in oklab, var(--cs-secondary-container), var(--cs-on-secondary-container) 8%);
 }
 .cta:active:not(:disabled):not([aria-disabled="true"]), .stop:active:not(:disabled):not([aria-disabled="true"]), .fork button:active:not(:disabled):not([aria-disabled="true"]), .fork a:active,
 .seg button:active:not(:disabled):not([aria-disabled="true"]), .status-seg button:active:not(:disabled):not([aria-disabled="true"]) { transform: scale(.97); }
-.cta:focus-visible, .stop:focus-visible, .fork button:focus-visible, .fork a:focus-visible,
-.seg button:focus-visible, .status-seg button:focus-visible {
+.cta:focus-visible, .stop:focus-visible {
   outline: 2px solid var(--cs-primary); outline-offset: 2px;
+}
+/* A segment's ring lies in the pill's own 2px padding (offset 0), so it neither overlaps the pill's
+ * border nor is clipped by a neighbour. */
+.fork button:focus-visible, .fork a:focus-visible,
+.seg button:focus-visible, .status-seg button:focus-visible {
+  outline: 2px solid var(--cs-primary); outline-offset: 0;
 }
 @media (prefers-reduced-motion: reduce) {
   .cta, .stop, .fork button, .fork a, .seg button, .status-seg button { transition: none; }

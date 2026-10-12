@@ -50,7 +50,28 @@
   const check = (t) => {
     if (halted || t?.cancelled) throw new Cancelled();
   };
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Hidden and covered tabs throttle timers. Message tasks still yield to
+  // the page, while a monotonic clock keeps settle times AND budget deadlines.
+  // The returned cancel closes both ports when an operation finishes early.
+  const hiddenDelay = (fn, ms) => {
+    const end = performance.now() + ms;
+    const channel = new MessageChannel();
+    const cancel = () => {
+      channel.port1.onmessage = null;
+      channel.port1.close();
+      channel.port2.close();
+    };
+    channel.port1.onmessage = () => {
+      if (performance.now() < end) channel.port2.postMessage(null);
+      else {
+        cancel();
+        fn();
+      }
+    };
+    channel.port2.postMessage(null);
+    return cancel;
+  };
+  const sleep = (ms) => new Promise((r) => document.hidden ? hiddenDelay(r, ms) : setTimeout(r, ms));
   const settle = async (t, ms = 120) => {
     check(t);
     await sleep(ms);
@@ -60,19 +81,21 @@
     if (typeof ms !== "number" || !Number.isFinite(ms)) throw new TypeError("withinBudget needs a budget in ms");
     if (halted) throw new Cancelled(); // a latched Stop never starts new work
     const t = { cancelled: false, abort: null };
-    let timer;
+    let timer, cancelHidden;
     // The budget exists (and t.abort with it) before fn runs.
     const budget = new Promise((_, reject) => {
       t.abort = () => {
         t.cancelled = true;
         reject(new Cancelled());
       };
-      timer = setTimeout(t.abort, ms);
+      if (document.hidden) cancelHidden = hiddenDelay(t.abort, ms);
+      else timer = setTimeout(t.abort, ms);
     });
     live.add(t);
     try {
       return await Promise.race([fn(t), budget]);
     } finally {
+      cancelHidden?.();
       clearTimeout(timer);
       live.delete(t);
     }

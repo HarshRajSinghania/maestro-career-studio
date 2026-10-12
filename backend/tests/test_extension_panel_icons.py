@@ -64,7 +64,8 @@ def test_icons_module_holds_its_glyphs_and_a_licence_line():
     assert "ISC" in source.split("*/", 1)[0]
     for name in ("check", "circle-check", "circle-minus", "circle-alert", "triangle-alert",
                  "chevron-down", "chevron-right", "external-link", "arrow-right",
-                 "paperclip", "lock", "minus", "search", "sparkles", "circle-help", "skip-forward"):
+                 "paperclip", "lock", "minus", "search", "sparkles", "circle-help", "skip-forward",
+                 "rotate-cw"):
         assert f'"{name}"' in source, name
 
 

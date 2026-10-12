@@ -15,6 +15,8 @@
     "scripts.live_provider_check",
     "scripts.memory_profile",
     "scripts.sync_key",
+    "scripts.spike_background_fill",
+    "scripts.panel_preview",
     "scripts.template_parity",
     "migrations.env",
     "app.tools.backup_db"

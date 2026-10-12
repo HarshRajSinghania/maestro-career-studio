@@ -1,0 +1,87 @@
+{
+  "tabs": [
+    {
+      "id": 7,
+      "url": "https://job-boards.greenhouse.io/acme/jobs/101"
+    }
+  ],
+  "replies": {
+    "read_settings": {
+      "ok": true,
+      "data": {
+        "backendUrl": "http://localhost:8001",
+        "appUrl": "http://localhost:3000",
+        "telemetryEnabled": true
+      }
+    }
+  },
+  "api": {
+    "/api/jobs/match": {
+      "ok": true,
+      "data": {
+        "match": "exact",
+        "job": {
+          "id": "job-acme",
+          "company": "Acme",
+          "title": "Senior Data Scientist"
+        },
+        "application": null
+      }
+    },
+    "/api/base-resumes": {
+      "ok": true,
+      "data": [
+        {
+          "slug": "data_scientist",
+          "display_name": "Data Scientist"
+        },
+        {
+          "slug": "ai_ml_engineer",
+          "display_name": "AI/ML Engineer"
+        },
+        {
+          "slug": "backend_engineer",
+          "display_name": "Backend Engineer"
+        },
+        {
+          "slug": "analytics_engineer",
+          "display_name": "Analytics Engineer"
+        }
+      ]
+    },
+    "GET /api/ats-scores": {
+      "ok": true,
+      "data": [
+        {
+          "target_type": "base_resume",
+          "target_id": "data_scientist",
+          "phase": "base",
+          "composite": 63.6,
+          "engine_version": "ats-2.3.0"
+        },
+        {
+          "target_type": "base_resume",
+          "target_id": "ai_ml_engineer",
+          "phase": "base",
+          "composite": 71.8,
+          "engine_version": "ats-2.3.0"
+        },
+        {
+          "target_type": "base_resume",
+          "target_id": "backend_engineer",
+          "phase": "base",
+          "composite": 58.2,
+          "engine_version": "ats-2.3.0"
+        },
+        {
+          "target_type": "base_resume",
+          "target_id": "analytics_engineer",
+          "phase": "base",
+          "composite": 66.4,
+          "engine_version": "ats-2.3.0"
+        }
+      ]
+    }
+  },
+  "reopen": "job"
+}

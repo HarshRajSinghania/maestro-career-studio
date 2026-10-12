@@ -45,6 +45,9 @@ field.
 
 ## Five screenshots to take
 
+The panel was repainted (direction C: progress bar, Next card, icon header), so shots 1-4
+need retaking before the next store submission.
+
 Take each at **1280 x 800 pixels** with the side panel beside a sample job or
 application page. Use fictional career data and employer examples throughout;
 check that no real contact details, answers, credentials or browser accounts

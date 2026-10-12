@@ -143,6 +143,13 @@ it armed. Three rules hold the shape up:
   moving no stage). Track has none: its way
   onward is the header's link, and its control is the permanent Draft/Applied
   segment.
+- **The paint is direction C; the model above is unchanged.** A `#progress` region over the rail
+  draws four segments and "Step N of 4 · Name" from the ACTIVE row (a reopened row never moves it;
+  segments before the active one read done by position, the rows keep their own ticks). The active
+  row is painted as a "Next" card (the eyebrow is CSS `::before`, so the row's text is still "1 Job"),
+  done and skipped rows as compact lines, and locked rows are hidden by CSS but stay in the DOM, so
+  every test and the keyboard model see the same four rows. `backend/scripts/panel_preview.py`
+  serves the real panel with a stubbed `chrome.*` to look at each state in a normal browser.
 - **Nothing is claimed that is not known.** `match !== "exact"` means "we do not
   know", not "none", so an unreachable backend opens the journey at Job rather
   than claiming the job exists. Skipping is not doing: arming a base resume skips
@@ -156,15 +163,18 @@ Above the rail sits the panel's whole header, and it is one block: the job's
 identity and the match chip ("Not saved yet" for a job Maestro CS does not
 have, "Saved", or the application's status), the Base → Tailored match score rings
 under them (read from stored scores, never computed here; with one ring, "Base
-resume score" and "Tailoring can raise it."; with none, "Not scored yet."), and
-one deep link on the last line, right-aligned, with **Refresh** at that line's
-left. The link is labelled by the most specific thing we know — "Open
-application", else "Open in Maestro CS" (each followed by an `external-link` icon),
-and nothing at all until the service worker has said where the web app is; its
-`aria-label` spells the destination out in full and adds "(opens in a new tab)", because beside a job title "Open application" would
-otherwise read as the posting's own apply page. It stays off the title's line
-because beside the chip it and the job title fight over one axis: at 400px — an
-ordinary side-panel width — the title was left 104px and five wrapped lines.
+resume score" and "Tailoring can raise it."; with none, "Not scored yet."). The
+company and the chip share one muted line under the title. **Refresh** (`rotate-cw`)
+and the one deep link (`external-link`) are 32px icon buttons at the title row's
+right (`id-tools`); each keeps its words in a visually hidden `span.vh`, so
+`textContent` and screen readers read "Refresh" / "Open application" / "Open in
+Maestro CS". The link is labelled by the most specific thing we know, and is
+absent until the service worker has said where the web app is; its `aria-label`
+spells the destination out in full and adds "(opens in a new tab)", because beside
+a job title "Open application" would otherwise read as the posting's own apply
+page. As text, the link once left the title 104px and five wrapped lines at 400px,
+which is why it lived on its own line; as two icons the title keeps about 222px at
+320px.
 
 **There is no brand row**, and its absence is a decision. Chrome draws a
 side-panel title bar above this document carrying the extension's name, and it

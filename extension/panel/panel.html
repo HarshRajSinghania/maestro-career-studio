@@ -22,6 +22,10 @@
      and measured out, because there the link and the job title fight over one
      axis. -->
 <div id="identity" class="identity"></div>
+<!-- Where you are, at a glance: four segments and "Step N of 4 · Name",
+     rebuilt by `renderProgress` from the same decision as the rail. Empty on a
+     page the panel reads nothing about. -->
+<div id="progress" class="progress"></div>
 <!-- An ordered list because that is what it is — five numbered steps in order
      — so the row count and position are announced without the render loop
      having to say them. `role="list"` is belt and braces: `list-style: none`
