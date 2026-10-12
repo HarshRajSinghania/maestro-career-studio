@@ -374,3 +374,31 @@ def test_choose_with_an_unreadable_saved_folder_starts_at_home(client, folder_on
     r = client.post(f"{URL}/choose")
     assert r.status_code == 200
     assert picked["calls"] == [tmp_path]
+
+
+def test_turning_it_back_on_copies_what_was_made_while_it_was_off(client, folder_on, db_session, tmp_path, monkeypatch):
+    first = make_application(db_session, make_job(db_session), make_pdf(tmp_path))
+    assert rf.copy_application(first.id) is not None
+    rf.backfill()  # marks the root done
+    assert _row(db_session, rf.BACKFILLED_KEY).value == str(folder_on)
+    client.put(URL, json={"enabled": False})
+    second = make_application(
+        db_session, make_job(db_session, company="Globex"), make_pdf(tmp_path, name="Second_Resume.pdf"))
+    assert rf.copy_application(second.id) is None  # off: no copy
+    monkeypatch.setattr(rf, "start_backfill", rf.backfill)  # run the pass inline instead of in a thread
+    client.put(URL, json={"enabled": True})
+    assert rf.copy_path_for(second.id) is not None
+
+
+def test_changing_the_root_or_the_switch_clears_the_backfill_marker(client, folder_on, db_session, tmp_path):
+    ok = tmp_path / "ok"
+    ok.mkdir()
+    for body in ({"enabled": False}, {"folder": str(ok)}):
+        rf._put(db_session, rf.BACKFILLED_KEY, "marker")
+        db_session.commit()
+        client.put(URL, json=body)
+        assert _row(db_session, rf.BACKFILLED_KEY) is None
+    rf._put(db_session, rf.BACKFILLED_KEY, "marker")
+    db_session.commit()
+    client.put(URL, json={"folder": str(ok)})  # no change
+    assert _row(db_session, rf.BACKFILLED_KEY).value == "marker"
