@@ -17,6 +17,7 @@ PROMPT = "Choose where Maestro saves your resumes"
 START_ENV = "MAESTRO_PICKER_START"
 
 _WINDOWS_SCRIPT = (
+    "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
     "Add-Type -AssemblyName System.Windows.Forms; "
     "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
     f"$d.Description = '{PROMPT}'; "
@@ -43,13 +44,21 @@ def available(platform: str = sys.platform) -> bool:
     return shutil.which("zenity") is not None
 
 
+def is_dir(path: Path) -> bool:
+    """Path.is_dir() raises PermissionError on Python 3.12 for some inaccessible folders; that is just "no"."""
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
 def _applescript_string(text: str) -> str:
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def _command(start: Path, platform: str) -> tuple[list[str], dict[str, str] | None]:
     """The argv for the platform, and an env override (Windows only) or None."""
-    exists = start.is_dir()
+    exists = is_dir(start)
     if platform == "darwin":
         location = f" default location (POSIX file {_applescript_string(str(start))})" if exists else ""
         script = f"POSIX path of (choose folder with prompt {_applescript_string(PROMPT)}{location})"
@@ -80,15 +89,15 @@ def choose(start: Path, platform: str = sys.platform) -> Path | None:
         cmd, env = _command(start, platform)
         try:
             done = subprocess.run(  # noqa: S603 — fixed program, computed path, no shell
-                cmd, capture_output=True, text=True, timeout=TIMEOUT_SECONDS, env=env, check=False,
+                cmd, capture_output=True, encoding="utf-8", timeout=TIMEOUT_SECONDS, env=env, check=False,
             )
-        except (OSError, subprocess.SubprocessError) as exc:  # includes TimeoutExpired
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:  # TimeoutExpired; UnicodeDecodeError is a ValueError
             raise PickerFailed(type(exc).__name__) from exc
         if _is_cancel(platform, done.returncode, done.stderr):
             return None
         if done.returncode != 0:
             raise PickerFailed(f"exit {done.returncode}")
-        text = (done.stdout or "").strip()
+        text = (done.stdout or "").strip().lstrip("\ufeff").strip()  # a BOM from the shell is not part of the path
         return Path(text) if text else None  # Path drops the trailing separator macOS adds
     finally:
         _lock.release()

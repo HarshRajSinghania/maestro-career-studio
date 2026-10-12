@@ -356,3 +356,21 @@ def test_choose_without_a_picker_is_a_409(client, folder_on, monkeypatch, picked
     r = client.post(f"{URL}/choose")
     assert (r.status_code, r.json()["detail"]) == (409, router_mod.PICKER_FAILED)
     assert picked["calls"] == []
+
+
+def test_choose_with_an_unreadable_saved_folder_starts_at_home(client, folder_on, tmp_path, monkeypatch, picked):
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    saved = tmp_path / "locked"
+    saved.mkdir()
+    client.put(URL, json={"folder": str(saved)})
+    real = Path.is_dir
+
+    def is_dir(self):
+        if self == saved:
+            raise PermissionError("denied")
+        return real(self)
+
+    monkeypatch.setattr(Path, "is_dir", is_dir)
+    r = client.post(f"{URL}/choose")
+    assert r.status_code == 200
+    assert picked["calls"] == [tmp_path]

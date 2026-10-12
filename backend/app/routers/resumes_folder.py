@@ -94,7 +94,7 @@ def choose_resumes_folder(db: Annotated[Session, Depends(get_db)]):
     if not folder_picker.available():
         raise HTTPException(409, detail=PICKER_FAILED)
     base = rf.root(db)
-    start = base if base is not None and base.is_dir() else Path.home()
+    start = base if base is not None and folder_picker.is_dir(base) else Path.home()
     try:
         chosen = folder_picker.choose(start)
     except folder_picker.PickerBusy:

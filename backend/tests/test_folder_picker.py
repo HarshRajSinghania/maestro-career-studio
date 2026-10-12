@@ -46,7 +46,7 @@ def test_macos_argv_has_the_default_location(run, start):
     assert f'default location (POSIX file "{start}")' in cmd[2]
     assert kwargs["timeout"] == 300
     assert kwargs["capture_output"] is True
-    assert kwargs["text"] is True
+    assert kwargs["encoding"] == "utf-8"
     assert "shell" not in kwargs
 
 
@@ -159,3 +159,34 @@ def test_available_per_platform(monkeypatch):
     for platform in ("darwin", "win32", "linux"):
         fp.available(platform)
     assert seen == ["osascript", "powershell", "zenity"]
+
+
+def test_non_ascii_output_round_trips(run, start):
+    run.result.stdout = "\ufeffC:\\Users\\Zo\u00eb\\R\u00e9sum\u00e9s\r\n"
+    assert fp.choose(start, platform="win32") == Path("C:\\Users\\Zo\u00eb\\R\u00e9sum\u00e9s")
+    assert run.calls[0][1]["encoding"] == "utf-8"
+
+
+def test_the_windows_script_writes_utf8():
+    assert "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8" in fp._WINDOWS_SCRIPT
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32", "linux"])
+def test_undecodable_output_is_picker_failed(monkeypatch, start, platform):
+    error = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+    monkeypatch.setattr(fp.subprocess, "run", Ran(raises=error))
+    with pytest.raises(fp.PickerFailed):
+        fp.choose(start, platform=platform)
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32", "linux"])
+def test_an_unreadable_start_folder_is_left_out_not_a_crash(run, start, monkeypatch, platform):
+    def denied(self):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "is_dir", denied)
+    run.result.stdout = "/x\n"
+    assert fp.choose(start, platform=platform) == Path("/x")
+    cmd, kwargs = run.calls[0]
+    assert str(start) not in " ".join(cmd)
+    assert not kwargs["env"][fp.START_ENV] if platform == "win32" else True
