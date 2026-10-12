@@ -214,6 +214,16 @@ def test_open_never_creates_a_custom_folder(client, folder_on, tmp_path, opened)
     assert not ok.exists()
 
 
+def test_open_a_vanished_custom_folder_is_a_409(client, folder_on, tmp_path, opened):
+    ok = tmp_path / "ok"
+    ok.mkdir()
+    client.put(URL, json={"folder": str(ok)})
+    ok.rmdir()  # the drive was unplugged after Save
+    r = client.post(f"{URL}/open")
+    assert (r.status_code, r.json()["detail"]) == (409, rf.ERROR_SENTENCES["missing"])
+    assert opened["folder"] == []
+
+
 def test_open_when_the_default_folder_cant_be_made_is_a_409(client, folder_on, tmp_path, opened):
     (tmp_path / "Documents").write_text("a file where the folder should be")
     r = client.post(f"{URL}/open")

@@ -85,6 +85,8 @@ def put_resumes_folder(payload: ResumesFolderUpdate, db: Annotated[Session, Depe
              dependencies=[Depends(_require_available)])
 def open_resumes_folder(db: Annotated[Session, Depends(get_db)]):
     base = rf.root(db)
+    if rf.is_custom(db) and not folder_picker.is_dir(base):  # the opener would fail in its child, after we answered 204
+        raise HTTPException(409, detail=rf.ERROR_SENTENCES["missing"])
     try:
         if not rf.is_custom(db):
             base.mkdir(parents=True, exist_ok=True)
